@@ -1,9 +1,11 @@
-//! The content identity's tests. Oracles: the encoding of ADR 0005 built by hand and hashed with
+//! The content identity's tests. Oracles: the encoding of ADR 0005 (`lumen-scene-content/2`) built
+//! by hand and hashed with
 //! the crate's SHA-256 (itself checked against FIPS 180-4 vectors); inequality of digests for
 //! inputs that differ; and, for a triangle no ray reaches, a test of every triangle on every ray.
 
 use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
+use bunny_linalg::FixedUnitVec3;
 use bunny_optics::{Albedo, DirectionalLight, SkyLight};
 use bunny_query::TraceRay;
 
@@ -21,6 +23,7 @@ struct Input {
     triangles: Vec<[FixedVec3; 3]>,
     material_of: Vec<u32>,
     materials: Vec<Albedo>,
+    normals: Vec<[Option<FixedUnitVec3>; 3]>,
     lighting: Lighting,
     camera: CameraPlacement,
 }
@@ -31,6 +34,7 @@ impl Input {
             triangles: &self.triangles,
             material_of: &self.material_of,
             materials: &self.materials,
+            normals: &self.normals,
             lighting: self.lighting,
             camera: self.camera,
         }
@@ -58,6 +62,7 @@ fn small() -> Input {
         ],
         material_of: vec![1, 0],
         materials: vec![albedo(200, 100, 50), albedo(10, 20, 30)],
+        normals: Vec::new(),
         lighting: reference_lighting().expect("valid lighting"),
         camera: reference_camera(),
     }
@@ -78,7 +83,7 @@ fn encoded_by_hand(input: &Input) -> Vec<u8> {
     let count = |n: usize| u64::try_from(n).expect("fits").to_le_bytes();
     let mut bytes = Vec::new();
     bytes.extend(21_u64.to_le_bytes());
-    bytes.extend(b"lumen-scene-content/1");
+    bytes.extend(b"lumen-scene-content/2");
     bytes.extend(count(input.triangles.len()));
     for (triangle, material) in input.triangles.iter().zip(&input.material_of) {
         vectors(&mut bytes, triangle);
@@ -99,17 +104,46 @@ fn encoded_by_hand(input: &Input) -> Vec<u8> {
     let camera = input.camera;
     vectors(&mut bytes, &[camera.position, camera.look, camera.up]);
     values(&mut bytes, &[camera.tan_half_fov]);
+    bytes.extend(count(input.normals.len()));
+    for normal in input.normals.iter().flatten() {
+        if let Some(normal) = normal {
+            bytes.push(1);
+            vectors(&mut bytes, &[normal.into_inner()]);
+        } else {
+            bytes.push(0);
+        }
+    }
     bytes
+}
+
+/// The unit normal `(0, 3, 4) / 5`, exact in Q32.32 only to a raw unit, as Bunny normalizes it.
+fn tilted() -> FixedUnitVec3 {
+    FixedUnitVec3::new(at(0, 3 * U, 4 * U)).expect("a unit vector")
+}
+
+/// [`small`] with vertex normals: up, none and tilted on the first triangle, none on the second.
+fn with_normals() -> Input {
+    Input {
+        normals: vec![[Some(FixedUnitVec3::UNIT_Y), None, Some(tilted())], [None; 3]],
+        ..small()
+    }
 }
 
 #[test]
 fn the_digest_is_the_sha256_of_the_adr_encoding_built_by_hand() {
     let lit = small();
     let unlit = Input { lighting: Lighting { sun: None, ..lit.lighting }, ..lit.clone() };
-    for (input, light_bytes) in [(&lit, 1 + 48), (&unlit, 1)] {
+    let smooth = with_normals();
+    // Two of the six vertices have a normal: six tags and two vectors of three `i64`.
+    let normal_bytes = 6 + 2 * 24;
+    for (input, light_bytes, normals) in
+        [(&lit, 1 + 48, 0), (&unlit, 1, 0), (&smooth, 1 + 48, normal_bytes)]
+    {
         let bytes = encoded_by_hand(input);
-        // Version, triangle count and records, material count and records, light, sky, camera.
-        assert_eq!(bytes.len(), 8 + 21 + 8 + 2 * 76 + 8 + 2 * 24 + light_bytes + 24 + 80);
+        // Version, triangle count and records, material count and records, light, sky, camera,
+        // the normals' count and records.
+        let length = 8 + 21 + 8 + 2 * 76 + 8 + 2 * 24 + light_bytes + 24 + 80 + 8 + normals;
+        assert_eq!(bytes.len(), length);
         let id = input.id();
         assert_eq!(id.to_bytes(), crate::sha256::digest(&bytes));
         assert_eq!(id.to_string(), format!("sha256:{}", hex(&id.to_bytes())));
@@ -156,6 +190,22 @@ fn every_single_change_to_the_content_changes_the_digest() {
         ("the camera look".into(), with(|s| one(&mut s.camera.look.y))),
         ("the camera up".into(), with(|s| one(&mut s.camera.up.z))),
         ("the camera tangent".into(), with(|s| one(&mut s.camera.tan_half_fov))),
+        ("vertex normals, all absent".into(), with(|s| s.normals = vec![[None; 3]; 2])),
+        ("vertex normals".into(), with_normals()),
+        (
+            "a vertex normal moved to another vertex".into(),
+            Input {
+                normals: vec![[None, Some(FixedUnitVec3::UNIT_Y), Some(tilted())], [None; 3]],
+                ..small()
+            },
+        ),
+        (
+            "a vertex normal changed".into(),
+            Input {
+                normals: vec![[Some(FixedUnitVec3::UNIT_Z), None, Some(tilted())], [None; 3]],
+                ..small()
+            },
+        ),
     ];
     for channel in 0..3 {
         let changed = with(|s| {
@@ -183,7 +233,7 @@ fn every_single_change_to_the_content_changes_the_digest() {
             panic!("{name} has the digest of {earlier}");
         }
     }
-    assert_eq!(seen.len(), 1 + 12 + 3 + 9);
+    assert_eq!(seen.len(), 1 + 16 + 3 + 9);
 }
 
 /// Without the counts, seven all-zero triangles with one all-zero albedo and one all-zero
@@ -200,8 +250,9 @@ fn the_counts_keep_lists_of_different_lengths_apart() {
     let (seven, one) = (zeros(7, 1), zeros(1, 20));
     let lists = |input: &Input| {
         let bytes = encoded_by_hand(input);
-        // The triangle and material records without the version, the counts and the tail.
-        let tail = 1 + 48 + 24 + 80;
+        // The triangle and material records without the version, the counts and the tail (the
+        // light, the sky, the camera and an empty normals count).
+        let tail = 1 + 48 + 24 + 80 + 8;
         let records = 8 + 21 + 8..bytes.len() - tail;
         let mut naive = bytes[records].to_vec();
         naive.drain(76 * input.triangles.len()..76 * input.triangles.len() + 8);

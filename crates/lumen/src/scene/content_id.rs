@@ -16,15 +16,18 @@ mod tests;
 ///
 /// `docs/adr/0005-scene-content-identity.md` defines it field by field: the version string, the
 /// triangles in primitive order each with its material index, the material table, the light
-/// (tagged present or absent), the sky and the camera placement, every integer little-endian and
-/// every count a `u64`. A change to the encoding is a new version and changes every digest.
-pub const SCENE_CONTENT_ENCODING: &str = "lumen-scene-content/1";
+/// (tagged present or absent), the sky, the camera placement and the vertex normals (a count,
+/// zero or one entry per triangle, each vertex tagged present or absent), every integer
+/// little-endian and every count a `u64`. A change to the encoding is a new version and changes
+/// every digest: version 2 added the vertex normals.
+pub const SCENE_CONTENT_ENCODING: &str = "lumen-scene-content/2";
 
 /// What a scene is, by content: the SHA-256 of the [`SCENE_CONTENT_ENCODING`] of the
 /// [`SceneSpec`] it was built from. [`Scene::content_id`](super::Scene::content_id) gives it.
 ///
 /// It covers everything a pixel or a ray count depends on (the triangles in primitive order, each
-/// one's material index, the albedos, the light, the sky and the camera) and nothing that is an
+/// one's material index, the albedos, the light, the sky, the camera and the vertex normals) and
+/// nothing that is an
 /// execution choice (the tree, the thread count, the band height) or a separate provenance field
 /// (the image size, the samples, the seed). Two scenes with equal identities render the same
 /// bytes under the same settings; two with different identities may still render the same bytes,
@@ -94,6 +97,16 @@ pub(super) fn content_id(spec: &SceneSpec<'_>) -> SceneContentId {
         put_values(&mut hasher, components(vector));
     }
     put_values(&mut hasher, [camera.tan_half_fov]);
+    put_count(&mut hasher, spec.normals.len());
+    for normal in spec.normals.iter().flatten() {
+        match normal {
+            None => hasher.update(&[0]),
+            Some(normal) => {
+                hasher.update(&[1]);
+                put_values(&mut hasher, components(normal.into_inner()));
+            }
+        }
+    }
     SceneContentId(hasher.finish())
 }
 

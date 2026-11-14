@@ -8,6 +8,12 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Vertex normals in the scene model (part of flyingrobots/lumen#39): `SceneSpec::normals`, empty
+  or three `Option<FixedUnitVec3>` per triangle (the input of Bunny's `SmoothHit::new`), checked
+  by `Scene::new` (the new `SceneError::NormalCount`, with both counts) and kept
+  (`Scene::vertex_normals`). Every `SceneSpec` literal gains `normals`; the built-in scenes pass
+  none. No integrator reads them yet, and no pixel changes.
+
 - The full-resolution Stanford bunny (part of flyingrobots/lumen#39):
   `assets/stanford-bunny/bun_zipper.ply` (35 947 vertices, 69 451 faces), the archive's file byte
   for byte (SHA-256 `b1acc63b...66fe`, 3 033 195 bytes, trailing spaces kept), with its
@@ -37,6 +43,13 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The scene content encoding is `lumen-scene-content/2` (part of flyingrobots/lumen#39; ADR
+  0005): after the camera, a `u64` count of vertex-normal entries (zero, or one per triangle),
+  then per vertex a tag and, if present, the normal's three raw components. Every content digest
+  changes, the built-in scenes' included (reference
+  `sha256:c1e109477c09328421d76efefd923bd625d842fe3afb93dfadb21ae905bd0f66`, Fixed Point
+  `sha256:7094ced63e59606707dc9c172c1801426183ff0b1ceda06a1c65a6a11062a086`); no image hash
+  does. The Python-computed golden is recomputed for version 2 and joined by one with normals.
 - Bunny is pinned to `d4fe51d38fa10f8d6496bd110955314edac30bbf` (was
   `3c0dab3e77c0d45de8904906a134e846dfe5ec6c`), Bunny's main after its smooth-shading work
   (flyingrobots/bunny#289: `VertexNormals`, `smooth_normal`, `SmoothHit`, and
