@@ -22,6 +22,9 @@ second front end would have had to rebuild that list by hand.
   materials, lighting and camera, as named constants and builders), and `mesh`, the mesh reader
   it uses. `mesh` stays public because its error types are part of `SceneError`. It is an
   interim reader, to be replaced by Bunny's (flyingrobots/bunny#247).
+  `scenes` (flyingrobots/lumen#15) holds further scenes' content on the same terms as
+  `reference`: `scenes::fixed_point`, whose builder and identity are also re-exported from the
+  root.
 - **Internal**: the SHA-256 implementation (only `Rgba8Image::hash` uses it), the PNG signature,
   and the CRC-32 and Adler-32 types (only `write_png` uses them).
 - **The library has no edge.** No argument parsing, file access, clock, environment, process,
