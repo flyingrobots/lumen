@@ -1,7 +1,8 @@
 # ADR 0005: A scene's content identity
 
 Status: accepted (flyingrobots/lumen#38); version 2 of the encoding, which adds vertex normals,
-accepted for flyingrobots/lumen#39 (see [Version 2](#version-2-vertex-normals)).
+accepted for flyingrobots/lumen#39 (see [Version 2](#version-2-vertex-normals)); the provenance
+promise's scope stated (see [Clarification, 2026-11-14](#clarification-2026-11-14-any-scene-its-own-tracer)).
 
 ## Context
 
@@ -179,3 +180,11 @@ recomputed. Image hashes do not change. Digests recorded under version 1 (in
 - **`usize` counts, or counts only for the triangle list.** The first differs between 32-bit
   and 64-bit targets; the second leaves the material table's length to be inferred from what
   follows it.
+
+## Clarification, 2026-11-14: any scene, its own tracer
+
+Added for flyingrobots/lumen#57. "Equal provenance now implies equal bytes for any scene" (under
+Consequences) holds for any scene rendered as its own tracer: `render`, `render_scheduled`, or
+`render_traced` given the scene as the tracer. Provenance does not record a caller-supplied
+`Tracer`, so a render through one is outside the promise ([ADR 0002, clarification of
+2026-11-14](0002-library-api-surface.md#clarification-2026-11-14-what-equal-provenance-promises)).
