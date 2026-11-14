@@ -38,6 +38,17 @@ All notable changes to lumen are recorded here. The format follows
   and layouts, scene versions per ray, thread scaling and tile sizes under the tile scheduler),
   moved unchanged with the commits that added them. Timings that repeated ADR 0003 and ADR 0008
   are links now; every timing lives in one dated place.
+- `docs/tutorial.md`, `CONTRIBUTING.md` and `docs/README.md` (closes flyingrobots/lumen#25 with
+  the pages above). The tutorial takes a newcomer with only a Rust toolchain from `git clone` to
+  a rendered PNG with plain `cargo run --release -p lumen -- render`, checked from a clean clone
+  with an empty Cargo home; `tests/tutorial.rs` (medium) runs its three `lumen render` commands
+  and fails if a line it shows is not what the command prints. `CONTRIBUTING.md` is the
+  contributor guide: where each concern lives, the promises a change can break (by evidence-map
+  ID), the full gate, edit paths for scenes, golden values, the Bunny pin, the command, tests,
+  ADRs and measurements, the CI jobs, and the branch rules of `main`. `docs/README.md` indexes
+  every page, ADR and measurement record, with a coverage matrix. The README is a short router:
+  what Lumen is, the quickest first render and links. The duplicated "Generated tests" section
+  is gone, and the WebAssembly test command includes `--test smooth`, as CI runs it.
 - `cargo run -p xtask -- doc-links`, `make doc-links` and the `Gates / doc links` job: every
   relative link of the repository's Markdown names a file or directory that exists, and every
   `#anchor` a heading of its page, with GitHub's anchors. Offline; links with a scheme are not
