@@ -1,5 +1,16 @@
 //! The `lumen` command: argument parsing and I/O around the library.
 
+// The command is the edge outside the deterministic core (docs/adr/0006-nondeterminism-gate.md):
+// everything the library may not touch happens here, and none of it reaches a pixel or a hash.
+#![expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    clippy::disallowed_macros,
+    reason = "time-instant, host-parallelism, std-env, std-fs, float-type: the command's edge reads \
+              its arguments, writes the PNG, times the phases in seconds and asks the host for the \
+              default thread count; the library gets only values"
+)]
+
 mod cli;
 mod failure;
 mod report;

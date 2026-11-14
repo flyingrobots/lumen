@@ -12,6 +12,13 @@
 //! It prints the scene identity, the settings, the rays traced, the image hash and the render
 //! time.
 
+#![expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    reason = "time-instant, host-parallelism, std-env, std-fs: a front end like the command, \
+              outside the deterministic core"
+)]
+
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::process::ExitCode;

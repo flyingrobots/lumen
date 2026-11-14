@@ -1,1 +1,69 @@
 msrv = "1.96.0"
+
+# Nondeterminism bans (docs/adr/0006-nondeterminism-gate.md). Each reason starts with the rule
+# ID it enforces, Echo's `ban-nondeterminism` vocabulary plus Lumen's `thread-spawn` and `float-type`.
+# They apply to every crate in the workspace; code outside the deterministic core (the `lumen`
+# binary, examples, integration tests, xtask) carries an `#[expect(..., reason = "<rule-id>: ...")]`
+# where it uses one, and so does the scheduler's thread pool.
+
+disallowed-types = [
+    { path = "f32", reason = "float-type: no float in the deterministic core" },
+    { path = "f64", reason = "float-type: no float in the deterministic core" },
+    { path = "std::time::SystemTime", reason = "time-system: the wall clock differs on every run" },
+    { path = "std::time::Instant", reason = "time-instant: the clock may appear only in the binary" },
+    { path = "std::collections::HashMap", reason = "unordered-container: iteration order is seeded per process; use BTreeMap" },
+    { path = "std::collections::HashSet", reason = "unordered-container: iteration order is seeded per process; use BTreeSet" },
+    { path = "std::hash::RandomState", reason = "unordered-container: a per-process random hash seed" },
+    { path = "std::thread::Builder", reason = "thread-spawn: threads only in the scheduler (ADR 0003)" },
+    { path = "std::fs::File", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::fs::OpenOptions", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::process::Command", reason = "std-process: the library starts no processes" },
+    { path = "std::net::TcpStream", reason = "network: the library has no network" },
+    { path = "std::net::TcpListener", reason = "network: the library has no network" },
+    { path = "std::net::UdpSocket", reason = "network: the library has no network" },
+]
+
+disallowed-methods = [
+    { path = "std::time::SystemTime::now", reason = "time-system: the wall clock differs on every run" },
+    { path = "std::time::SystemTime::elapsed", reason = "time-system: the wall clock differs on every run" },
+    { path = "std::time::Instant::now", reason = "time-instant: the clock may appear only in the binary" },
+    { path = "std::time::Instant::elapsed", reason = "time-instant: the clock may appear only in the binary" },
+    { path = "std::thread::sleep", reason = "thread-sleep: timing must not decide anything" },
+    { path = "std::thread::available_parallelism", reason = "host-parallelism: the core count may appear only in the binary" },
+    { path = "std::thread::spawn", reason = "thread-spawn: threads only in the scheduler (ADR 0003)" },
+    { path = "std::thread::scope", reason = "thread-spawn: threads only in the scheduler (ADR 0003)" },
+    { path = "std::env::args", reason = "std-env: the library reads no arguments" },
+    { path = "std::env::args_os", reason = "std-env: the library reads no arguments" },
+    { path = "std::env::var", reason = "std-env: the library reads no environment" },
+    { path = "std::env::var_os", reason = "std-env: the library reads no environment" },
+    { path = "std::env::vars", reason = "std-env: the library reads no environment" },
+    { path = "std::env::vars_os", reason = "std-env: the library reads no environment" },
+    { path = "std::env::current_dir", reason = "std-env: the library reads no environment" },
+    { path = "std::env::current_exe", reason = "std-env: the library reads no environment" },
+    { path = "std::env::temp_dir", reason = "std-env: the library reads no environment" },
+    { path = "std::env::home_dir", reason = "std-env: the library reads no environment" },
+    { path = "std::fs::read", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::fs::read_to_string", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::fs::read_dir", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::fs::write", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::fs::metadata", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::fs::create_dir_all", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::fs::remove_dir_all", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::fs::remove_file", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::path::Path::exists", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::path::Path::try_exists", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::path::Path::is_file", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::path::Path::is_dir", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::path::Path::metadata", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::path::Path::read_dir", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::path::Path::canonicalize", reason = "std-fs: the library reads and writes no files" },
+    { path = "std::process::exit", reason = "std-process: the library does not end the process" },
+    { path = "std::process::abort", reason = "std-process: the library does not end the process" },
+    { path = "std::process::id", reason = "std-process: the process id differs on every run" },
+    { path = "bunny_num::FixedQ32_32::to_f32", reason = "float-type: no float in the deterministic core" },
+]
+
+disallowed-macros = [
+    { path = "std::env", reason = "std-env: the build machine's environment" },
+    { path = "std::option_env", reason = "std-env: the build machine's environment" },
+]

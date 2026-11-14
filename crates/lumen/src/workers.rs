@@ -42,6 +42,11 @@ pub(crate) trait Spawner {
 pub(crate) struct OsThreads;
 
 impl Spawner for OsThreads {
+    #[expect(
+        clippy::disallowed_types,
+        reason = "thread-spawn: the scheduler's helper threads (ADR 0003), started for \
+                  render_pixels_on only"
+    )]
     fn spawn<'scope, 'env, T, F>(
         &self,
         scope: &'scope Scope<'scope, 'env>,
@@ -295,6 +300,12 @@ where
 }
 
 /// [`render_pixels`] with `spawner` starting the helper threads.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "thread-spawn: the one thread pool (ADR 0003); each pixel is written at the place its \
+              coordinates fix and the sums are integer, so no schedule or hand-out order reaches the \
+              image or the ray count"
+)]
 pub(crate) fn render_pixels_on<S, T, E, F>(
     spawner: &S,
     size: ImageSize,
