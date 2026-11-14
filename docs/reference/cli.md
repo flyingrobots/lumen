@@ -31,7 +31,8 @@ and its memory.
 --view NAME renders a debug view instead of the lit image: lit (the default), normals (the
 first hit's geometric normal as colour, back faces dimmer), shading-normals (the interpolated
 vertex normal where a triangle has them), depth (near white to far dark grey), primitive-id or
-material-id (a colour per triangle or per material); a debug view is one ray through each pixel's
+material-id (a colour per triangle or per material), wireframe (triangle edges) or bvh-cost (the
+camera ray's box and triangle tests as heat); a debug view is one ray through each pixel's
 centre, so it takes --samples 1 only (the default for it), and --stats is for the lit image.
 Scenes (--scene NAME): reference, fixed-point (the Stanford bunny in sunglasses at a craps table),
 canyon (craft flying along a fractal canyon under a banded planet).
@@ -114,11 +115,13 @@ same threads and bands, so a view is the same bytes at every thread count and ba
 | `depth` | `lumen-view-depth/1` | the first hit's distance as grey, `255 - floor(239 * d / R)`, from white at the eye to grey 16 at `R` and beyond; `R` is the largest one-axis distance from the eye to a corner of the scene's box |
 | `primitive-id` | `lumen-view-primitive-id/1` | a colour per triangle: the low three bytes of Bunny's `bunny-sample-hash/1` of its index, each `32 + byte * 224 / 256` |
 | `material-id` | `lumen-view-material-id/1` | a colour per material, the same way from the triangle's material index under another seed |
+| `wireframe` | `lumen-view-wireframe/1` | white where the hit's smallest barycentric weight (from Bunny's exact numerators) is below 1/32, dark grey `(64, 64, 64)` inside a triangle |
+| `bvh-cost` | `lumen-view-bvh-cost/1` | the camera ray's box tests plus primitive tests (Bunny's counted search), sky rays included, through a heat ramp: black, blue at 128, red at 256, yellow at 384, white at 512 and above |
 
 A debug view traces one ray through each pixel's centre, so it takes `--samples 1` only (its
 default) and does not depend on `--seed`; `--stats`, which describes the lit image's paths, is
 refused with one. In the [report](#the-report), `integrator` is the view's identity, `shading` the
-Bunny contracts it uses (`none` for `normals`, `depth` and the IDs), `samples` 1 and `bounces` 0; every other line is
+Bunny contracts it uses (`none` for every first-hit view but `shading-normals`), `samples` 1 and `bounces` 0; every other line is
 as for the lit image. `make views` renders every debug view of every built-in scene into
 `out/views/` (`VIEWS=` chooses).
 

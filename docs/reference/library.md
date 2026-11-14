@@ -27,7 +27,7 @@ Every item `crates/lumen/src/lib.rs` re-exports, by what it is for; a test
 | Provenance | `RenderProvenance`, `ProvenanceValue`, `PROVENANCE_FIELDS`, `BUNNY_REV` |
 | Statistics | `SceneStatistics`, `TreeStatistics`, `SceneMemory`, `StatisticsError`, `LEAF_SIZE_BUCKETS`, `TREE_BUILDER`, `TREE_LAYOUT`, `RayOutcomes`, `RayStatistics`, `RayCheckError`, `RunStatistics`, `WorkerStatistics`, `TraversalStatistics`, `TraversalWork` |
 | PNG | `write_png`, `png_len`, `PngError` |
-| Debug views | `View`, `ParseViewError`, `render_view` (and `RenderProvenance::with_view`), `NORMALS_VIEW_ID`, `SHADING_NORMALS_VIEW_ID`, `DEPTH_VIEW_ID`, `PRIMITIVE_ID_VIEW_ID`, `MATERIAL_ID_VIEW_ID`; see [the command's debug views](cli.md#debug-views) and [ADR 0010](../adr/0010-debug-views.md) |
+| Debug views | `View`, `ParseViewError`, `render_view` (and `RenderProvenance::with_view`), `NORMALS_VIEW_ID`, `SHADING_NORMALS_VIEW_ID`, `DEPTH_VIEW_ID`, `PRIMITIVE_ID_VIEW_ID`, `MATERIAL_ID_VIEW_ID`, `WIREFRAME_VIEW_ID`, `BVH_COST_VIEW_ID`; see [the command's debug views](cli.md#debug-views) and [ADR 0010](../adr/0010-debug-views.md) |
 
 ## The library's API is the crate root
 
