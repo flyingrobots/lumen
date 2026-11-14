@@ -15,6 +15,7 @@ mod cli;
 mod failure;
 mod publish;
 mod report;
+mod stats;
 
 use std::ffi::OsString;
 use std::io;
@@ -46,6 +47,7 @@ fn command(args: impl Iterator<Item = OsString>) -> Result<(), Failure> {
     match cli::parse(args).map_err(Failure::Usage)? {
         Command::Help => println!("{USAGE}"),
         Command::Version => println!("lumen {} (bunny {BUNNY_REV})", env!("CARGO_PKG_VERSION")),
+        Command::Stats { scene } => describe(scene)?,
         Command::Render { scene, width, height, settings, threads, band, out } => {
             let threads = threads.unwrap_or_else(available_threads);
             let schedule = Schedule::new(threads, band).map_err(Failure::Threads)?;
@@ -62,6 +64,14 @@ fn available_threads() -> u32 {
     std::thread::available_parallelism()
         .map_or(1, |n| u32::try_from(n.get()).unwrap_or(MAX_THREADS))
         .clamp(1, MAX_THREADS)
+}
+
+/// Builds the chosen scene and prints its statistics: no render, no clock.
+fn describe(scene: BuiltinScene) -> Result<(), Failure> {
+    let built = scene.build().map_err(Failure::Scene)?;
+    let statistics = built.statistics().map_err(Failure::Statistics)?;
+    let mut stdout = io::stdout().lock();
+    stats::write_stats(&mut stdout, scene.id(), &built, &statistics).map_err(Failure::Stdout)
 }
 
 /// Builds the chosen scene, checks that the PNG can be written if asked, renders it, hashes the

@@ -1,8 +1,8 @@
 # ADR 0008: Statistics: what is counted, where, and why it cannot change the image
 
-Status: accepted (flyingrobots/lumen#29). The scene statistics are built. The command's output
-and the ray, run and traversal statistics are decided here and not yet built; each section says
-which.
+Status: accepted (flyingrobots/lumen#29). The scene statistics and `lumen stats` are built. The
+ray, run and traversal statistics and `render --stats` are decided here and not yet built; each
+section says which.
 
 ## Context
 
@@ -157,7 +157,7 @@ profile does inside Bunny's harness, but in lumen it would duplicate numerical t
 outside the tests, which lumen does not do: every number that decides a pixel comes from Bunny,
 and a copy drifts when Bunny's search changes.
 
-### Output (decided, not yet built)
+### Output (`lumen stats` and the format built; `render --stats` not yet)
 
 - **`lumen stats [--scene NAME]`** builds the scene, renders nothing, and prints its name,
   content identity and integrator, then the scene block. It needs no render, so it is its own
@@ -193,5 +193,7 @@ and a copy drifts when Bunny's search changes.
   `TreeStatistics`, `SceneMemory`, `StatisticsError`, `LEAF_SIZE_BUCKETS`, `TREE_BUILDER` and
   `TREE_LAYOUT`. The records are `#[non_exhaustive]`, so counts can be added without breaking a
   caller; a caller reads their fields and cannot construct them.
+- The command gains `stats` and a `Failure::Statistics` (exit code 1), which no built-in scene
+  reaches.
 - Memory byte counts can differ between targets with different type sizes; nothing else in the
   scene statistics can.
