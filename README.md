@@ -435,15 +435,18 @@ python3 $D lumen ~/git/lumen --worktree -- cargo run --locked --release -q -p lu
 | `lit` (default) | the scene's integrator | the lit image, exactly as without `--view` |
 | `normals` | `lumen-view-normals/1` | the first hit's geometric normal `(x, y, z)` as `128 + round(127 * (x, y, z))` on a front face and `128 + round(63 * (x, y, z))` on a back face (dimmer and greyer); black where the ray hits nothing |
 | `shading-normals` | `lumen-view-shading-normals/1` | the same map of the interpolated vertex normal (Bunny's `smooth_normal`) on a triangle with all three vertex normals, and of the geometric normal elsewhere; magenta where the vertex normals cancel |
+| `depth` | `lumen-view-depth/1` | the first hit's distance as grey, `255 - floor(239 * d / R)`, from white at the eye to grey 16 at `R` and beyond; `R` is the largest one-axis distance from the eye to a corner of the scene's box |
+| `primitive-id` | `lumen-view-primitive-id/1` | a colour per triangle: the low three bytes of Bunny's `bunny-sample-hash/1` of its index, each `32 + byte * 224 / 256` |
+| `material-id` | `lumen-view-material-id/1` | a colour per material, the same way from the triangle's material index under another seed |
 
 A debug view traces one ray through each pixel's centre, so it takes `--samples 1` only (its
 default) and does not depend on `--seed`. `--stats` describes the lit image's paths and is refused
 with a debug view. The report's `integrator` line is the view's identity, `shading` the Bunny
-contracts it uses (`none` for `normals`), and `samples 1` and `bounces 0`. Every other line is
-as for the lit image. `make views` renders both views of every built-in scene into `out/`. The
+contracts it uses (`none` for `normals`, `depth` and the IDs), and `samples 1` and `bounces 0`. Every other line is
+as for the lit image. `make views` renders every debug view of every built-in scene into `out/views/`. The
 library function is `render_view`, and `RenderProvenance::with_view` gives the provenance.
 [ADR 0010](docs/adr/0010-debug-views.md) records the design and the views not built yet
-(`depth`, the IDs, `wireframe`, `bvh-cost`, `gray-box` and the lighting terms).
+(`wireframe`, `bvh-cost`, `gray-box` and the lighting terms).
 
 ## The reference scene
 

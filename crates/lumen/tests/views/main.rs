@@ -4,6 +4,7 @@
 //! every other view is checked against pixels derived by hand on constructed scenes, against its
 //! golden hash for each built-in scene, and against itself at every schedule.
 
+mod depth_ids;
 #[path = "../golden/mod.rs"]
 mod golden;
 mod goldens;

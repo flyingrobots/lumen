@@ -38,9 +38,10 @@ after the report (see the README, Statistics). `lumen stats` builds the scene, r
 and prints what it holds: triangles by material, bounds, lights, camera, the shape of its tree
 and its memory.
 --view NAME renders a debug view instead of the lit image: lit (the default), normals (the
-first hit's geometric normal as colour, back faces dimmer) or shading-normals (the interpolated
-vertex normal where a triangle has them); a debug view is one ray through each pixel's centre, so
-it takes --samples 1 only (the default for it), and --stats is for the lit image.
+first hit's geometric normal as colour, back faces dimmer), shading-normals (the interpolated
+vertex normal where a triangle has them), depth (near white to far dark grey), primitive-id or
+material-id (a colour per triangle or per material); a debug view is one ray through each pixel's
+centre, so it takes --samples 1 only (the default for it), and --stats is for the lit image.
 Scenes (--scene NAME): reference, fixed-point (the Stanford bunny in sunglasses at a craps table),
 canyon (craft flying along a fractal canyon under a banded planet).
 Defaults: --scene reference --width 320 --height 180 --samples 4 --seed 0 --band-rows 1, and as

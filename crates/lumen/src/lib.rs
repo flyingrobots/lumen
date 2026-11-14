@@ -93,7 +93,10 @@ pub use scene::{
 pub use scenes::canyon::{canyon_scene, CANYON_SCENE_ID};
 pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
 pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};
-pub use view::{render_view, ParseViewError, View, NORMALS_VIEW_ID, SHADING_NORMALS_VIEW_ID};
+pub use view::{
+    render_view, ParseViewError, View, DEPTH_VIEW_ID, MATERIAL_ID_VIEW_ID, NORMALS_VIEW_ID,
+    PRIMITIVE_ID_VIEW_ID, SHADING_NORMALS_VIEW_ID,
+};
 pub use workers::{
     render_pixels, render_pixels_by_worker, Rendered, Reservation, SpawnError, WorkerError,
     WorkerRun,

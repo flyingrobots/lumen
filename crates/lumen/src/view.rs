@@ -31,6 +31,14 @@ pub enum View {
     /// The shading normal of the first hit: the interpolated vertex normal where the triangle
     /// has three, the geometric normal otherwise ([`SHADING_NORMALS_VIEW_ID`]).
     ShadingNormals,
+    /// The first hit's distance as grey, near light and far dark ([`DEPTH_VIEW_ID`]).
+    Depth,
+    /// A stable colour per triangle, from a hash of its primitive index
+    /// ([`PRIMITIVE_ID_VIEW_ID`]).
+    PrimitiveId,
+    /// A stable colour per material, from a hash of the triangle's material index
+    /// ([`MATERIAL_ID_VIEW_ID`]).
+    MaterialId,
 }
 
 /// The identity of [`View::Normals`].
@@ -39,9 +47,25 @@ pub const NORMALS_VIEW_ID: &str = "lumen-view-normals/1";
 /// The identity of [`View::ShadingNormals`].
 pub const SHADING_NORMALS_VIEW_ID: &str = "lumen-view-shading-normals/1";
 
+/// The identity of [`View::Depth`].
+pub const DEPTH_VIEW_ID: &str = "lumen-view-depth/1";
+
+/// The identity of [`View::PrimitiveId`].
+pub const PRIMITIVE_ID_VIEW_ID: &str = "lumen-view-primitive-id/1";
+
+/// The identity of [`View::MaterialId`].
+pub const MATERIAL_ID_VIEW_ID: &str = "lumen-view-material-id/1";
+
 impl View {
     /// Every view, in the order the command lists them.
-    pub const ALL: [Self; 3] = [Self::Lit, Self::Normals, Self::ShadingNormals];
+    pub const ALL: [Self; 6] = [
+        Self::Lit,
+        Self::Normals,
+        Self::ShadingNormals,
+        Self::Depth,
+        Self::PrimitiveId,
+        Self::MaterialId,
+    ];
 
     /// The name `--view` accepts.
     #[must_use]
@@ -50,6 +74,9 @@ impl View {
             Self::Lit => "lit",
             Self::Normals => "normals",
             Self::ShadingNormals => "shading-normals",
+            Self::Depth => "depth",
+            Self::PrimitiveId => "primitive-id",
+            Self::MaterialId => "material-id",
         }
     }
 
@@ -61,17 +88,20 @@ impl View {
             Self::Lit => None,
             Self::Normals => Some(NORMALS_VIEW_ID),
             Self::ShadingNormals => Some(SHADING_NORMALS_VIEW_ID),
+            Self::Depth => Some(DEPTH_VIEW_ID),
+            Self::PrimitiveId => Some(PRIMITIVE_ID_VIEW_ID),
+            Self::MaterialId => Some(MATERIAL_ID_VIEW_ID),
         }
     }
 
     /// The Bunny shading contracts the view's pixels use, the provenance's `shading` field;
-    /// `None` for [`View::Lit`] (the integrator's). The normals view uses none: the geometric
-    /// normal is the triangle's surface normal, part of the scene.
+    /// `None` for [`View::Lit`] (the integrator's). The normals, depth and ID views use none
+    /// (the ID views' colours come from Bunny's `bunny-sample-hash/1`, a hash, not shading).
     #[must_use]
     pub const fn shading_id(self) -> Option<&'static str> {
         match self {
             Self::Lit => None,
-            Self::Normals => Some("none"),
+            Self::Normals | Self::Depth | Self::PrimitiveId | Self::MaterialId => Some("none"),
             Self::ShadingNormals => Some(bunny_optics::SMOOTH_NORMAL_ID),
         }
     }

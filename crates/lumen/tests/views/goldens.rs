@@ -8,7 +8,7 @@ use lumen::{BuiltinScene, View};
 /// Each scene's view and its golden hash. Recorded on aarch64 Linux (the rust-dev:1.96.0
 /// container on an Apple M5 Pro) at Bunny 2cd551e248d55407a8f27e84dcb26d1b1d8768bd. The reference
 /// scene has no vertex normals, so its two views are the same image.
-pub(crate) const GOLDEN_VIEWS_96X54: [(BuiltinScene, View, &str); 6] = [
+pub(crate) const GOLDEN_VIEWS_96X54: &[(BuiltinScene, View, &str)] = &[
     (
         BuiltinScene::Reference,
         View::Normals,

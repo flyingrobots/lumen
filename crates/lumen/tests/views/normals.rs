@@ -127,7 +127,7 @@ fn a_view_is_its_own_integrator_in_the_provenance() {
 #[test]
 fn every_view_has_its_golden_hash_at_every_schedule() {
     assert_eq!(BUNNY_REV, GOLDEN_BUNNY_REV);
-    for (builtin, view, golden) in GOLDEN_VIEWS_96X54 {
+    for &(builtin, view, golden) in GOLDEN_VIEWS_96X54 {
         let scene = builtin.build().expect("builds");
         for threads in [1, 2, 4, 18] {
             for rows in [1, 3] {

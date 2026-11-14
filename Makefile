@@ -10,7 +10,7 @@
 #   make 4k              the reference scene at 3840x2160, 16 samples
 #   make 4k-fixed-point  the Fixed Point scene at 3840x2160, 64 samples
 #   make 4k-canyon       the canyon scene at 3840x2160, 16 samples
-#   make views           the debug views (normals, shading-normals) of every built-in scene
+#   make views           the debug views of every built-in scene (VIEWS= to choose)
 #   make test            the test suite, debug and release
 #   make nondeterminism  the nondeterminism scan (ADR 0006)
 #   make clippy-bans     the check that every clippy.toml ban resolves and fires (ADR 0006)
@@ -32,7 +32,7 @@ OPEN    ?= 1
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 RUN   = python3 $(DEVRUN) lumen $(ROOT) --worktree --fetch --cpus $(CPUS) --memory $(MEMORY)
 
-VIEWS  ?= normals shading-normals
+VIEWS  ?= normals shading-normals depth primitive-id material-id
 
 .PHONY: views help demo reference fixed-point canyon 4k 4k-fixed-point 4k-canyon test nondeterminism clippy-bans check-devrun
 

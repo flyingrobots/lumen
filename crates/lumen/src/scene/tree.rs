@@ -37,6 +37,13 @@ impl Scene {
         }
     }
 
+    /// The box around every triangle: the tree's root box (Bunny's builder makes it their exact
+    /// extent). Never `None` for a built scene, which has at least one triangle.
+    #[must_use]
+    pub fn bounds(&self) -> Option<FixedAabb3> {
+        self.tree.root.map(|root| root.bounds)
+    }
+
     /// The triangle Bunny's traversal names by its raw `u32` primitive index. `Scene::new` has
     /// checked that every index in the tree names a triangle, so for an index the traversal
     /// reports this is never `None`.

@@ -329,6 +329,7 @@ fn view_selects_a_debug_view_of_one_sample() {
     let unknown = parsed("render --view Normals").expect_err("refused");
     assert_eq!(
         unknown.to_string(),
-        "--view: unknown view \"Normals\"; the views are lit, normals, shading-normals"
+        "--view: unknown view \"Normals\"; the views are lit, normals, shading-normals, depth, \
+         primitive-id, material-id"
     );
 }

@@ -17,6 +17,37 @@ const FRONT: i128 = 127;
 /// colour is 127 from grey along the normal and a back face's 63, so no colour is both.
 const BACK: i128 = 63;
 
+/// The grey of the nearest depth, at distance zero.
+const DEPTH_NEAR: i128 = 255;
+
+/// The grey of the farthest depth, at the range and beyond: above black, so a far hit is never
+/// read as a miss.
+const DEPTH_FAR: i128 = 16;
+
+/// The grey of a hit at `distance` (raw Q32.32, at least zero) over a depth range of `range` raw
+/// units (positive): `255 - floor(239 * distance / range)`, the distance clamped to the range, so
+/// 255 at the eye and 16 at the range and beyond.
+pub(super) fn depth(distance: i64, range: i128) -> [u8; 4] {
+    let range = range.max(1);
+    let near = i128::from(distance).clamp(0, range);
+    let span = DEPTH_NEAR - DEPTH_FAR;
+    let grey = DEPTH_NEAR - span * near / range;
+    let g = u8::try_from(grey.clamp(DEPTH_FAR, DEPTH_NEAR)).unwrap_or(u8::MAX);
+    [g, g, g, 255]
+}
+
+/// The darkest an ID colour's channel is: 32, so no ID colour is black, a miss.
+const ID_FLOOR: u64 = 32;
+
+/// A colour from 64 hashed bits: the three low bytes, each mapped to `32 + byte * 224 / 256`.
+pub(super) fn id(bits: u64) -> [u8; 4] {
+    let channel = |shift: u32| {
+        let byte = (bits >> shift) & 0xFF;
+        u8::try_from(ID_FLOOR + byte * (256 - ID_FLOOR) / 256).unwrap_or(u8::MAX)
+    };
+    [channel(0), channel(8), channel(16), 255]
+}
+
 /// One component of a unit normal (raw Q32.32, at most `2^32 + 1` in magnitude) as a channel:
 /// `128 + round(amplitude * raw / 2^32)`, rounded half up, clamped to a byte.
 fn channel(raw: i64, amplitude: i128) -> u8 {
@@ -57,5 +88,24 @@ mod tests {
         // Half: 63.5 rounds up to 64 (front), 31.5 to 32 (back).
         assert_eq!(normal(v(ONE / 2, 0, 0), true)[0], 192);
         assert_eq!(normal(v(ONE / 2, 0, 0), false)[0], 160);
+    }
+
+    /// Oracle: `255 - floor(239 d / range)` by hand, clamped at both ends.
+    #[test]
+    fn depth_runs_from_white_at_the_eye_to_dark_grey_at_the_range() {
+        let range = 8 * i128::from(ONE);
+        assert_eq!(depth(0, range), [255, 255, 255, 255]);
+        assert_eq!(depth(4 * ONE, range), [136, 136, 136, 255], "half: 255 - 119");
+        assert_eq!(depth(8 * ONE, range), [16, 16, 16, 255]);
+        assert_eq!(depth(80 * ONE, range), [16, 16, 16, 255], "beyond the range");
+        assert_eq!(depth(1, range)[0], 255, "one raw unit floors to no change");
+    }
+
+    /// Oracle: `32 + byte * 224 / 256` per byte, by hand.
+    #[test]
+    fn id_colours_take_the_low_three_bytes_and_are_never_black() {
+        assert_eq!(id(0), [32, 32, 32, 255]);
+        assert_eq!(id(0x00FF_8001), [32, 144, 255, 255]);
+        assert_eq!(id(0xFFFF_FFFF_FF00_0000), [32, 32, 32, 255], "only the low bytes");
     }
 }

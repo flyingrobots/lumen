@@ -1,7 +1,7 @@
 # ADR 0010: Debug views: selection, identity, provenance and stability
 
-Status: accepted (flyingrobots/lumen#16). The mechanism and the `normals` and `shading-normals`
-views are built. The other views the issue lists are not built yet; [Views not yet
+Status: accepted (flyingrobots/lumen#16). The mechanism and the `normals`, `shading-normals`,
+`depth`, `primitive-id` and `material-id` views are built. The other views the issue lists are not built yet; [Views not yet
 built](#views-not-yet-built) says how each fits.
 
 ## Context
@@ -36,7 +36,7 @@ The issue predates most of the current code. These parts no longer fit it as wri
 ### Selection
 
 `View` is a closed enum, `#[non_exhaustive]` so that views can be added: `Lit` (the default),
-`Normals`, `ShadingNormals`. `render_view(scene, view, size, settings, schedule)` renders one.
+`Normals`, `ShadingNormals`, `Depth`, `PrimitiveId`, `MaterialId`. `render_view(scene, view, size, settings, schedule)` renders one.
 `View::Lit` is `render_scheduled` with the same arguments, the same function call, so the lit
 image cannot drift from the default render. The command takes `--view NAME` (the names are
 `View::name`: `lit`, `normals`, `shading-normals`).
@@ -49,8 +49,9 @@ and `new` record `View::Lit`, and `with_view(View::Lit)` changes nothing, so the
 field for field what it was (tested). For any other view:
 
 - `integrator` is the view's identity, `lumen-view-<name>/1`.
-- `shading` names the Bunny shading contracts the view's pixels use. That is `none` for `normals`:
-  the geometric normal is the triangle's surface normal, which is part of the scene. For
+- `shading` names the Bunny shading contracts the view's pixels use. That is `none` for `normals`
+  (the geometric normal is the triangle's surface normal, which is part of the scene), for
+  `depth`, and for the ID views (their colours come from Bunny's hash, not from shading). For
   `shading-normals` it is `bunny-smooth-normal/1`.
 - `samples` is 1 and `bounces` 0 (see below).
 - Every other field is unchanged: the scene, its content digest, the sampler, the tone, the
@@ -101,6 +102,23 @@ own arithmetic is the integer map from a value to a colour:
   `(255, 0, 255)`, which no unit normal reaches. A triangle without all three normals shows its
   geometric normal, as Bunny's smooth shading falls back to it.
 
+- **depth** (`lumen-view-depth/1`): the first hit's distance `d` (`TriangleHit::distance`, raw
+  Q32.32, in multiples of the camera ray's direction) as grey `255 - floor(239 * min(d, R) / R)`:
+  white at the eye and grey 16 at the range `R` and beyond, so a far hit is never black, a miss.
+  `R` is the largest difference, on any one axis, between the eye and a corner of the scene's box
+  (`Scene::bounds`, the tree's root box). A camera ray's direction has no component above 1, so
+  `d` is at least a hit's distance from the eye on every axis. The range is the scene's own: in a
+  scene much larger than its subject (Fixed Point's table runs far behind the bunny), the subject
+  sits near the dark end.
+- **primitive-id** (`lumen-view-primitive-id/1`) and **material-id** (`lumen-view-material-id/1`):
+  64 bits of Bunny's `bunny-sample-hash/1`, `PixelStream::new(seed, index, 0).bits(0, 0)`, of the
+  hit's primitive index or of its triangle's material index (`Scene::material_index`). The seed
+  is `0x7072696D69746976` (the ASCII "primitiv") for triangles and `0x6D6174657269616C`
+  ("material") for materials, so a triangle and a material with the same index get unrelated
+  colours. The three low bytes become red, green and blue, each `32 + byte * 224 / 256`, so no ID
+  colour is black, a miss. Two indices can share a colour (24 bits of hash); a colour never
+  depends on anything but the index.
+
 ### The same scheduler
 
 A view's pixel function goes to `render_pixels`, the scheduler the lit image uses (ADR 0003). The
@@ -112,9 +130,6 @@ bytes for every schedule.
 Each of these fits the mechanism above without changing it: a variant, an identity, a colour map,
 golden hashes and hand-derived tests.
 
-- `depth`: the first hit's distance (`TriangleHit::distance`, in multiples of the camera ray's
-  direction) mapped to grey over a stated range.
-- `primitive-id`, `material-id`: a stable colour from an integer hash of the index.
 - `wireframe`: an edge where the smallest barycentric numerator is below a stated fraction of
   `det`.
 - `bvh-cost`: the camera ray's `box_tests + primitive_tests` from `CountingTracer::closest_counted`
@@ -124,8 +139,9 @@ golden hashes and hand-derived tests.
 
 ## Consequences
 
-- The crate root gains `View`, `ParseViewError`, `render_view`, `NORMALS_VIEW_ID` and
-  `SHADING_NORMALS_VIEW_ID`. `RenderProvenance` gains `with_view` and `view`.
+- The crate root gains `View`, `ParseViewError`, `render_view` and each view's identity constant
+  (`NORMALS_VIEW_ID`, `SHADING_NORMALS_VIEW_ID`, `DEPTH_VIEW_ID`, `PRIMITIVE_ID_VIEW_ID`,
+  `MATERIAL_ID_VIEW_ID`). `Scene` gains `bounds` and `material_index`. `RenderProvenance` gains `with_view` and `view`.
 - The command gains `--view NAME` and three usage errors (an unknown view, `--samples` other than
   1 with a debug view, `--stats` with a debug view).
 - The default output, the lit provenance and every existing golden hash are unchanged: `lit` is

@@ -8,6 +8,15 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Debug views `depth`, `primitive-id` and `material-id` (part of flyingrobots/lumen#16, ADR
+  0010): the first hit's distance as grey over the scene's own range (white at the eye, grey 16
+  at the largest one-axis distance from the eye to a corner of the scene's box), and a stable
+  colour per triangle or per material from Bunny's `bunny-sample-hash/1` of the index. `Scene`
+  gains `bounds` and `material_index`. Golden hashes for every built-in scene, hand-derived
+  pixels on constructed scenes, and five mutations (ramp reversed, an axis left out of the range,
+  seeds swapped, the material colour from the primitive index, the channel floor dropped), each
+  failing a test.
+
 - Debug views (part of flyingrobots/lumen#16, ADR 0010): `lumen render --view NAME` and the
   library's `render_view` draw `normals` (`lumen-view-normals/1`, the first hit's geometric normal
   as colour, back faces at half amplitude) or `shading-normals` (`lumen-view-shading-normals/1`,
