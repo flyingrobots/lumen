@@ -251,8 +251,8 @@ fn crate_root_names() -> Vec<&'static str> {
         let entries = list.split(',').map(|entry| {
             // `path::Item as Alias` makes `Alias` public; otherwise the last segment is the name.
             let entry = entry.trim();
-            let named = entry.rsplit_once(" as ").map_or(entry, |(_, alias)| alias);
-            named.rsplit("::").next().unwrap_or("")
+            let public = entry.rsplit_once(" as ").map_or(entry, |(_, alias)| alias);
+            public.rsplit("::").next().unwrap_or("")
         });
         names.extend(entries.filter(|name| !name.is_empty()));
     }
