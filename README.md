@@ -364,6 +364,64 @@ of tiles; sharing one accumulator between two neighbouring pixels (thread-local 
 stopping after the failing tile instead of the end of its row of tiles; and choosing the first
 failure in column-major order.
 
+## Performance
+
+Timings are information, never part of an image, and never taken from a run that shared the
+machine: every timing below ran in the `rust-dev:1.96.0` container through `devrun` with
+`--exclusive`, release profile. The Docker VM on the Apple M5 Pro used here has 18 CPUs (the
+host has 6 "super" and 12 "performance" cores); `devrun` limits a run to 4 CPUs unless told
+otherwise, so a threaded timing must raise the limit. `--cpus` is a CPU-time quota over all 18 VM
+CPUs, not a choice of cores: a run cannot be pinned to the fast cores.
+
+### Reproduce
+
+```sh
+D=~/git/devcontainers/bin/devrun
+# the 4K reference render on all 18 VM CPUs; prints every part of the time and the hash
+python3 $D lumen ~/git/lumen --commit HEAD --fetch --exclusive --cpus 18 --memory 12g -- \
+  bash -c 'cargo build --release --locked -q && mkdir -p /scratch/out && \
+    /target/release/lumen render --width 3840 --height 2160 --samples 16 --out /scratch/out/4k.png'
+# thread scaling on a mid-size image
+python3 $D lumen ~/git/lumen --commit HEAD --exclusive --cpus 18 --memory 12g -- \
+  bash -c 'cargo build --release --locked -q && for t in 1 2 4 6 8 12 18; do \
+    /target/release/lumen render --width 1280 --height 720 --samples 16 --threads $t | grep -E "^(threads|render-seconds)"; done'
+```
+
+Add `--export 4k.png --out "$(mktemp -d)"` to take the PNG out of the container. The interval to
+compare with a wall-clock target such as flyingrobots/lumen#5's 60 seconds is `total-seconds`:
+the whole command after argument parsing, that is scene build, render, hashing and writing the
+PNG; the report shows each part. `rays-per-second` and `ns-per-ray` divide the render's wall time
+by the rays traced on all threads, so they are not CPU time per ray; the single-thread figure is a
+run with `--threads 1`.
+
+### Readings
+
+One session (`lumen-reference-scene/3`, 1280 by 720, 16 samples per pixel, seed 0, 39 479 111
+rays, 32 by 32 tiles; three runs each, render seconds):
+
+| Threads | Runs | Mean | Speedup | Per thread |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | 8.164, 8.130, 8.170 | 8.155 | 1.00 | 1.00 |
+| 2 | 4.118, 4.144, 4.066 | 4.109 | 1.98 | 0.99 |
+| 4 | 2.064, 2.085, 2.103 | 2.084 | 3.91 | 0.98 |
+| 6 | 1.543, 1.472, 1.476 | 1.497 | 5.45 | 0.91 |
+| 8 | 1.168, 1.171, 1.177 | 1.172 | 6.96 | 0.87 |
+| 12 | 0.853, 0.857, 0.840 | 0.850 | 9.59 | 0.80 |
+| 18 | 0.627, 0.624, 0.627 | 0.626 | 13.03 | 0.72 |
+
+Scaling is near linear to 4 threads and falls off after 6. The likeliest reason, not proven
+here, is the two core classes: if the VM's busiest threads land on the 6 super cores first, the
+threads beyond 6 run on the slower performance cores. Shared memory bandwidth may add to it; the
+scene and its tree are small (31 511 triangles) and stay in cache, and the image is written once
+per tile.
+
+Tile sizes at 18 threads, same image (render seconds, three runs each): 4 by 4: 0.661; 8 by 8:
+0.661; 16 by 16: 0.646; 32 by 32: 0.648; 64 by 64: 0.661; 128 by 128: 0.832; 256 by 256: 1.761;
+1280 by 1 (one row): 0.637; 1280 by 4: 0.669; 1280 by 16: 0.745. Everything from 4 by 4 to 64
+by 64 and single rows is within the noise; from 128 by 128 there are too few tiles to balance 18
+workers (60 tiles of 128, 15 of 256). The default stays 32 by 32: as fast as any, and 8 160 tiles
+at 4K.
+
 ## Image hash and PNG
 
 The image hash is `sha256:` followed by the lowercase hex SHA-256 of the raw RGBA8 bytes
