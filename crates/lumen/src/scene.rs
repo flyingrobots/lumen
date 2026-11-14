@@ -1,27 +1,37 @@
-//! Scenes: triangles, their bounding volume hierarchy, and a camera placement.
+//! Scenes: triangles with materials, a directional light and a sky, the acceleration structure
+//! that traces rays through them, and a camera placement.
 //!
-//! A [`Scene`] is a list of triangles in primitive order, one geometric normal per triangle,
-//! a BVH built over them with Bunny's `build_bvh`, and the placement of a pinhole camera.
-//! [`reference_scene`] builds lumen's built-in reference scene, entirely in code.
+//! A [`Scene`] is built once from a [`SceneSpec`]: a list of triangles in primitive order, a
+//! material (a Bunny [`Albedo`]) for each, the [`Lighting`] and the placement of a pinhole camera.
+//! Building it prepares everything a ray needs, so tracing allocates nothing: Bunny's
+//! `TraceTriangle` and `TriangleSurface` per triangle, and the bounding volume hierarchy (see
+//! [`Scene::new`]). [`reference_scene`] builds lumen's built-in reference scene, entirely in code.
 
 use core::fmt;
 
-use bunny_broadphase::{build_bvh, closest_hit, BvhNode, BvhView, TraversalError};
+use bunny_broadphase::{
+    build_bvh_sah, compact_any_hit, compact_bvh, compact_closest_hit, BvhNode, CompactChild,
+    CompactNode, CompactRoot, CompactView, TraversalError,
+};
 use bunny_geom::FixedAabb3;
 use bunny_linalg::FixedVec3;
 use bunny_num::fixed_q32_32::ONE_RAW;
 use bunny_num::FixedQ32_32;
-use bunny_optics::{CameraError, CameraSpec, PinholeCamera};
-use bunny_query::{TraceRay, TraceTriangle};
+use bunny_optics::{
+    Albedo, CameraError, CameraSpec, DirectionalLight, PinholeCamera, SkyLight, TriangleSurface,
+};
+use bunny_query::{TraceRay, TraceTriangle, TriangleHit};
 
 /// The stable name and version of [`reference_scene`].
 ///
-/// Any change to the reference scene's triangles, their order, or its camera placement is a
-/// new version, and changes every image hash of it.
-pub const REFERENCE_SCENE_ID: &str = "lumen-reference-scene/1";
+/// Any change to the reference scene's triangles, their order, their materials, its lighting or
+/// its camera placement is a new version, and changes every image hash of it. Version 1
+/// (`lumen-reference-scene/1`, geometry and camera only, shaded by normal) is retired: version 2
+/// keeps its triangles, their order and its camera, and adds materials, a light and a sky.
+pub const REFERENCE_SCENE_ID: &str = "lumen-reference-scene/2";
 
-/// The farthest distance a camera ray searches: no limit, raw `i64::MAX`.
-const FAR: FixedQ32_32 = FixedQ32_32::from_raw(i64::MAX);
+/// The farthest distance a camera or bounce ray searches: no limit, raw `i64::MAX`.
+pub const FAR: FixedQ32_32 = FixedQ32_32::from_raw(i64::MAX);
 
 /// Where a pinhole camera stands and where it looks. The image size is chosen per render.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,6 +65,33 @@ impl CameraPlacement {
     }
 }
 
+/// The lights of a scene: at most one directional light and exactly one uniform sky, as in
+/// Geordi's ray-traced scene profile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Lighting {
+    /// The directional light, if any. Bunny's `DirectionalLight::new` has checked that its
+    /// direction's largest component is exactly 1.0 and its irradiance is in range.
+    pub sun: Option<DirectionalLight>,
+    /// The radiance of every ray that leaves the scene.
+    pub sky: SkyLight,
+}
+
+/// What a scene is built from.
+#[derive(Clone, Copy, Debug)]
+pub struct SceneSpec<'a> {
+    /// The triangles' vertices, in primitive order. Each triangle is two-sided; its front face
+    /// is the side from which the vertices appear counter-clockwise.
+    pub triangles: &'a [[FixedVec3; 3]],
+    /// The index into `materials` of each triangle, in primitive order.
+    pub material_of: &'a [u32],
+    /// The diffuse materials.
+    pub materials: &'a [Albedo],
+    /// The light and the sky.
+    pub lighting: Lighting,
+    /// The camera placement.
+    pub camera: CameraPlacement,
+}
+
 /// Why a scene could not be built.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SceneError {
@@ -68,7 +105,14 @@ pub enum SceneError {
         /// The primitive index of the triangle.
         primitive: usize,
     },
-    /// `build_bvh` refused the buffers it was given.
+    /// `material_of` does not have one entry per triangle.
+    MaterialCount,
+    /// The triangle at this primitive index names a material that does not exist.
+    UnknownMaterial {
+        /// The primitive index of the triangle.
+        primitive: usize,
+    },
+    /// The bounding volume hierarchy could not be built or converted.
     BvhBuild,
     /// Memory for the scene's buffers could not be reserved.
     OutOfMemory,
@@ -81,6 +125,10 @@ impl fmt::Display for SceneError {
             Self::TooManyTriangles => f.write_str("scene has more than 2^32 - 1 triangles"),
             Self::OutsideTraceDomain { primitive } => {
                 write!(f, "triangle {primitive} has a vertex outside the trace domain")
+            }
+            Self::MaterialCount => f.write_str("scene needs one material index per triangle"),
+            Self::UnknownMaterial { primitive } => {
+                write!(f, "triangle {primitive} names a material that does not exist")
             }
             Self::BvhBuild => f.write_str("the bounding volume hierarchy could not be built"),
             Self::OutOfMemory => f.write_str("not enough memory for the scene"),
@@ -95,17 +143,15 @@ impl std::error::Error for SceneError {}
 pub struct Hit {
     /// The primitive index of the triangle.
     pub primitive: u32,
-    /// The hit distance, a multiple of the ray's direction (`TriangleHit::distance`).
-    pub distance: FixedQ32_32,
-    /// Whether the ray arrives on the side the triangle's normal points to
-    /// (`TriangleHit::front_face`).
-    pub front_face: bool,
+    /// Bunny's `TriangleHit` for that triangle: the distance (a multiple of the ray's
+    /// direction, floored) and the facing.
+    pub hit: TriangleHit,
 }
 
 /// Why a ray could not be traced.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TraceError {
-    /// The traversal refused the tree (`closest_hit`'s error).
+    /// The traversal refused the tree.
     Traversal(TraversalError),
     /// The traversal named a primitive that the triangle list does not hold, or whose hit
     /// could not be repeated. Neither can happen with a tree built by [`Scene::new`].
@@ -115,73 +161,117 @@ pub enum TraceError {
 impl fmt::Display for TraceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Traversal(error) => write!(f, "closest-hit traversal failed: {error:?}"),
-            Self::InconsistentHit => f.write_str("closest-hit traversal reported no valid hit"),
+            Self::Traversal(error) => write!(f, "traversal failed: {error:?}"),
+            Self::InconsistentHit => f.write_str("traversal reported no valid hit"),
         }
     }
 }
 
 impl std::error::Error for TraceError {}
 
-/// Triangles in primitive order with their normals, BVH and camera placement.
+/// The two ray queries a path needs. [`Scene`] implements it with Bunny's traversals; a test can
+/// wrap a scene to check every query against a test of every triangle.
+pub trait Tracer {
+    /// The nearest triangle `ray` hits at a distance in `0..=FAR`, or `None` for a miss. Of
+    /// triangles at the same distance the lowest primitive index wins.
+    ///
+    /// # Errors
+    ///
+    /// A [`TraceError`] if the traversal fails.
+    fn closest(&self, ray: &TraceRay) -> Result<Option<Hit>, TraceError>;
+
+    /// Whether `ray` hits any triangle at a distance in `0..=t_max`.
+    ///
+    /// # Errors
+    ///
+    /// A [`TraceError`] if the traversal fails.
+    fn occluded(&self, ray: &TraceRay, t_max: FixedQ32_32) -> Result<bool, TraceError>;
+}
+
+/// Triangles in primitive order with their surfaces, materials, lighting, acceleration structure
+/// and camera placement.
 #[derive(Clone, Debug)]
 pub struct Scene {
     triangles: Vec<TraceTriangle>,
-    normals: Vec<FixedVec3>,
-    nodes: Vec<BvhNode>,
-    prim_indices: Vec<u32>,
+    surfaces: Vec<Option<TriangleSurface>>,
+    material_of: Vec<u32>,
+    materials: Vec<Albedo>,
+    lighting: Lighting,
     camera: CameraPlacement,
+    tree: Tree,
+}
+
+/// A compact BVH: its root, its nodes and the primitive-index buffer its leaves refer to.
+#[derive(Clone, Debug)]
+struct Tree {
+    root: Option<CompactRoot>,
+    nodes: Vec<CompactNode>,
+    prim_indices: Vec<u32>,
 }
 
 impl Scene {
-    /// Builds a scene from triangles, given as vertex triples in primitive order.
+    /// Builds a scene.
     ///
-    /// Each triangle's normal is `normalize(cross(v1 - v0, v2 - v0))` with Bunny's
-    /// `FixedVec3` operations: every product is a Q32.32 multiplication rounded to nearest
-    /// with ties to even, the length is the floor of the exact square root of the raw squares,
-    /// and each component is divided by it with the same rounding. Inside the trace domain an
-    /// edge is below 512 units on each axis, so no product or difference saturates, and no
-    /// normal component exceeds 1.0 in magnitude (each component's magnitude is at most the
-    /// floored length). A zero-area triangle gets the zero normal; Bunny's triangle test never
-    /// reports a hit on it.
+    /// Each triangle becomes a Bunny `TraceTriangle` and, unless it has zero area, a
+    /// `TriangleSurface` (its exact plane, unit normal and shading frame), built once here and
+    /// never per hit. Bunny's exact triangle test never reports a hit on a zero-area triangle,
+    /// so such a triangle needs no surface.
+    ///
+    /// The acceleration structure is a tree from Bunny's binned SAH builder `build_bvh_sah`,
+    /// converted to Bunny's compact layout by `compact_bvh` and searched with
+    /// `compact_closest_hit` and `compact_any_hit`. Bunny guarantees that their answers equal
+    /// those of `closest_hit` and `any_hit` on any tree over the same triangles, and so a test
+    /// of every triangle; the tree changes only the speed.
     ///
     /// # Errors
     ///
     /// [`SceneError::Empty`] for no triangles, [`SceneError::TooManyTriangles`] for more than
-    /// `u32::MAX`, [`SceneError::OutsideTraceDomain`] for the first triangle Bunny's
-    /// `TraceTriangle::new` refuses, [`SceneError::OutOfMemory`] when a buffer cannot be
-    /// reserved, and [`SceneError::BvhBuild`] if `build_bvh` refuses its buffers.
-    pub fn new(vertices: &[[FixedVec3; 3]], camera: CameraPlacement) -> Result<Self, SceneError> {
-        let count = vertices.len();
+    /// `u32::MAX`, [`SceneError::MaterialCount`] when `material_of` has the wrong length,
+    /// [`SceneError::OutsideTraceDomain`] for the first triangle Bunny's `TraceTriangle::new`
+    /// refuses, [`SceneError::UnknownMaterial`] for the first triangle whose material index is
+    /// out of range, [`SceneError::OutOfMemory`] when a buffer cannot be reserved, and
+    /// [`SceneError::BvhBuild`] if Bunny refuses to build or convert the tree.
+    pub fn new(spec: &SceneSpec<'_>) -> Result<Self, SceneError> {
+        let count = spec.triangles.len();
         if count == 0 {
             return Err(SceneError::Empty);
         }
         if u32::try_from(count).is_err() {
             return Err(SceneError::TooManyTriangles);
         }
+        if spec.material_of.len() != count {
+            return Err(SceneError::MaterialCount);
+        }
         let mut triangles = reserved(count)?;
-        let mut normals = reserved(count)?;
+        let mut surfaces = reserved(count)?;
         let mut boxes: Vec<FixedAabb3> = reserved(count)?;
-        for (primitive, &[v0, v1, v2]) in vertices.iter().enumerate() {
+        for (primitive, (&[v0, v1, v2], &material)) in
+            spec.triangles.iter().zip(spec.material_of).enumerate()
+        {
             let triangle = TraceTriangle::new(v0, v1, v2)
                 .ok_or(SceneError::OutsideTraceDomain { primitive })?;
+            let known = usize::try_from(material).is_ok_and(|index| index < spec.materials.len());
+            if !known {
+                return Err(SceneError::UnknownMaterial { primitive });
+            }
             boxes.push(triangle.bounds());
+            surfaces.push(TriangleSurface::new(&triangle));
             triangles.push(triangle);
-            normals.push((v1 - v0).cross(v2 - v0).normalize().unwrap_or(ZERO_VEC));
         }
-        let node_count = count.checked_mul(2).ok_or(SceneError::TooManyTriangles)?;
-        let empty = BvhNode {
-            bounds: FixedAabb3::new(ZERO_VEC, ZERO_VEC),
-            first_child_or_prim_idx: 0,
-            prim_count: 0,
-        };
-        let mut nodes = reserved(node_count)?;
-        nodes.resize(node_count, empty);
-        let mut prim_indices = reserved(count)?;
-        prim_indices.resize(count, 0_u32);
-        let used = build_bvh(&mut nodes, &mut prim_indices, &boxes).ok_or(SceneError::BvhBuild)?;
-        nodes.truncate(used);
-        Ok(Self { triangles, normals, nodes, prim_indices, camera })
+        let tree = build_tree(&boxes)?;
+        let mut material_of = reserved(count)?;
+        material_of.extend_from_slice(spec.material_of);
+        let mut materials = reserved(spec.materials.len())?;
+        materials.extend_from_slice(spec.materials);
+        Ok(Self {
+            triangles,
+            surfaces,
+            material_of,
+            materials,
+            lighting: spec.lighting,
+            camera: spec.camera,
+            tree,
+        })
     }
 
     /// The triangles, in primitive order.
@@ -190,10 +280,24 @@ impl Scene {
         &self.triangles
     }
 
-    /// The geometric normal of each triangle, in primitive order (see [`Scene::new`]).
+    /// The prepared surface of the triangle at `primitive`, or `None` for an index out of range
+    /// or a zero-area triangle.
     #[must_use]
-    pub fn normals(&self) -> &[FixedVec3] {
-        &self.normals
+    pub fn surface(&self, primitive: u32) -> Option<&TriangleSurface> {
+        self.surfaces.get(usize::try_from(primitive).ok()?)?.as_ref()
+    }
+
+    /// The albedo of the triangle at `primitive`, or `None` for an index out of range.
+    #[must_use]
+    pub fn albedo(&self, primitive: u32) -> Option<&Albedo> {
+        let material = *self.material_of.get(usize::try_from(primitive).ok()?)?;
+        self.materials.get(usize::try_from(material).ok()?)
+    }
+
+    /// The light and the sky.
+    #[must_use]
+    pub const fn lighting(&self) -> Lighting {
+        self.lighting
     }
 
     /// The camera placement.
@@ -202,39 +306,76 @@ impl Scene {
         self.camera
     }
 
-    /// The nearest triangle `ray` hits at any distance from zero up, or `None` for a miss.
-    ///
-    /// This is Bunny's `closest_hit` over the scene's BVH with `TraceRay::hit_triangle` as
-    /// the primitive test (`t_min` zero, `t_max` the traversal's limit). Of triangles at the
-    /// same distance the lowest primitive index wins, and the answer equals a test of every
-    /// triangle. The winner is tested once more to read its facing.
-    ///
-    /// # Errors
-    ///
-    /// [`TraceError::Traversal`] if the traversal refuses the tree, and
-    /// [`TraceError::InconsistentHit`] if the winner cannot be found again; neither happens
-    /// for a scene built by [`Scene::new`].
-    pub fn closest(&self, ray: &TraceRay) -> Result<Option<Hit>, TraceError> {
-        let bvh = BvhView::new(&self.nodes, &self.prim_indices);
-        let found = closest_hit(bvh, ray, FAR, |primitive, limit| {
-            let triangle = self.triangles.get(usize::try_from(primitive).ok()?)?;
+    fn view(&self) -> CompactView<'_> {
+        CompactView {
+            root: self.tree.root,
+            nodes: &self.tree.nodes,
+            prim_indices: &self.tree.prim_indices,
+        }
+    }
+
+    fn triangle(&self, primitive: u32) -> Option<&TraceTriangle> {
+        self.triangles.get(usize::try_from(primitive).ok()?)
+    }
+}
+
+impl Tracer for Scene {
+    /// Bunny's `compact_closest_hit` over the scene's tree with `TraceRay::hit_triangle` as the
+    /// primitive test (`t_min` zero, `t_max` the traversal's limit, at first [`FAR`]). The
+    /// winner is tested once more, at exactly its distance, to read its full `TriangleHit`.
+    fn closest(&self, ray: &TraceRay) -> Result<Option<Hit>, TraceError> {
+        let found = compact_closest_hit(self.view(), ray, FAR, |primitive, limit| {
+            let triangle = self.triangle(primitive)?;
             ray.hit_triangle(triangle, FixedQ32_32::ZERO, limit).map(|hit| hit.distance)
         })
         .map_err(TraceError::Traversal)?;
         let Some(found) = found else { return Ok(None) };
-        let triangle = usize::try_from(found.primitive)
-            .ok()
-            .and_then(|index| self.triangles.get(index))
-            .ok_or(TraceError::InconsistentHit)?;
+        let triangle = self.triangle(found.primitive).ok_or(TraceError::InconsistentHit)?;
         let hit = ray
             .hit_triangle(triangle, found.distance, found.distance)
             .ok_or(TraceError::InconsistentHit)?;
-        Ok(Some(Hit {
-            primitive: found.primitive,
-            distance: found.distance,
-            front_face: hit.front_face,
-        }))
+        Ok(Some(Hit { primitive: found.primitive, hit }))
     }
+
+    /// Bunny's `compact_any_hit` over the scene's tree with `TraceRay::hit_triangle` (`t_min`
+    /// zero, `t_max` as given) as the primitive test.
+    fn occluded(&self, ray: &TraceRay, t_max: FixedQ32_32) -> Result<bool, TraceError> {
+        compact_any_hit(self.view(), ray, t_max, |primitive| {
+            self.triangle(primitive).is_some_and(|triangle| {
+                ray.hit_triangle(triangle, FixedQ32_32::ZERO, t_max).is_some()
+            })
+        })
+        .map_err(TraceError::Traversal)
+    }
+}
+
+/// A tree over `boxes` from `build_bvh_sah`, converted by `compact_bvh`: the compact root, the
+/// compact nodes and the primitive-index buffer.
+fn build_tree(boxes: &[FixedAabb3]) -> Result<Tree, SceneError> {
+    let count = boxes.len();
+    let node_count = count.checked_mul(2).ok_or(SceneError::TooManyTriangles)?;
+    let empty_box = FixedAabb3::new(ZERO_VEC, ZERO_VEC);
+    let empty = BvhNode { bounds: empty_box, first_child_or_prim_idx: 0, prim_count: 0 };
+    let mut nodes = reserved(node_count)?;
+    nodes.resize(node_count, empty);
+    let mut prim_indices = reserved(count)?;
+    prim_indices.resize(count, 0_u32);
+    let used = build_bvh_sah(&mut nodes, &mut prim_indices, boxes).ok_or(SceneError::BvhBuild)?;
+    nodes.truncate(used);
+    // A tree of n nodes has (n - 1) / 2 interior nodes, one compact node each.
+    let interior = used.saturating_sub(1) / 2;
+    let blank = CompactNode {
+        bounds: [empty_box, empty_box],
+        children: [CompactChild::default(), CompactChild::default()],
+    };
+    let mut compact = reserved(interior)?;
+    compact.resize(interior, blank);
+    let converted = compact_bvh(&nodes, &mut compact).map_err(|_| SceneError::BvhBuild)?;
+    let root = converted.map(|(root, written)| {
+        compact.truncate(written);
+        root
+    });
+    Ok(Tree { root, nodes: compact, prim_indices })
 }
 
 const ZERO_VEC: FixedVec3 = FixedVec3::new(FixedQ32_32::ZERO, FixedQ32_32::ZERO, FixedQ32_32::ZERO);
@@ -325,7 +466,7 @@ fn sphere_point(face: usize, a: i64, b: i64) -> FixedVec3 {
 /// ground, from the camera's side for the wall), so its normal points outward.
 #[must_use]
 pub fn reference_triangles() -> Vec<[FixedVec3; 3]> {
-    let mut triangles = Vec::with_capacity(4 + 8 + 6 * 48 * 48 * 2);
+    let mut triangles = Vec::with_capacity(REFERENCE_TRIANGLE_COUNT);
     let ground = |x, z| at(x, GROUND_Y, z);
     let (g, w) = (GROUND_HALF, WALL_HALF);
     triangles.push([ground(-g, g), ground(g, g), ground(g, -g)]);
@@ -364,7 +505,7 @@ pub fn reference_triangles() -> Vec<[FixedVec3; 3]> {
 
 /// The reference camera: at `(0, 1, 5)`, looking along `(0, -0.25, -1)` (down toward the
 /// sphere), up `+Y`, with a vertical field of view whose half-angle has tangent 0.5 (about
-/// 53 degrees in all).
+/// 53 degrees in all). Unchanged from version 1.
 #[must_use]
 pub const fn reference_camera() -> CameraPlacement {
     CameraPlacement {
@@ -375,28 +516,125 @@ pub const fn reference_camera() -> CameraPlacement {
     }
 }
 
-/// The built-in reference scene, [`REFERENCE_SCENE_ID`]: [`reference_triangles`] seen by
-/// [`reference_camera`].
+/// A Q32.32 value of `n / 256`.
+const fn per_256(n: i64) -> FixedQ32_32 {
+    FixedQ32_32::from_raw(n * (ONE_RAW / 256))
+}
+
+/// The reference materials, as `[red, green, blue]` linear albedo in 256ths, indexed by
+/// [`REFERENCE_MATERIAL_OF`]: a light warm grey ground, a pale stone wall, a blue octahedron
+/// and a red sphere.
+pub const REFERENCE_ALBEDO_256: [[i64; 3]; 4] =
+    [[150, 145, 135], [175, 165, 145], [50, 95, 200], [205, 60, 45]];
+
+/// The material index of each object of [`reference_triangles`]: ground 0, wall 1, octahedron
+/// 2, sphere 3.
+pub const REFERENCE_MATERIAL_OF: [u32; 4] = [0, 1, 2, 3];
+
+/// The direction toward the reference sun, in sixteenths: `(0.5, 0.3125, 1.0)`. It comes from
+/// the right, from in front of the scene (the camera's side) and from about 15 degrees above
+/// the horizon, so the sphere and the octahedron cast long shadows back across the ground and
+/// onto the wall. Its largest component is exactly 1.0, as Bunny's `DirectionalLight` requires.
+pub const REFERENCE_TOWARD_SUN_16: [i64; 3] = [8, 5, 16];
+
+/// The reference sun's irradiance per channel, in 256ths: about `(4.0, 3.8, 3.5)`, slightly warm.
+pub const REFERENCE_SUN_256: [i64; 3] = [1024, 970, 900];
+
+/// The reference sky's radiance per channel, in 256ths: about `(0.25, 0.33, 0.47)`, a pale blue.
+pub const REFERENCE_SKY_256: [i64; 3] = [64, 85, 120];
+
+/// The reference lighting: [`REFERENCE_TOWARD_SUN_16`] at [`REFERENCE_SUN_256`] and a
+/// [`REFERENCE_SKY_256`] sky.
+///
+/// # Panics
+///
+/// Never: the constants are inside Bunny's accepted ranges (a test checks it), so the Bunny
+/// constructors accept them.
+#[must_use]
+pub fn reference_lighting() -> Lighting {
+    let [x, y, z] = REFERENCE_TOWARD_SUN_16.map(|c| FixedQ32_32::from_raw(c * (ONE_RAW / 16)));
+    let sun = DirectionalLight::new(FixedVec3::new(x, y, z), REFERENCE_SUN_256.map(per_256))
+        .expect("the reference sun is a valid Bunny light");
+    let sky = SkyLight::new(REFERENCE_SKY_256.map(per_256)).expect("the reference sky is valid");
+    Lighting { sun: Some(sun), sky }
+}
+
+/// The reference materials, [`REFERENCE_ALBEDO_256`] as Bunny albedos.
+///
+/// # Panics
+///
+/// Never: every channel is in `0..=256`, inside Bunny's `0..=1.0`.
+#[must_use]
+pub fn reference_materials() -> [Albedo; 4] {
+    REFERENCE_ALBEDO_256
+        .map(|channels| Albedo::new(channels.map(per_256)).expect("albedo channels are in 0..=1"))
+}
+
+/// The material index of each reference triangle, in primitive order.
+#[must_use]
+pub fn reference_material_of() -> Vec<u32> {
+    let [ground, wall, octahedron, sphere] = REFERENCE_MATERIAL_OF;
+    let mut material_of = Vec::with_capacity(REFERENCE_TRIANGLE_COUNT);
+    material_of.extend([ground; 2]);
+    material_of.extend([wall; 2]);
+    material_of.extend([octahedron; 8]);
+    material_of.resize(REFERENCE_TRIANGLE_COUNT, sphere);
+    material_of
+}
+
+/// The number of triangles of the reference scene: 2 + 2 + 8 + 27 648.
+pub const REFERENCE_TRIANGLE_COUNT: usize = 4 + 8 + 6 * 48 * 48 * 2;
+
+/// The built-in reference scene, [`REFERENCE_SCENE_ID`]: [`reference_triangles`] with
+/// [`reference_materials`] and [`reference_lighting`], seen by [`reference_camera`].
 ///
 /// # Errors
 ///
 /// [`SceneError::OutOfMemory`] when its buffers cannot be reserved. The other errors of
 /// [`Scene::new`] do not occur for this scene; a test checks it builds.
 pub fn reference_scene() -> Result<Scene, SceneError> {
-    Scene::new(&reference_triangles(), reference_camera())
+    let triangles = reference_triangles();
+    let material_of = reference_material_of();
+    let materials = reference_materials();
+    Scene::new(&SceneSpec {
+        triangles: &triangles,
+        material_of: &material_of,
+        materials: &materials,
+        lighting: reference_lighting(),
+        camera: reference_camera(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn grey() -> Albedo {
+        Albedo::new([per_256(128); 3]).expect("valid")
+    }
+
+    fn dark() -> Lighting {
+        Lighting { sun: None, sky: SkyLight::new([FixedQ32_32::ZERO; 3]).expect("valid") }
+    }
+
     #[test]
-    fn the_reference_scene_has_the_stated_triangles() {
-        assert_eq!(reference_triangles().len(), 2 + 2 + 8 + 27_648);
+    fn the_reference_scene_has_the_stated_triangles_and_materials() {
+        assert_eq!(reference_triangles().len(), REFERENCE_TRIANGLE_COUNT);
+        assert_eq!(REFERENCE_TRIANGLE_COUNT, 27_660);
         let scene = reference_scene().expect("the reference scene builds");
         assert_eq!(scene.triangles().len(), 27_660);
-        // A tree over n primitives uses at most 2n - 1 nodes.
-        assert!(scene.nodes.len() < 2 * 27_660);
+        // A tree over n primitives has at most n - 1 interior nodes.
+        assert!(scene.tree.nodes.len() < 27_660);
+        let materials = reference_materials();
+        for (primitive, want) in [(0, 0), (1, 0), (2, 1), (3, 1), (4, 2), (11, 2), (12, 3)] {
+            assert_eq!(scene.albedo(primitive), Some(&materials[want]), "primitive {primitive}");
+        }
+        assert_eq!(scene.albedo(27_659), Some(&materials[3]));
+        assert_eq!(scene.albedo(27_660), None);
+        let lighting = reference_lighting();
+        assert_eq!(scene.lighting(), lighting);
+        let sun = lighting.sun.expect("a sun");
+        assert_eq!(sun.toward_light().z, FixedQ32_32::ONE);
     }
 
     #[test]
@@ -415,7 +653,7 @@ mod tests {
     }
 
     #[test]
-    fn every_normal_points_out_of_its_object() {
+    fn every_surface_normal_points_out_of_its_object() {
         let scene = reference_scene().expect("the reference scene builds");
         let (cx, cy, cz) = OCTAHEDRON_CENTRE;
         let centre_of = |primitive: usize| match primitive {
@@ -423,17 +661,17 @@ mod tests {
             4..=11 => Some(at(cx, cy, cz)),
             _ => Some(at(0, 0, 0)),
         };
-        for (primitive, (triangle, normal)) in
-            scene.triangles().iter().zip(scene.normals()).enumerate()
-        {
-            assert_ne!(*normal, ZERO_VEC, "triangle {primitive} is degenerate");
+        for (primitive, triangle) in scene.triangles().iter().enumerate() {
+            let index = u32::try_from(primitive).expect("fits");
+            let surface = scene.surface(index).expect("no reference triangle is degenerate");
+            let normal = surface.frame().normal();
             let expected_axis = match primitive {
                 0 | 1 => Some(at(0, U, 0)),
                 2 | 3 => Some(at(0, 0, U)),
                 _ => None,
             };
             if let Some(axis) = expected_axis {
-                assert_eq!(*normal, axis, "triangle {primitive}");
+                assert_eq!(normal, axis, "triangle {primitive}");
             }
             if let Some(centre) = centre_of(primitive) {
                 let [a, b, c] = triangle.vertices();
@@ -448,7 +686,8 @@ mod tests {
         let scene = reference_scene().expect("the reference scene builds");
         // 1 / sqrt(3) = 0.57735026918962576..., times 2^32 = 2479700524.8...
         let third = 2_479_700_525_i64;
-        for normal in &scene.normals()[4..12] {
+        for primitive in 4..12 {
+            let normal = scene.surface(primitive).expect("surface").frame().normal();
             for c in [normal.x, normal.y, normal.z] {
                 assert!((c.raw().abs() - third).abs() <= 2, "{c:?}");
             }
@@ -458,13 +697,67 @@ mod tests {
     #[test]
     fn scene_construction_refuses_bad_input() {
         let camera = reference_camera();
-        assert_eq!(Scene::new(&[], camera).err(), Some(SceneError::Empty));
+        let materials = [grey()];
+        let spec = |triangles: &[[FixedVec3; 3]], material_of: &[u32]| {
+            let spec = SceneSpec {
+                triangles,
+                material_of,
+                materials: &materials,
+                lighting: dark(),
+                camera,
+            };
+            Scene::new(&spec).err()
+        };
+        assert_eq!(spec(&[], &[]), Some(SceneError::Empty));
         let far = FixedVec3::new(grid(256 * U), FixedQ32_32::ZERO, FixedQ32_32::ZERO);
         let fine = at(0, 0, 0);
-        let triangles = [[fine, at(U, 0, 0), at(0, U, 0)], [fine, far, at(0, U, 0)]];
+        let good = [fine, at(U, 0, 0), at(0, U, 0)];
+        let triangles = [good, [fine, far, at(0, U, 0)]];
         assert_eq!(
-            Scene::new(&triangles, camera).err(),
+            spec(&triangles, &[0, 0]),
             Some(SceneError::OutsideTraceDomain { primitive: 1 })
         );
+        assert_eq!(spec(&[good], &[]), Some(SceneError::MaterialCount));
+        assert_eq!(
+            spec(&[good, good], &[0, 1]),
+            Some(SceneError::UnknownMaterial { primitive: 1 })
+        );
+        // A zero-area triangle is accepted and has no surface.
+        let flat = [fine, fine, at(U, 0, 0)];
+        let built = Scene::new(&SceneSpec {
+            triangles: &[good, flat],
+            material_of: &[0, 0],
+            materials: &materials,
+            lighting: dark(),
+            camera,
+        })
+        .expect("builds");
+        assert!(built.surface(0).is_some());
+        assert!(built.surface(1).is_none());
+        assert!(built.surface(2).is_none());
+    }
+
+    /// A one-triangle scene is a one-leaf tree, which the compact layout stores in its root
+    /// with no compact node; tracing still works.
+    #[test]
+    fn a_one_triangle_scene_traces() {
+        let triangle = [at(-U, -U, 0), at(U, -U, 0), at(0, U, 0)];
+        let scene = Scene::new(&SceneSpec {
+            triangles: &[triangle],
+            material_of: &[0],
+            materials: &[grey()],
+            lighting: dark(),
+            camera: reference_camera(),
+        })
+        .expect("builds");
+        assert!(scene.tree.nodes.is_empty());
+        let toward = TraceRay::new(at(0, 0, 4 * U), at(0, 0, -U)).expect("ray");
+        let hit = scene.closest(&toward).expect("traces").expect("hits");
+        assert_eq!((hit.primitive, hit.hit.distance, hit.hit.front_face), (0, grid(4 * U), true));
+        assert!(scene.occluded(&toward, FAR).expect("traces"));
+        assert!(!scene.occluded(&toward, grid(4 * U - 1)).expect("traces"));
+        let away = TraceRay::new(at(0, 0, 4 * U), at(0, 0, U)).expect("ray");
+        assert_eq!(scene.closest(&away).expect("traces"), None);
+        assert!(!scene.occluded(&away, FAR).expect("traces"));
     }
 }

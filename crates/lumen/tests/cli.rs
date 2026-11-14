@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use lumen::png::write_png;
-use lumen::render_reference;
+use lumen::{render_reference, RenderSettings};
 
 fn lumen(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_lumen")).args(args).output().expect("lumen runs")
@@ -42,24 +42,49 @@ fn assert_refused(output: &Output, code: i32, message: &str) {
 fn two_processes_write_the_same_file_and_print_the_same_hash() {
     let dir = scratch("determinism");
     let (a, b) = (dir.join("a.png"), dir.join("b.png"));
-    let mut hashes = Vec::new();
+    let (mut hashes, mut rays) = (Vec::new(), Vec::new());
     for path in [&a, &b] {
-        let output = lumen(&["render", "--width", "40", "--height", "24", "--out", path_str(path)]);
+        let output = lumen(&[
+            "render",
+            "--width",
+            "40",
+            "--height",
+            "24",
+            "--samples",
+            "2",
+            "--seed",
+            "5",
+            "--out",
+            path_str(path),
+        ]);
         assert!(output.status.success(), "{}", text(&output.stderr));
         let stdout = text(&output.stdout);
-        assert_eq!(field(&stdout, "scene"), "lumen-reference-scene/1");
-        assert_eq!(field(&stdout, "shading"), "lumen-normal-shading/1");
+        assert_eq!(field(&stdout, "scene"), "lumen-reference-scene/2");
+        assert_eq!(field(&stdout, "integrator"), "lumen-diffuse-path/1");
+        assert_eq!(field(&stdout, "shading"), "bunny-diffuse-shading/1");
+        assert_eq!(field(&stdout, "sampler"), "bunny-sobol-owen/1");
         assert_eq!(field(&stdout, "tone"), "bunny-tone-srgb/1");
+        assert_eq!(field(&stdout, "encoding"), "bunny-rgba8-opaque/1");
         assert_eq!(field(&stdout, "bunny"), lumen::BUNNY_REV);
         assert_eq!(field(&stdout, "size"), "40x24");
+        assert_eq!(field(&stdout, "samples"), "2");
+        assert_eq!(field(&stdout, "seed"), "5");
+        assert_eq!(field(&stdout, "bounces"), "1");
+        rays.push(field(&stdout, "rays").to_owned());
         hashes.push(field(&stdout, "image").to_owned());
     }
     let (file_a, file_b) = (std::fs::read(&a).expect("a"), std::fs::read(&b).expect("b"));
     assert_eq!(file_a, file_b);
     assert_eq!(hashes[0], hashes[1]);
-    // The printed hash and the file are those of the library's render of the same size.
-    let image = render_reference(40, 24).expect("renders");
+    // The printed hash, ray count and file are those of the library's render of the same size
+    // and settings.
+    let render =
+        render_reference(40, 24, RenderSettings::new(2, 5).expect("valid")).expect("renders");
+    let image = render.image;
     assert_eq!(hashes[0], image.hash());
+    let r = render.rays;
+    assert_eq!(rays[0], format!("{} (closest {}, shadow {})", r.total(), r.closest, r.shadow));
+    assert_eq!(rays[0], rays[1]);
     let mut expected = Vec::new();
     write_png(&mut expected, &image).expect("writes to memory");
     assert_eq!(file_a, expected);
@@ -89,12 +114,27 @@ fn bad_arguments_are_refused_with_usage() {
     assert_refused(
         &lumen(&["render", "--width", "wide", "--out", "x.png"]),
         2,
-        "--width needs a whole number of pixels",
+        "--width needs a whole number",
     );
     assert_refused(
         &lumen(&["render", "--height", "-3", "--out", "x.png"]),
         2,
-        "--height needs a whole number of pixels",
+        "--height needs a whole number",
+    );
+    assert_refused(
+        &lumen(&["render", "--samples", "3", "--out", "x.png"]),
+        2,
+        "samples per pixel must be a power of two",
+    );
+    assert_refused(
+        &lumen(&["render", "--samples", "2048", "--out", "x.png"]),
+        2,
+        "samples per pixel must be at most 1024",
+    );
+    assert_refused(
+        &lumen(&["render", "--seed", "4294967296", "--out", "x.png"]),
+        2,
+        "--seed needs a whole number",
     );
     assert_refused(
         &lumen(&["render", "--out", "a", "--out", "b"]),
@@ -131,4 +171,43 @@ fn an_unwritable_path_is_reported() {
     // A directory is not a file.
     let output = lumen(&["render", "--width", "4", "--height", "3", "--out", path_str(&dir)]);
     assert_refused(&output, 1, path_str(&dir));
+}
+
+/// A non-Unicode output path (possible on Unix) is written to, with its bytes kept; a
+/// non-Unicode number is refused with a usage error. Neither panics.
+#[cfg(unix)]
+#[test]
+fn non_unicode_arguments_never_panic() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    let dir = scratch("non-unicode");
+    let name = OsStr::from_bytes(b"lit-\xff\xfe.png");
+    let out = dir.join(name);
+    let output = Command::new(env!("CARGO_BIN_EXE_lumen"))
+        .args([OsStr::new("render"), OsStr::new("--width"), OsStr::new("4")])
+        .args([OsStr::new("--height"), OsStr::new("3"), OsStr::new("--out"), out.as_os_str()])
+        .output()
+        .expect("lumen runs");
+    let stderr = text(&output.stderr);
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    // Linux file names are bytes, so the file is written. Other Unix file systems (APFS on
+    // macOS) may refuse the name, which must then be a normal I/O error, not a panic.
+    if cfg!(target_os = "linux") || output.status.success() {
+        assert!(output.status.success(), "{stderr}");
+        let written = std::fs::read(&out).expect("the file exists under its non-Unicode name");
+        let mut expected = Vec::new();
+        let image = render_reference(4, 3, RenderSettings::new(4, 0).expect("valid"))
+            .expect("renders")
+            .image;
+        write_png(&mut expected, &image).expect("writes to memory");
+        assert_eq!(written, expected);
+    } else {
+        assert_refused(&output, 1, "lit-");
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_lumen"))
+        .args([OsStr::new("render"), OsStr::new("--samples"), name])
+        .args([OsStr::new("--out"), OsStr::new("x.png")])
+        .output()
+        .expect("lumen runs");
+    assert_refused(&output, 2, "--samples needs a whole number, not the non-Unicode");
 }
