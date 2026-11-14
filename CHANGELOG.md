@@ -8,6 +8,16 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The scan follows aliases across files (flyingrobots/lumen#157): an `extern crate std as host`
+  at the crate root, or a `pub use std as x` reached as `crate::m::x` from another file, is
+  resolved in every core file of every deterministic crate. A glob import of a std module and a
+  std path built from a macro metavariable (`std::$m::var_os`, `$root::fs`) are refused as the
+  new rule `hidden-path`. Before, these passed both layers under a `cfg` the Linux Clippy run
+  does not build.
+- A float type under another name is refused (flyingrobots/lumen#156): `clippy.toml` bans
+  `c_double` and `c_float` of `core::ffi` (which `std::ffi` re-exports) and of `std::os::raw`, and the
+  scan names `c_double`, `c_float`, `f16` and `f128` (and names with the word `f16` or `f128`).
+  Before, `<core::ffi::c_double as From<u32>>::from(x).sin()` passed both layers in the core.
 - Bunny is pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (was
   `d4fe51d38fa10f8d6496bd110955314edac30bbf`), Bunny's main with the counted compact traversals
   (`compact_closest_hit_counted`, `compact_any_hit_counted` and `TraversalCounts`,
