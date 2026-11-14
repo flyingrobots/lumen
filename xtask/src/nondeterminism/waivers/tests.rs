@@ -7,11 +7,11 @@
 //! `disallowed_methods` finding; `allow(clippy::restriction)` silenced `float_arithmetic`;
 //! `allow(warnings)` alone silenced nothing. The groups are from `cargo clippy -- -W help`.
 
-use super::super::core_findings;
+use super::super::{core_findings, CrateAliases};
 use super::waiver_forms;
 
 fn reported(source: &str) -> Vec<(usize, &'static str)> {
-    core_findings(source).iter().map(|f| (f.line, f.rule)).collect()
+    core_findings(source, &CrateAliases::default()).iter().map(|f| (f.line, f.rule)).collect()
 }
 
 fn forms(text: &str) -> Vec<usize> {
