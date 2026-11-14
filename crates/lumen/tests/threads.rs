@@ -215,9 +215,10 @@ fn the_first_failing_pixel_in_raster_order_is_reported_at_every_schedule() {
     }
 }
 
-/// After a failure in row `y` no worker begins a row from `y` down. On one thread the count is
-/// exact: a raster-order loop stops at the failing pixel, and so does the one worker, whatever
-/// the band height: every pixel of the rows above, then the failing row up to the failing pixel.
+/// After a failure in row `y`, a worker that has observed it begins no row from `y` down. On one
+/// thread the worker observes its own failure at once, so the count is exact: a raster-order
+/// loop stops at the failing pixel, and so does the one worker, whatever the band height: every
+/// pixel of the rows above, then the failing row up to the failing pixel.
 #[test]
 fn workers_stop_after_a_failure() {
     let image = size(512, 512);

@@ -8,6 +8,20 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- Documentation no longer claims more than the code does (flyingrobots/lumen#57, the
+  documentation half). "Equal provenance means equal bytes" is scoped to a render of the scene as
+  its own tracer: `RenderProvenance`, `render_traced`, the README and ADRs 0002, 0005 and 0007
+  say that a caller-supplied `Tracer` is outside it. The stop rule is stated as what is
+  guaranteed (a worker that has observed a failure in row `y` begins no row and takes no band from
+  `y` down; the reported failure is the raster-first one, with the tests named), not as a
+  real-time fact, in the README, the scheduler's documentation and ADR 0003. ADR 0003's untested
+  claim that no worker takes a band below the failure is now tested
+  (`after_a_failure_no_band_from_its_row_down_is_handed_out`); ignoring `end` when a band is
+  taken, formerly an equivalent mutant, fails it. The golden hashes' comments name `BUNNY_REV` as
+  the commit they hold at and keep the older revisions as history. The README's claim that the
+  one `as` conversion left is `widen` now names the command's information-only cast and the
+  CRC table's. ADRs are amended by dated clarification sections; no decision changes.
+
 - A panic in the pixel function now halts the other workers (flyingrobots/lumen#56). Each worker
   owns a guard that calls the halt when dropped while unwinding, so every other worker begins no
   row after it has seen the halt; the panic still reaches the caller through `resume_unwind` once

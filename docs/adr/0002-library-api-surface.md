@@ -1,6 +1,7 @@
 # ADR 0002: The library's public API and the render's provenance
 
-Status: accepted (flyingrobots/lumen#19)
+Status: accepted (flyingrobots/lumen#19); the provenance promise's scope stated (see
+[Clarification, 2026-11-14](#clarification-2026-11-14-what-equal-provenance-promises)).
 
 ## Context
 
@@ -112,3 +113,21 @@ second front end would have had to rebuild that list by hand.
   scene builder constructs. It waits for scenes that carry their own identity (flyingrobots/lumen#6).
   ADR 0005 (flyingrobots/lumen#38) gives `Scene` a content identity derived from its
   `SceneSpec`, which needs no change to `SceneSpec`; a scene's name is still not stored.
+
+## Clarification, 2026-11-14: what equal provenance promises
+
+Added for flyingrobots/lumen#57; the decision above is unchanged. "Equal provenance means equal
+RGBA8 bytes" holds for a scheduled render of the scene the provenance names: `render`,
+`render_scheduled`, or `render_traced` and `render_traced_with_run` given the scene as its own
+tracer, which is what the `lumen` command runs. Provenance records the scene's content identity,
+the contracts, the Bunny commit, the size and the settings; it does not record a tracer. A
+caller-supplied `Tracer` passed to `render_traced` answers the ray queries itself, and one that
+answers differently from the scene renders different bytes under equal provenance. Such a
+render is outside the promise. The documentation of `RenderProvenance` and `render_traced` says
+so. When this record was written the scene field was also a caller-chosen label; ADR 0005 has
+since bound provenance to the scene's content.
+
+The promise is checked, not proven: the golden image hashes and content digests of the two
+built-in scenes on the five platforms of ADR 0004, at every thread count and band height
+`tests/threads.rs` tries, and `two_scenes_under_one_name_have_different_provenance` for the
+content binding.

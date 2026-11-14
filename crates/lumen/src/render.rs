@@ -401,6 +401,11 @@ impl<T: Tracer + ?Sized> Frame<'_, T> {
 /// value: every pixel's samples go into its own `PixelAccumulator`, so the image and the ray
 /// count are the same for every schedule.
 ///
+/// [`RenderProvenance`](crate::RenderProvenance) does not describe `tracer`. Its promise, equal
+/// provenance means equal bytes, covers this function only with the scene as its own tracer, as
+/// [`render_scheduled`] calls it. A caller-supplied tracer that answers a query differently from
+/// the scene renders different bytes under the same provenance.
+///
 /// # Errors
 ///
 /// [`RenderError::Camera`] if Bunny refuses the camera at this size;
