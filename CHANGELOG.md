@@ -83,6 +83,10 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- A `Makefile` (flyingrobots/lumen#104): `make demo`, `make reference`, `make fixed-point`,
+  `make 4k`, `make 4k-fixed-point`, `make test` and `make help`. Each runs the documented
+  container command through `devrun` and puts the image in `out/`, which git ignores.
+
 - A scene's content identity (part of flyingrobots/lumen#38, ADR 0005): `Scene::content_id()`
   returns a `SceneContentId`, the SHA-256 of the canonical encoding `lumen-scene-content/1`
   (`SCENE_CONTENT_ENCODING`) of the `SceneSpec`: the triangles' raw coordinates in primitive
