@@ -113,7 +113,9 @@ pub(crate) const GOLDEN_FIXED_POINT_CONTENT: &str =
 /// aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). The same rules
 /// as the other scenes' hashes: one value for every platform and build profile, updated only
 /// with an identity, these settings or the Bunny commit, and a change to the scene's triangles,
-/// their order, its materials, normals, lighting or camera is a new scene version.
+/// their order, its materials, normals, lighting or camera is a new scene version. Every
+/// `Determinism / ...` job checks it: the native jobs through the whole canyon test binary, the
+/// WebAssembly job through a step of its own that runs only this golden test.
 #[allow(
     dead_code,
     reason = "each test crate that includes this module uses only the hashes it needs"
