@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests;
 
-use crate::mesh::{parse_ascii_ply, place_mesh, MeshPlacement, MeshTurn, PlaceError, PlacedMesh};
+use crate::mesh::{place_mesh, read_ascii_ply, MeshPlacement, MeshTurn, PlaceError, PlacedMesh};
 
 /// The Stanford bunny, `assets/stanford-bunny/bun_zipper_res3.ply`, embedded byte for byte.
 ///
@@ -49,7 +49,7 @@ pub const BUNNY_PLACEMENT: MeshPlacement = MeshPlacement {
 };
 
 /// The Stanford bunny (`assets/stanford-bunny/bun_zipper_res3.ply`, read by
-/// [`parse_ascii_ply`]) placed by [`BUNNY_PLACEMENT`]: 3 851 triangles, none dropped.
+/// [`read_ascii_ply`]) placed by [`BUNNY_PLACEMENT`]: 3 851 triangles, none dropped.
 ///
 /// The file's winding is consistent: every edge shared by exactly two faces is traversed in
 /// opposite directions by them (a test checks it), and the faces wind counter-clockwise seen from
@@ -64,6 +64,6 @@ pub const BUNNY_PLACEMENT: MeshPlacement = MeshPlacement {
 /// A [`PlaceError`] if the embedded file is refused or does not place; neither happens (a test
 /// checks it).
 pub fn bunny_triangles() -> Result<PlacedMesh, PlaceError> {
-    let mesh = parse_ascii_ply(STANFORD_BUNNY_PLY).map_err(PlaceError::Ply)?;
+    let mesh = read_ascii_ply(STANFORD_BUNNY_PLY.as_bytes()).map_err(PlaceError::Ply)?;
     place_mesh(&mesh, &BUNNY_PLACEMENT)
 }

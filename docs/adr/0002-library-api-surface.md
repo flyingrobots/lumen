@@ -19,9 +19,10 @@ second front end would have had to rebuild that list by hand.
   public item is added to the root re-exports on purpose. An item nobody outside the crate needs
   is `pub(crate)`.
 - **Two public modules remain**: `reference`, the reference scene's content (its triangles,
-  materials, lighting and camera, as named constants and builders), and `mesh`, the mesh reader
-  it uses. `mesh` stays public because its error types are part of `SceneError`. It is an
-  interim reader, to be replaced by Bunny's (flyingrobots/bunny#247).
+  materials, lighting and camera, as named constants and builders), and `mesh`, the mesh types
+  it uses. `mesh` stays public because its placement and error types appear in the public
+  signatures of `reference` and in `SceneError`. The reader is Bunny's `bunny_codec::parse_ascii_ply`,
+  gathered by `mesh::read_ascii_ply`; the interim reader of flyingrobots/lumen#27 is gone.
   `scenes` (flyingrobots/lumen#15) holds further scenes' content on the same terms as
   `reference`: `scenes::fixed_point`, whose builder and identity are also re-exported from the
   root.

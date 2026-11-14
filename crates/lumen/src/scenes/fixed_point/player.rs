@@ -6,7 +6,7 @@ use bunny_linalg::FixedVec3;
 use bunny_optics::TriangleSurface;
 use bunny_query::TraceTriangle;
 
-use crate::mesh::{parse_ascii_ply, place_mesh, MeshPlacement, MeshTurn, PlaceError};
+use crate::mesh::{place_mesh, read_ascii_ply, MeshPlacement, MeshTurn, PlaceError};
 use crate::reference::bunny::STANFORD_BUNNY_PLY;
 use crate::vertex_grid::{at, GRID_RAW};
 
@@ -80,7 +80,7 @@ pub struct PlacedBunny {
 /// [`FixedPointError::EmptyBunny`] if it has no triangles and [`FixedPointError::Overflow`] if
 /// a posed vertex overflows; a test shows none of these happens.
 pub fn placed_bunny() -> Result<PlacedBunny, FixedPointError> {
-    let mesh = parse_ascii_ply(STANFORD_BUNNY_PLY)
+    let mesh = read_ascii_ply(STANFORD_BUNNY_PLY.as_bytes())
         .map_err(|error| FixedPointError::Bunny(PlaceError::Ply(error)))?;
     let mut placement =
         MeshPlacement { turn: MeshTurn::QuarterAboutY, shift: BUNNY_SHIFT, offset_steps: [0; 3] };
