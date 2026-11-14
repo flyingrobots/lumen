@@ -40,13 +40,16 @@ part was built.
   `PixelAccumulator`, toned by `bunny-tone-srgb/1` and written by `write_rgba8`. Queries use a
   binned-SAH tree in Bunny's compact layout, chosen by measurement.
   (flyingrobots/lumen#2, #3, #39.)
-- **Two built-in scenes** ([reference](docs/reference/scenes.md)), entirely in Q32.32 integers:
-  `lumen-reference-scene/3` (ground, wall, octahedron, a bumpy sphere and the Stanford bunny,
-  31 511 triangles) and `lumen-fixed-point-scene/2` (the full-resolution Stanford bunny, smooth
-  shaded, in sunglasses at a craps table with two dice and the ON puck, 71 575 triangles).
+- **Three built-in scenes** ([reference](docs/reference/scenes.md)), entirely in Q32.32
+  integers: `lumen-reference-scene/3` (ground, wall, octahedron, a bumpy sphere and the Stanford
+  bunny, 31 511 triangles), `lumen-fixed-point-scene/2` (the full-resolution Stanford bunny,
+  smooth shaded, in sunglasses at a craps table with two dice and the ON puck, 71 575 triangles)
+  and `lumen-canyon-scene/1` (566 005 triangles: a terrain of 480 256 from the integer generator
+  `lumen-canyon-heightfield/1`, specified exactly in `scenes::canyon::heightfield`, three craft
+  of Lumen's own design, the full-resolution bunny on a ledge and a banded planet).
   `BuiltinScene` is their registry. Both Stanford meshes are in `assets/stanford-bunny/` with
   their provenance, read by Bunny's ASCII PLY reader and placed exactly (`mesh`).
-  (flyingrobots/lumen#2, #14, #15, #27, #39.)
+  (flyingrobots/lumen#2, #14, #15, #27, #39, #40.)
 - **Rendering on all cores** (ADR 0003, which supersedes ADR 0001): row bands from `chunks_mut`
   handed out under one small lock, results returned through `join`, one shared atomic. The image
   and the ray count are the same at every thread count and band height; a failed render reports
@@ -92,13 +95,14 @@ part was built.
   (flyingrobots/lumen#17, #115, #119, #120.)
 - **Repository tooling**: `xtask` (`file-length`, `nondeterminism`, `clippy-bans`, `std-items`,
   `doc-links`) and a `Makefile` (`make demo`, `reference`, `fixed-point`, `4k`,
-  `4k-fixed-point`, `test`, `nondeterminism`, `clippy-bans`, `doc-links`, `help`) over the
-  container runner. (flyingrobots/lumen#17, #23, #25, #104, #115.)
+  `4k-fixed-point`, `canyon`, `4k-canyon`, `test`, `nondeterminism`, `clippy-bans`,
+  `doc-links`, `help`) over the container runner. (flyingrobots/lumen#17, #23, #25, #40, #104,
+  #115.)
 - **Documentation**: the README as a short router, a [tutorial](docs/tutorial.md), the command,
   library and scene references, an [explanation](docs/explanation.md) ending in a
   requirement-to-evidence map, a how-to for measuring render time, a
   [contributor guide](CONTRIBUTING.md), an [index](docs/README.md), ADRs 0001 to 0009 and dated
-  measurement records in `docs/measurements/`. (flyingrobots/lumen#5, #25, #39, #57.)
+  measurement records in `docs/measurements/`. (flyingrobots/lumen#5, #25, #39, #40, #57.)
 - **Dependencies**: Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`,
   `bunny-broadphase`, `bunny-optics` and `bunny-codec` (default features off), version 0.7.1,
   as git dependencies pinned to `d4fe51d38fa10f8d6496bd110955314edac30bbf` (`BUNNY_REV`, checked

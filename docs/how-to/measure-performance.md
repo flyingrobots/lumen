@@ -63,6 +63,8 @@ only; it is never edited to describe a later one.
   (flyingrobots/lumen#28).
 - [Fixed Point version 2 at 4K and 64 samples per pixel, 2026-11-14](../measurements/2026-11-14-4k-fixed-point-v2.md)
   (flyingrobots/lumen#39).
+- [The canyon scene at 4K and 16 samples per pixel, 2026-11-14](../measurements/2026-11-14-canyon.md)
+  (flyingrobots/lumen#40).
 - [The readings the README held, 2026-11-13](../measurements/2026-11-13-readme-readings.md):
   tree builders and layouts, scene versions per ray, thread scaling and tile sizes.
 

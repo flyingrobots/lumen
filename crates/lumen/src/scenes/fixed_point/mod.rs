@@ -24,7 +24,7 @@ pub mod table;
 pub mod turn;
 
 mod numerals;
-mod solids;
+pub(crate) mod solids;
 
 pub use content::{Die, FixedPointContent, Material, Part, PartKind, Side};
 pub use error::FixedPointError;

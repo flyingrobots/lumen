@@ -7,9 +7,10 @@ platform CI checks: x86-64 and aarch64 Linux, aarch64 macOS, x86-64 Windows and 
 (`wasm32-wasip1`). Each part of that claim is mapped to the tests that check it in the
 [evidence map](docs/explanation.md#requirements-and-their-evidence).
 
-It renders two built-in scenes: a reference scene (a bumpy red sphere, a blue octahedron and the
-Stanford bunny before a stone wall, under a low sun and a pale sky) and Fixed Point, the
-full-resolution bunny in sunglasses at a craps table. Every sample is one diffuse path with a
+It renders three built-in scenes: a reference scene (a bumpy red sphere, a blue octahedron and
+the Stanford bunny before a stone wall, under a low sun and a pale sky), Fixed Point (the
+full-resolution bunny in sunglasses at a craps table) and a canyon (three craft flying along a
+fractal canyon under a banded planet, 566 005 triangles). Every sample is one diffuse path with a
 shadow ray and one bounce, all in Bunny's integer arithmetic, and the image is written as a PNG.
 
 ## Render an image

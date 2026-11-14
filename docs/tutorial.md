@@ -69,7 +69,7 @@ It is the same hash. The first render used every core; this one used one. Every 
 decides a pixel is an integer computed by Bunny, and each pixel is computed by one worker on its
 own, so neither the thread count nor the order the work happens in can change a byte.
 
-## 4. Try the other scene
+## 4. Try another scene
 
 ```sh
 cargo run --release -p lumen -- render --scene fixed-point --out fixed-point.png
@@ -82,14 +82,16 @@ png fixed-point.png (230699 bytes)
 ```
 
 Fixed Point is the Stanford bunny in sunglasses at a craps table, both dice showing four pips on
-every face. For a larger picture, add `--width 1280 --height 720 --samples 64`: more pixels and
-more samples per pixel take longer and give a different hash, the same one on every machine.
+every face. `--scene canyon` is the third: craft flying along a fractal canyon, 566 005
+triangles, which takes longer to build and to render. For a larger picture, add
+`--width 1280 --height 720 --samples 64`: more pixels and more samples per pixel take longer and
+give a different hash, the same one on every machine.
 
 ## With the container runner
 
 If you have the maintainers' container runner, `devrun`, at `~/git/devcontainers/bin/devrun`,
-`make demo` renders both scenes at 1280 by 720 in the container, puts them in `out/` and opens
-them; `make help` lists every target. It is a shortcut for maintainers, not needed for anything
+`make demo` renders the three scenes at 1280 by 720 in the container, puts them in `out/` and
+opens them; `make help` lists every target. It is a shortcut for maintainers, not needed for anything
 above.
 
 ## What you learned
@@ -102,5 +104,5 @@ above.
 
 - Every command, option and report line: the [command reference](reference/cli.md).
 - How the renderer works and why the hash is stable: [how Lumen renders](explanation.md).
-- The two scenes in detail: the [scene reference](reference/scenes.md).
+- The scenes in detail: the [scene reference](reference/scenes.md).
 - Using the library from Rust: the [library reference](reference/library.md).

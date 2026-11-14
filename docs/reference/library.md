@@ -19,7 +19,7 @@ Every item `crates/lumen/src/lib.rs` re-exports, by what it is for; a test
 | --- | --- |
 | Scenes | `Scene`, `SceneSpec`, `CameraPlacement`, `Lighting`, `SceneError`, `SceneBuffer`, `SceneContentId`, `SCENE_CONTENT_ENCODING`, `PrimitiveIndex` |
 | Ray queries | `Tracer`, `Hit`, `TraceError`, `FAR` |
-| Built-in scenes | `BuiltinScene`, `BuiltinSceneError`, `ParseSceneError`, `reference_scene`, `REFERENCE_SCENE_ID`, `fixed_point_scene`, `FIXED_POINT_SCENE_ID`, and the modules `reference`, `scenes` and `mesh` |
+| Built-in scenes | `BuiltinScene`, `BuiltinSceneError`, `ParseSceneError`, `reference_scene`, `REFERENCE_SCENE_ID`, `fixed_point_scene`, `FIXED_POINT_SCENE_ID`, `canyon_scene`, `CANYON_SCENE_ID`, and the modules `reference`, `scenes` and `mesh` |
 | Image size and pixels | `ImageSize`, `SizeError`, `MAX_DIMENSION`, `MAX_PIXELS`, `Rgba8Image`, `LengthError` |
 | Settings and the integrator | `RenderSettings`, `SettingsError`, `Integrator`, `INTEGRATOR_ID`, `SMOOTH_INTEGRATOR_ID`, `SMOOTH_SHADING_IDS`, `TONE_CURVE`, `CAMERA_PAIR`, `BOUNCE_PAIR`, `MAX_BOUNCES`, `trace_path`, `pixel_radiance`, `PathSample`, `PathError`, `RayCount` |
 | Rendering | `render`, `render_scheduled`, `render_traced`, `render_traced_with_run`, `render_reference`, `Render`, `RenderError`, `Schedule`, `BandRows`, `ScheduleError`, `DEFAULT_BAND_ROWS`, `MAX_THREADS` |
@@ -32,7 +32,7 @@ Every item `crates/lumen/src/lib.rs` re-exports, by what it is for; a test
 
 Every type and function a front end, a `Tracer` or a
 test needs is re-exported there: scene building (`Scene`, `SceneSpec`, `CameraPlacement`,
-`Lighting`, `reference_scene`, `fixed_point_scene`, and `BuiltinScene`, the registry of
+`Lighting`, `reference_scene`, `fixed_point_scene`, `canyon_scene`, and `BuiltinScene`, the registry of
 named scenes with their identities that the command's `--scene` reads), rendering (`render`, `render_scheduled`, `render_traced`,
 `Schedule`, `BandRows`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
 its `hash`), its provenance (`RenderProvenance`), a scene's statistics (`Scene::statistics`,
@@ -144,8 +144,9 @@ through the public API and checks its values and its chain.
   (`UnknownMaterial`); the buffer, the item count and the allocator's error (`OutOfMemory`,
   with a `SceneBuffer`); Bunny's `CompactError` (`BvhCompact`, named in words, since Bunny's has
   no text) or the room given when `build_bvh_sah` refuses (`BvhBuild`); and the camera, mesh and
-  constant errors as sources. `FixedPointError`, `BuiltinSceneError` and `PlaceError` return
-  theirs from `source()` too.
+  constant errors as sources. `FixedPointError`, `CanyonError`, `BuiltinSceneError` and
+  `PlaceError` return theirs from `source()` too; `HeightfieldError` names the parameter of a
+  refused heightfield spec.
 - **A PNG** (`write_png`) fails with a `PngError`: `Write` with the writer's `io::Error` as its
   source and its text; `ChunkTooLong` and `BlockTooLong` carry the length for the encoder's own
   length checks, which no image reaches.
@@ -161,6 +162,6 @@ through the public API and checks its values and its chain.
   `rays-per-second` and `ns-per-ray`, also behind a scoped exception, and `png.rs` builds its
   CRC table with one `as` on an index below 256.
 - `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
-  `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `BuiltinSceneError` and
-  `PngError` are `#[non_exhaustive]` ([ADR 0002](../adr/0002-library-api-surface.md)).
+  `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `CanyonError`,
+  `HeightfieldError`, `BuiltinSceneError` and `PngError` are `#[non_exhaustive]` ([ADR 0002](../adr/0002-library-api-surface.md)).
 
