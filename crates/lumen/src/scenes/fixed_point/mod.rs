@@ -14,6 +14,7 @@
 pub mod content;
 pub mod dice;
 pub mod error;
+pub mod full_bunny;
 pub mod look;
 pub mod player;
 pub mod puck;
