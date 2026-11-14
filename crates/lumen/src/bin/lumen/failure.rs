@@ -6,9 +6,10 @@ use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use lumen::{BuiltinSceneError, PngError, RenderError, ScheduleError, SizeError};
+use lumen::{BuiltinSceneError, RenderError, ScheduleError, SizeError};
 
 use crate::cli::{UsageError, USAGE};
+use crate::publish::PublishError;
 
 /// Why the command failed. Each keeps the library's or the system's error, which `source()`
 /// returns.
@@ -25,12 +26,13 @@ pub(crate) enum Failure {
     Scene(BuiltinSceneError),
     /// The render failed: exit code 1.
     Render(RenderError),
-    /// The PNG file could not be written: exit code 1, with the path.
-    Png {
+    /// The PNG file could not be published, or the destination was refused before the render:
+    /// exit code 1, with the path.
+    Output {
         /// The output path, as given.
         path: PathBuf,
         /// Why it could not be written.
-        error: PngError,
+        error: PublishError,
     },
     /// The report could not be written to standard output: exit code 1.
     Stdout(io::Error),
@@ -45,7 +47,7 @@ impl Failure {
             Self::Size(_)
             | Self::Scene(_)
             | Self::Render(_)
-            | Self::Png { .. }
+            | Self::Output { .. }
             | Self::Stdout(_) => ExitCode::FAILURE,
         }
     }
@@ -60,7 +62,7 @@ impl fmt::Display for Failure {
             Self::Size(error) => write!(f, "{}", RenderError::Size(*error)),
             Self::Scene(error) => write!(f, "{error}"),
             Self::Render(error) => write!(f, "{error}"),
-            Self::Png { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Output { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Stdout(error) => write!(f, "stdout: {error}"),
         }
     }
@@ -74,7 +76,7 @@ impl std::error::Error for Failure {
             Self::Size(error) => Some(error),
             Self::Scene(error) => Some(error),
             Self::Render(error) => Some(error),
-            Self::Png { error, .. } => Some(error),
+            Self::Output { error, .. } => Some(error),
             Self::Stdout(error) => Some(error),
         }
     }
@@ -93,7 +95,7 @@ mod tests {
     #[test]
     fn each_failure_has_its_message_and_exit_code() {
         let size = ImageSize::new(0, 3).expect_err("empty");
-        let png = PngError::Write(io::Error::other("disk full"));
+        let png = PublishError::Io(io::Error::other("disk full"));
         let cases = [
             (
                 Failure::Usage(UsageError::MissingCommand),
@@ -111,7 +113,7 @@ mod tests {
                 ExitCode::FAILURE,
             ),
             (
-                Failure::Png { path: PathBuf::from("out/x.png"), error: png },
+                Failure::Output { path: PathBuf::from("out/x.png"), error: png },
                 "out/x.png: disk full".to_owned(),
                 ExitCode::FAILURE,
             ),
