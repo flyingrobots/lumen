@@ -8,6 +8,20 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- A determinism matrix in CI (flyingrobots/lumen#23): `Determinism / Linux x86-64`,
+  `Determinism / Linux aarch64`, `Determinism / macOS aarch64` and `Determinism / Windows x86-64`
+  run the whole test suite in the test and the release profile, each first checking that the
+  runner's `rustc` host is the platform the job is named for; `Determinism / WebAssembly
+  (wasm32-wasip1, Node)` runs the library's unit tests, `tests/render.rs`, `tests/library.rs` and
+  `tests/fixed_point/` as `wasm32-wasip1` programs under Node's built-in WASI
+  (`scripts/wasi-run.mjs`) in both profiles, and compiles the library for
+  `wasm32-unknown-unknown`. Every job checks the same two golden hash constants (the reference
+  scene and the Fixed Point scene, `tests/golden/mod.rs`).
+- `tests/library.rs`: the golden image rendered on one worker through the library alone (runs on
+  every platform, WebAssembly included), and on WebAssembly a two-worker render must be
+  `RenderError::Spawn`.
+- `docs/adr/0004-webassembly-determinism-leg.md`: WebAssembly is tested on `wasm32-wasip1` under
+  Node's WASI with the standard test harness and no added dependency, on one worker.
 - `docs/adr/0003-row-bands.md` (flyingrobots/lumen#28): the row-band scheduler, the proof that
   the reported error is the raster-first failure and that work past it stops, the measurements
   that located the 6a816ef slowdown in code generation, and what was rejected. It supersedes
@@ -152,6 +166,10 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- CI: the `fmt, clippy, test` job is now `fmt, clippy`; the tests run in the `Determinism / ...`
+  jobs (flyingrobots/lumen#23). The README's and the crate documentation's platform claim is
+  narrowed to the five platforms those jobs check, with a table of which job proves which.
+
 - Threads take bands of whole rows instead of tiles (flyingrobots/lumen#28; ADR 0003 supersedes
   ADR 0001). `chunks_mut` cuts the image into disjoint row bands, and a worker writes its band's
   pixels straight into the image: the per-worker tile buffer, the copy and the image mutex are
@@ -215,6 +233,11 @@ All notable changes to lumen are recorded here. The format follows
   retired; the view is not kept behind a flag.
 
 ### Fixed
+
+- The PLY reader's generated-corruption test assumed a 64-bit `usize`: it converted each 64-bit
+  generator output to `usize` before reducing it, which fails on `wasm32` and aborted the
+  WebAssembly test run (found by the new WebAssembly job, flyingrobots/lumen#23). It now reduces
+  in `u64` first; on 64-bit targets the generated cases are the same as before.
 
 - `lumen render` reads its arguments with `std::env::args_os()`, so an argument that is not
   valid Unicode no longer panics: a non-Unicode `--out` path is used as given, and a

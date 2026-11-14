@@ -8,8 +8,9 @@
 //! number that decides a pixel comes from Bunny: the sampler, camera rays, the BVH and its
 //! traversals, the triangle test, the shading steps and their order of operations, and the pixel
 //! path. So the same scene, size, sample count and seed give the same RGBA bytes, and the same
-//! image hash ([`Rgba8Image::hash`]), on every run and every machine, at every thread count and
-//! band height. [`RenderProvenance`] records those inputs.
+//! image hash ([`Rgba8Image::hash`]), on every run, at every thread count and band height, on
+//! every platform CI checks (x86-64 and aarch64 Linux, aarch64 macOS, x86-64 Windows and
+//! `wasm32-wasip1`). [`RenderProvenance`] records those inputs.
 //!
 //! The library is the crate root: every type and function a front end needs is re-exported
 //! here, and only [`mod@reference`] and [`scenes`] (the scenes' content) and [`mesh`] (the mesh
