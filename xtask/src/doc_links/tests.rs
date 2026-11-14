@@ -95,3 +95,64 @@ fn a_path_is_resolved_from_its_pages_directory() {
     assert_eq!(resolve("README.md", "./docs/./x.md").as_deref(), Some("docs/x.md"));
     assert_eq!(resolve("docs/x.md", "../../y.md"), None);
 }
+
+/// Oracle: GitHub's rendered heading text, by hand. Emphasis underscores go, an underscore
+/// between two letters stays, a code span keeps its content as written, a link is its text and
+/// an HTML tag is dropped.
+#[test]
+fn a_heading_is_slugged_from_its_rendered_text() {
+    let text = "\
+## _Options_
+## snake_case and __bold__ and a__b
+## The `my_var` field
+## See [the guide](guide.md)
+## Press <kbd>Q</kbd>
+";
+    let want =
+        ["options", "snake_case-and-bold-and-a__b", "the-my_var-field", "see-the-guide", "press-q"];
+    assert_eq!(anchors(text), want);
+}
+
+/// Oracle: GitHub's slugger, step by step. A heading keeps its base anchor while it is free;
+/// `Examples-1` coming first takes `examples-1`, so the second `Examples` gets `examples-2`.
+#[test]
+fn a_suffix_is_added_only_when_the_anchor_is_taken() {
+    let text = "# Examples-1\n# Examples\n# Examples\n# Examples\n";
+    assert_eq!(anchors(text), ["examples-1", "examples", "examples-2", "examples-3"]);
+}
+
+/// Oracle: GitHub's rule for a destination starting with `/`: from the repository root.
+#[test]
+fn a_leading_slash_is_the_repository_root() {
+    assert_eq!(resolve("docs/guide.md", "/README.md").as_deref(), Some("README.md"));
+    assert_eq!(resolve("docs/a/b.md", "/docs/x.md").as_deref(), Some("docs/x.md"));
+    let docs = pages(&[("docs/guide.md", "[root](/LICENSE)\n")]);
+    assert!(check(&docs, |path| path == "LICENSE").is_empty());
+}
+
+/// Oracle: the Markdown fence rule. A four-backtick block holding a three-backtick line, and a
+/// tilde block holding a backtick fence, stay open until their own fence; a fence with text
+/// after it does not close a block. Only the links outside every block are found.
+#[test]
+fn a_block_closes_only_at_its_own_fence() {
+    let text = "\
+````text
+```
+[hidden](a.md)
+````
+[seen](b.md)
+~~~
+```
+[hidden](c.md)
+``` not a close
+~~~
+    ```
+[seen](d.md)
+```
+``` text after it
+[hidden](e.md)
+```
+";
+    let found: Vec<String> = links(text).into_iter().map(|(_, dest)| dest).collect();
+    assert_eq!(found, ["b.md", "d.md"]);
+}
