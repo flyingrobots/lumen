@@ -3,7 +3,8 @@
 //! same `Worker::step` and `combine` the threads run, in an order chosen by a
 //! policy: a seeded generator, or a scripted worst case. Every failure message names the policy,
 //! so any order can be replayed. A step budget, not a timeout, ends a simulation that does not
-//! finish.
+//! finish. Every simulation runs under both tallies: the one `render_pixels` uses, which counts
+//! nothing, and the one `render_pixels_by_worker` uses, which counts bands.
 
 use core::cell::Cell;
 use std::any::Any;
@@ -45,13 +46,13 @@ type Payload = Box<dyn Any + Send>;
 
 /// A simulated worker: running (the production `Worker`, idle or partway through a band), done
 /// with its outcome, or ended by a panic in the pixel function.
-enum Sim<'s, 'a> {
-    Live(Worker<'s, 'a, u64, Coord>),
-    Done(Outcome<u64, Coord>),
+enum Sim<'s, 'a, C = NoTally> {
+    Live(Worker<'s, 'a, u64, Coord, C>),
+    Done(Outcome<u64, Coord, C>),
     Panicked,
 }
 
-impl Sim<'_, '_> {
+impl<C: Tally> Sim<'_, '_, C> {
     const fn is_live(&self) -> bool {
         matches!(self, Self::Live(_))
     }
@@ -78,7 +79,12 @@ fn pixel(failing: &[Coord]) -> impl Fn(u32, u32) -> PixelResult + '_ {
 
 /// The next worker to move under `policy`, or `None` when all are done.
 /// `step` is the number of steps taken so far.
-fn pick(sims: &[Sim<'_, '_>], policy: Policy, rng: &mut u64, step: usize) -> Option<usize> {
+fn pick<C: Tally>(
+    sims: &[Sim<'_, '_, C>],
+    policy: Policy,
+    rng: &mut u64,
+    step: usize,
+) -> Option<usize> {
     let live: Vec<usize> = (0..sims.len()).filter(|&n| sims[n].is_live()).collect();
     let first = *live.first()?;
     Some(match policy {
@@ -105,7 +111,10 @@ fn pick(sims: &[Sim<'_, '_>], policy: Policy, rng: &mut u64, step: usize) -> Opt
 /// Moves worker `sim` one step, `Worker::step` as `work` runs it, and returns the payload if
 /// the step panicked. The worker moves into the step, so a panic drops it as the panic unwinds
 /// out of the step, as it unwinds out of `work` on a thread; the worker is then `Panicked`.
-fn advance(sim: &mut Sim<'_, '_>, pixel: &impl Fn(u32, u32) -> PixelResult) -> Option<Payload> {
+fn advance<C: Tally>(
+    sim: &mut Sim<'_, '_, C>,
+    pixel: &impl Fn(u32, u32) -> PixelResult,
+) -> Option<Payload> {
     let Sim::Live(worker) = core::mem::replace(sim, Sim::Panicked) else { return None };
     let stepped = catch_unwind(AssertUnwindSafe(move || {
         let mut worker = worker;
@@ -130,7 +139,7 @@ fn budget(size: ImageSize, rows: u32, workers: usize) -> usize {
 
 /// The outcomes of the simulated workers that ended, combined, and the first panic's payload
 /// passed on with `resume_unwind`, as the threads' scope passes it on once every worker ended.
-fn ended(sims: Vec<Sim<'_, '_>>, panic: Option<Payload>) -> Outcome<u64, Coord> {
+fn ended<C: Tally>(sims: Vec<Sim<'_, '_, C>>, panic: Option<Payload>) -> Outcome<u64, Coord, C> {
     if let Some(payload) = panic {
         resume_unwind(payload);
     }
@@ -143,16 +152,41 @@ fn ended(sims: Vec<Sim<'_, '_>>, panic: Option<Payload>) -> Outcome<u64, Coord> 
     )
 }
 
-/// [`simulate_on`] the 13 by 9 image.
+/// Which tally the simulated workers count with: none, as `render_pixels` runs them, or bands, as
+/// `render_pixels_by_worker` does. Every simulated test runs under both.
+#[derive(Clone, Copy, Debug)]
+enum Counting {
+    Nothing,
+    Bands,
+}
+
+/// Every policy, under each tally.
+fn with_tallies(
+    policies: impl Iterator<Item = Policy>,
+) -> impl Iterator<Item = (Policy, Counting)> {
+    policies.flat_map(|policy| [(policy, Counting::Nothing), (policy, Counting::Bands)])
+}
+
+/// [`simulate_on`] the 13 by 9 image with `tally`. With the band tally, a render that succeeds
+/// without a halt took every band.
 fn simulate(
-    rows: u32,
+    (rows, tally): (u32, Counting),
     workers: usize,
     policy: Policy,
     pixel: &impl Fn(u32, u32) -> PixelResult,
     halt: Option<(usize, &Cell<bool>)>,
 ) -> Simulated {
     let size = ImageSize::new(WIDTH, HEIGHT).expect("size");
-    simulate_on(size, rows, workers, policy, pixel, halt)
+    match tally {
+        Counting::Nothing => simulate_on::<NoTally>(size, rows, workers, policy, pixel, halt).0,
+        Counting::Bands => {
+            let (got, bands) = simulate_on::<BandTally>(size, rows, workers, policy, pixel, halt);
+            if got.is_ok() && halt.is_none() {
+                assert_eq!(bands, HEIGHT.div_ceil(rows), "{policy:?}: bands taken");
+            }
+            got
+        }
+    }
 }
 
 /// Runs `workers` simulated workers over an image of `size` in bands of `rows` in the order
@@ -160,23 +194,26 @@ fn simulate(
 /// a panic in `pixel` reaches the caller once every simulated worker has ended. With `halt` set
 /// to `(n, flag)`, the workers are halted before step `n`, as a failed spawn halts them, and
 /// `flag` is raised at that moment.
-fn simulate_on(
+fn simulate_on<C: Tally>(
     size: ImageSize,
     rows: u32,
     workers: usize,
     policy: Policy,
     pixel: &impl Fn(u32, u32) -> PixelResult,
     halt: Option<(usize, &Cell<bool>)>,
-) -> Simulated {
+) -> (Simulated, u32) {
     let schedule = Schedule::new(1, BandRows::new(rows).expect("rows")).expect("schedule");
-    let mut image = blank(size)?;
+    let mut image = match blank(size) {
+        Ok(image) => image,
+        Err(error) => return (Err(error), 0),
+    };
     let mut rng = match policy {
         Policy::Seeded(seed) => seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1,
         _ => 1,
     };
     let outcome = {
         let shared = Shared::new(size, schedule, image.bytes_mut().as_chunks_mut::<4>().0);
-        let mut sims: Vec<Sim<'_, '_>> =
+        let mut sims: Vec<Sim<'_, '_, C>> =
             (0..workers).map(|_| Sim::Live(Worker::new(&shared, 0))).collect();
         let budget = budget(size, rows, workers);
         let (mut steps, mut panic) = (0, None);
@@ -192,8 +229,8 @@ fn simulate_on(
         }
         ended(sims, panic)
     };
-    let total = outcome.into_result()?;
-    Ok((image.bytes().to_vec(), total))
+    let bands = outcome.tally.bands();
+    (outcome.into_result().map(|total| (image.bytes().to_vec(), total)), bands)
 }
 
 /// The image without any scheduling: every pixel in raster order.
@@ -227,12 +264,12 @@ fn every_hand_out_order_gives_the_raster_image() {
     let want = raster();
     for rows in BANDS {
         for workers in WORKERS {
-            for policy in policies() {
-                let got = simulate(rows, workers, policy, &pixel(&[]), None);
+            for (policy, tally) in with_tallies(policies()) {
+                let got = simulate((rows, tally), workers, policy, &pixel(&[]), None);
                 assert_eq!(
                     got,
                     Ok((want.clone(), u64::from(WIDTH * HEIGHT))),
-                    "{policy:?}, {workers} workers, bands of {rows}"
+                    "{policy:?} {tally:?}, {workers} workers, bands of {rows}"
                 );
             }
         }
@@ -255,12 +292,12 @@ fn every_hand_out_order_reports_the_raster_first_failure() {
     for (failing, (x, y)) in cases {
         for rows in BANDS {
             for workers in WORKERS {
-                for policy in policies() {
-                    let got = simulate(rows, workers, policy, &pixel(failing), None);
+                for (policy, tally) in with_tallies(policies()) {
+                    let got = simulate((rows, tally), workers, policy, &pixel(failing), None);
                     let want = Err(WorkerError::Pixel { x, y, error: (x, y) });
                     assert_eq!(
                         got, want,
-                        "{policy:?}, {workers} workers, bands of {rows}, {failing:?}"
+                        "{policy:?} {tally:?}, {workers} workers, bands of {rows}, {failing:?}"
                     );
                 }
             }
@@ -279,7 +316,7 @@ fn after_a_failure_no_pixel_from_its_row_down_is_rendered() {
     for (fx, fy) in [(0, 0), (6, 4), (12, 3), (5, 8)] {
         for rows in BANDS {
             for workers in WORKERS {
-                for policy in policies() {
+                for (policy, tally) in with_tallies(policies()) {
                     let (failed, lowest, after) = (Cell::new(false), Cell::new(None), Cell::new(0));
                     let counting = |x, y| {
                         if failed.get() {
@@ -290,9 +327,10 @@ fn after_a_failure_no_pixel_from_its_row_down_is_rendered() {
                         failed.set(failed.get() || result.is_err());
                         result
                     };
-                    let got = simulate(rows, workers, policy, &counting, None);
-                    let label =
-                        format!("{policy:?}, {workers} workers, bands of {rows}, ({fx}, {fy})");
+                    let got = simulate((rows, tally), workers, policy, &counting, None);
+                    let label = format!(
+                        "{policy:?} {tally:?}, {workers} workers, bands of {rows}, ({fx}, {fy})"
+                    );
                     assert_eq!(
                         got,
                         Err(WorkerError::Pixel { x: fx, y: fy, error: (fx, fy) }),
@@ -311,16 +349,16 @@ fn after_a_failure_no_pixel_from_its_row_down_is_rendered() {
     assert!(witnesses.get() > 0);
 }
 
-/// Oracle: hand arithmetic. Outcomes merge by summing and by keeping the raster-earlier failure,
-/// in either order.
+/// Oracle: hand arithmetic. Outcomes merge by summing (values and bands) and by keeping the
+/// raster-earlier failure, in either order.
 #[test]
 fn outcomes_merge_to_the_sum_and_the_raster_earlier_failure() {
     let at = |x, y| Some(Failure { y, x, error: (x, y) });
     for (a, b, want) in [(at(9, 0), at(2, 5), (9, 0)), (at(3, 4), at(4, 4), (3, 4))] {
         for (first, second) in [(a, b), (b, a)] {
-            let mut merged = Outcome { total: 2_u64, first };
-            merged.merge(Outcome { total: 5, first: second });
-            assert_eq!(merged.total, 7);
+            let mut merged = Outcome { total: 2_u64, first, tally: BandTally(1) };
+            merged.merge(Outcome { total: 5, first: second, tally: BandTally(3) });
+            assert_eq!((merged.total, merged.tally), (7, BandTally(4)));
             assert_eq!(
                 merged.into_result(),
                 Err(WorkerError::Pixel { x: want.0, y: want.1, error: want })
@@ -338,7 +376,7 @@ fn after_a_halt_no_row_is_begun() {
     let mut witnesses = 0_usize;
     for rows in BANDS {
         for workers in WORKERS {
-            for policy in policies().take(20) {
+            for (policy, tally) in with_tallies(policies().take(20)) {
                 for halt_at in [0, 1, 2, 5, 11, 40] {
                     let (halted, after) = (Cell::new(false), Cell::new(0_usize));
                     let counting = |x, y| {
@@ -347,8 +385,14 @@ fn after_a_halt_no_row_is_begun() {
                         }
                         pixel(&[])(x, y)
                     };
-                    let label = format!("{policy:?}, {workers} workers, bands of {rows}");
-                    let got = simulate(rows, workers, policy, &counting, Some((halt_at, &halted)));
+                    let label = format!("{policy:?} {tally:?}, {workers} workers, bands of {rows}");
+                    let got = simulate(
+                        (rows, tally),
+                        workers,
+                        policy,
+                        &counting,
+                        Some((halt_at, &halted)),
+                    );
                     assert_eq!(after.get(), 0, "{label}, halted at step {halt_at}");
                     let full = u64::from(WIDTH * HEIGHT);
                     if got.as_ref().is_ok_and(|(_, count)| *count < full) {
@@ -404,11 +448,19 @@ fn a_refused_worker_is_reported_with_its_number_and_its_error() {
         let spawner = RefuseAt { refuse, started: Cell::new(0) };
         let asked = AtomicUsize::new(0);
         let schedule = Schedule::new(threads, BandRows::new(1).expect("rows")).expect("schedule");
-        let got = render_pixels_on(&spawner, size, schedule, 0_u64, |x, y| {
-            let n = asked.fetch_add(1, Ordering::SeqCst);
-            assert!(n < 64 * 48, "asked for more pixels than the image has");
-            pixel(&[])(x, y)
-        });
+        let counted = render_pixels_on::<BandTally, _, _, _, _>(&spawner, size, schedule, 0_u64, {
+            |x, y| pixel(&[])(x, y)
+        })
+        .map(|rendered| (rendered.image, rendered.total));
+        spawner.started.set(0);
+        let got =
+            render_pixels_on::<NoTally, _, _, _, _>(&spawner, size, schedule, 0_u64, |x, y| {
+                let n = asked.fetch_add(1, Ordering::SeqCst);
+                assert!(n < 64 * 48, "asked for more pixels than the image has");
+                pixel(&[])(x, y)
+            })
+            .map(|rendered| (rendered.image, rendered.total));
+        assert_eq!(got, counted, "both tallies");
         let label = format!("{threads} threads, worker {refuse} refused");
         let want = SpawnError::new(refuse, io::Error::other("refused by the test"));
         assert_eq!(got, Err(WorkerError::Spawn(want)), "{label}");
@@ -471,9 +523,19 @@ fn a_panic_in_the_pixel_function_stops_every_worker_at_its_next_row() {
             }
             Ok(([9; 4], 1))
         };
-        let got = catch_unwind(AssertUnwindSafe(|| {
-            simulate_on(size, 1, workers, policy, &counting, None)
+        // The band-counting scheduler first: it must panic the same way, with the same count.
+        let counted = catch_unwind(AssertUnwindSafe(|| {
+            simulate_on::<BandTally>(size, 1, workers, policy, &counting, None)
         }));
+        assert!(counted.is_err(), "{policy:?}: the band tally's panic reaches the caller");
+        let counted_asked = asked.get();
+        assert_eq!(after.get(), 0, "{policy:?}: the band tally computed a pixel after the panic");
+        asked.set(0);
+        panicked.set(false);
+        let got = catch_unwind(AssertUnwindSafe(|| {
+            simulate_on::<NoTally>(size, 1, workers, policy, &counting, None)
+        }));
+        assert_eq!(asked.get(), counted_asked, "{policy:?}: both tallies, the same pixels");
         let label = format!("{policy:?}, {workers} workers: {} pixels", asked.get());
         let payload = got.expect_err("the panic reaches the caller, with no image");
         assert_eq!(payload.downcast_ref::<PixelPanic>(), Some(&PixelPanic((0, 0))), "{label}");
@@ -492,7 +554,7 @@ fn a_panic_in_the_pixel_function_stops_every_worker_at_its_next_row() {
 /// started. After the refusal the started workers run to their end, as the scope joins them; the
 /// calling worker never runs. Returns the start-up's result, the pixels computed after the
 /// refusal, and whether any started worker was still running at the refusal with rows left.
-fn simulate_refusal(
+fn simulate_refusal<C: Tally>(
     rows: u32,
     workers: u32,
     refuse: u32,
@@ -522,7 +584,7 @@ fn simulate_refusal(
             refused.set(true);
             return Err(io::Error::other("refused by the test"));
         }
-        sims.push(Sim::Live(Worker::new(&shared, 0)));
+        sims.push(Sim::Live(Worker::<u64, Coord, C>::new(&shared, 0)));
         for _ in 0..gap {
             let Some(n) = pick(&sims, policy, &mut rng, steps) else { break };
             assert!(advance(&mut sims[n], &counting).is_none(), "no panic here");
@@ -555,7 +617,13 @@ fn after_a_refused_start_no_started_worker_begins_a_row() {
                 let scripted = [Policy::First, Policy::Hold(4)];
                 for policy in scripted.into_iter().chain((0..20).map(Policy::Seeded)) {
                     let (got, after, pending) =
-                        simulate_refusal(rows, workers, refuse, gap, policy);
+                        simulate_refusal::<NoTally>(rows, workers, refuse, gap, policy);
+                    let counted = simulate_refusal::<BandTally>(rows, workers, refuse, gap, policy);
+                    assert_eq!(
+                        (&got, after, pending),
+                        (&counted.0, counted.1, counted.2),
+                        "tallies"
+                    );
                     let label = format!("{policy:?}, bands of {rows}, worker {refuse} of {workers} refused after {gap} steps");
                     let want = SpawnError::new(refuse, io::Error::other("refused by the test"));
                     assert_eq!(got, Err(WorkerError::Spawn(want)), "{label}");

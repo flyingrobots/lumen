@@ -25,7 +25,8 @@ mod error;
 mod outcome;
 
 pub use error::{Reservation, SpawnError, WorkerError};
-use outcome::{combine, Failure, Outcome};
+use outcome::{combine, BandTally, Failure, NoTally, Outcome, Tally};
+pub use outcome::{Rendered, WorkerRun};
 
 /// How [`render_pixels`] starts its helper threads: the seam a test drives to refuse a spawn.
 pub(crate) trait Spawner {
@@ -142,15 +143,16 @@ impl<'a> Shared<'a> {
     /// Renders row `y` into `row`, adding each pixel's value to `outcome`; or leaves, without a
     /// pixel, if the row is no longer wanted; or stops at the row's first failing pixel and
     /// records it.
-    fn render_row<T, E, F>(
+    fn render_row<T, E, F, C>(
         &self,
         y: u32,
         row: &mut [Rgba],
         pixel: &F,
-        outcome: &mut Outcome<T, E>,
+        outcome: &mut Outcome<T, E, C>,
     ) -> Row
     where
         T: Copy + Add<Output = T>,
+        C: Tally,
         F: Fn(u32, u32) -> Result<(Rgba, T), E>,
     {
         if y >= self.wanted_end() {
@@ -201,18 +203,19 @@ impl Drop for HaltOnUnwind<'_, '_> {
 
 /// One worker between steps: its outcome so far and the band it is in, if any. `work` runs it to
 /// the end on a thread; the unit tests' simulated workers run the same steps one at a time.
-struct Worker<'s, 'a, T, E> {
+struct Worker<'s, 'a, T, E, C = NoTally> {
     shared: &'s Shared<'a>,
-    outcome: Outcome<T, E>,
+    outcome: Outcome<T, E, C>,
     /// The band being rendered, with its first row, and the rows of it not yet begun.
     band: Option<(u32, Rows<'a>)>,
     /// Dropped with the worker: if a panic unwinds through the worker, the others are halted.
     _unwind: HaltOnUnwind<'s, 'a>,
 }
 
-impl<'s, 'a, T, E> Worker<'s, 'a, T, E>
+impl<'s, 'a, T, E, C> Worker<'s, 'a, T, E, C>
 where
     T: Copy + Add<Output = T>,
+    C: Tally,
 {
     const fn new(shared: &'s Shared<'a>, zero: T) -> Self {
         Self { shared, outcome: Outcome::new(zero), band: None, _unwind: HaltOnUnwind(shared) }
@@ -228,7 +231,11 @@ where
         match self.band.as_mut() {
             None => {
                 self.band = self.shared.take();
-                self.band.is_some()
+                if self.band.is_none() {
+                    return false;
+                }
+                self.outcome.tally.took_band();
+                true
             }
             Some((_, rows)) => {
                 match rows.next() {
@@ -245,16 +252,17 @@ where
     }
 
     /// The worker's sum and earliest failure.
-    fn finish(self) -> Outcome<T, E> {
+    fn finish(self) -> Outcome<T, E, C> {
         self.outcome
     }
 }
 
 /// One worker: takes bands until none is left or wanted, renders each row by row, and returns
 /// its sum and its earliest failure.
-fn work<T, E, F>(shared: &Shared<'_>, pixel: &F, zero: T) -> Outcome<T, E>
+fn work<T, E, F, C>(shared: &Shared<'_>, pixel: &F, zero: T) -> Outcome<T, E, C>
 where
     T: Copy + Add<Output = T>,
+    C: Tally,
     F: Fn(u32, u32) -> Result<(Rgba, T), E>,
 {
     let mut worker = Worker::new(shared, zero);
@@ -324,24 +332,50 @@ where
     E: Send,
     F: Fn(u32, u32) -> Result<(Rgba, T), E> + Sync,
 {
-    render_pixels_on(&OsThreads, size, schedule, zero, pixel)
+    let rendered =
+        render_pixels_on::<NoTally, _, _, _, _>(&OsThreads, size, schedule, zero, pixel)?;
+    Ok((rendered.image, rendered.total))
 }
 
-/// [`render_pixels`] with `spawner` starting the helper threads.
+/// [`render_pixels`], with what each worker did: its bands and sum ([`Rendered`]). Which
+/// worker took which band differs from run to run; the image and the total do not.
+///
+/// # Errors
+///
+/// Those of [`render_pixels`].
+pub fn render_pixels_by_worker<T, E, F>(
+    size: ImageSize,
+    schedule: Schedule,
+    zero: T,
+    pixel: F,
+) -> Result<Rendered<T>, WorkerError<E>>
+where
+    T: Copy + Add<Output = T> + Send,
+    E: Send,
+    F: Fn(u32, u32) -> Result<(Rgba, T), E> + Sync,
+{
+    render_pixels_on::<BandTally, _, _, _, _>(&OsThreads, size, schedule, zero, pixel)
+}
+
+/// [`render_pixels`] with `spawner` starting the helper threads and each worker counting with
+/// tally `C`: `NoTally` for [`render_pixels`], with no per-worker records; `BandTally` for
+/// [`render_pixels_by_worker`]. The tally is private: the two entry points are the public surface
+/// (ADR 0002).
 #[expect(
     clippy::disallowed_methods,
     reason = "thread-spawn: the one thread pool (ADR 0003); each pixel is written at the place its \
               coordinates fix and the sums are integer, so no schedule or hand-out order reaches the \
               image or the ray count"
 )]
-pub(crate) fn render_pixels_on<S, T, E, F>(
+fn render_pixels_on<C, S, T, E, F>(
     spawner: &S,
     size: ImageSize,
     schedule: Schedule,
     zero: T,
     pixel: F,
-) -> Result<(Rgba8Image, T), WorkerError<E>>
+) -> Result<Rendered<T>, WorkerError<E>>
 where
+    C: Tally,
     S: Spawner,
     T: Copy + Add<Output = T> + Send,
     E: Send,
@@ -349,6 +383,13 @@ where
 {
     let mut image = blank(size)?;
     let workers = schedule.workers(size);
+    // One record per worker when the tally keeps them, reserved before any thread starts.
+    let records = if C::RECORDS { widen(workers) } else { 0 };
+    let mut runs = Vec::new();
+    runs.try_reserve_exact(records).map_err(|error| WorkerError::OutOfMemory {
+        reserving: Reservation::Workers { handles: records },
+        error,
+    })?;
     let outcome = {
         let (pixels, _) = image.bytes_mut().as_chunks_mut::<4>();
         let shared = &Shared::new(size, schedule, pixels);
@@ -356,17 +397,22 @@ where
         std::thread::scope(|scope| {
             // On a refusal the scope joins the workers already started.
             let handles = start_helpers(shared, workers, |worker| {
-                spawner.spawn(scope, worker, move || work(shared, pixel, zero))
+                spawner.spawn(scope, worker, move || work::<T, E, F, C>(shared, pixel, zero))
             })?;
-            let mine = work(shared, pixel, zero);
+            let mine = work::<T, E, F, C>(shared, pixel, zero);
             let theirs = handles.into_iter().map(|handle| {
                 handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))
             });
-            Ok(combine(zero, core::iter::once(mine).chain(theirs)))
+            let all = core::iter::once(mine).chain(theirs).inspect(|one| {
+                if C::RECORDS {
+                    runs.push(WorkerRun { bands: one.tally.bands(), total: one.total });
+                }
+            });
+            Ok(combine(zero, all))
         })?
     };
     let total = outcome.into_result()?;
-    Ok((image, total))
+    Ok(Rendered { image, total, workers: runs })
 }
 
 /// A zeroed image of `size`, reserved without aborting on failure.
