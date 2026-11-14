@@ -11,7 +11,9 @@ Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
 
 Lumen renders a built-in scene, prints its image hash and timing, and writes it to a PNG file
 if asked; `lumen stats` prints what a scene holds ([Statistics](#statistics)). `--scene reference` (the default) is the reference scene, which includes the Stanford
-bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece. The
+bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece;
+`--scene canyon` is [the canyon](#the-canyon-scene), a picture and a large-triangle-count
+benchmark. The
 reference render:
 
 - in bands of rows on all cores (`--threads`, below), with the same bytes at every thread count;
@@ -35,9 +37,11 @@ light, textures, smooth normals and more than one bounce are not supported.
 The short way, from a checkout:
 
 ```sh
-make demo            # both built-in scenes at 1280x720, opened when done
+make demo            # the three built-in scenes at 1280x720, opened when done
 make fixed-point     # just the Fixed Point scene
+make canyon          # just the canyon scene
 make 4k              # the reference scene at 3840x2160, 16 samples
+make 4k-canyon       # the canyon scene at 3840x2160, 16 samples
 make help            # every target and the variables you can override
 ```
 
@@ -84,13 +88,17 @@ The library's public surface, its errors and the command's edge are in the
 
 ## The reference scene
 
-The two built-in scenes, `lumen-reference-scene/3` and `lumen-fixed-point-scene/2`, triangle by
-triangle, with their materials, lighting, cameras and tests, are in the
+The three built-in scenes, `lumen-reference-scene/3`, `lumen-fixed-point-scene/2` and
+`lumen-canyon-scene/1`, triangle by triangle, with their materials, lighting, cameras and tests, are in the
 [scene reference](docs/reference/scenes.md).
 
 ## The Fixed Point scene
 
 See the [scene reference](docs/reference/scenes.md#the-fixed-point-scene).
+
+## The canyon scene
+
+See the [scene reference](docs/reference/scenes.md#the-canyon-scene).
 
 ## The integrator
 
@@ -364,6 +372,11 @@ builds](docs/measurements/2026-11-13-4k-row-bands.md) repeats it for flyingrobot
 records the showpiece for flyingrobots/lumen#39: the same image hash,
 `sha256:d276602407edb72109ebfbc8cec9121230171cf156144f139fb2bc3ca1c13bef`, on every run, a mean
 of 21.2 seconds with 18 CPUs, about 10 % more than version 1 (19.2 seconds).
+[The canyon scene at 4K and 16 samples per pixel, 2026-11-14](docs/measurements/2026-11-14-canyon.md)
+records flyingrobots/lumen#40: 566 005 triangles, a tree of 575 687 nodes, the image hash
+`sha256:cbd020b9949ae7310b11fb21650e9336ca2e6ec99e0f2bcd950ff61d39469eab` on every run, a mean
+render of 14.5 seconds with 18 CPUs, and 40.7 ns per ray against 15.0 for the reference scene
+and 18.0 for Fixed Point at the same settings in the same session.
 Each states its commit and conditions and applies to that commit only.
 
 ### Readings
