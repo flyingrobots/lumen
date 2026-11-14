@@ -37,7 +37,8 @@ All notable changes to lumen are recorded here. The format follows
 - Run statistics (part of flyingrobots/lumen#29; ADR 0008): `render_traced_with_run` returns
   the render with a `RunStatistics` (the band height, the band count and, per worker, a
   `WorkerStatistics` of bands, rows, pixels and rays), from `render_pixels_by_worker` (`Rendered`,
-  `WorkerRun`), whose bands and rows ride in each worker's outcome returned at `join`.
+  `WorkerRun`), whose band counts ride in each worker's outcome returned at `join` (rows are its pixels over
+  the width).
   `render --stats` ends with the `run.` lines; each per-worker line is labelled
   `(information only: differs from run to run)`. Counts only: no per-worker clock. Measured cost
   about 1.3 % of render time at 18 threads, none seen at one thread (ADR 0008).

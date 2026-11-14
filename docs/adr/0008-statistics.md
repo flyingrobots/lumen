@@ -143,8 +143,8 @@ render is gone, and `--stats` costs only the scene walk and the formatting after
 Per worker: bands and rows taken, pixels and rays. In all: the band count and the band height.
 The split between workers differs from run to run, so every per-worker line is
 `(information only)`; the totals do not, and the tests check that the per-worker figures sum to
-them at 1, 2, 4 and 18 workers. Each worker's bands and rows ride in the `Outcome` it already
-returns at `join` (`workers/outcome.rs`); `render_pixels_by_worker` returns them with each
+them at 1, 2, 4 and 18 workers. Each worker's band count rides in the `Outcome` it already
+returns at `join` (`workers/outcome.rs`); `render_pixels_by_worker` returns it with each
 worker's sum (`Rendered`, `WorkerRun`), in a list reserved before any thread starts, and
 `render_traced_with_run` turns them into `RunStatistics` (`WorkerStatistics` per worker: bands,
 rows, pixels, rays). `Render` does not hold them, so two renders of the same scene at different
