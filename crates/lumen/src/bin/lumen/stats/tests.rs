@@ -179,3 +179,50 @@ fn a_scene_without_a_sun_says_so() {
     assert!(text.contains("\nlight.sun none\nlight.sky "), "{text}");
     assert!(!text.contains("light.sun-toward"), "{text}");
 }
+
+/// Oracle: the lines, written by hand from the values set. Camera rays: 3, whose box tests total
+/// 10 (mean 3.33, most 5), leaf visits 2 (0.67, 1), peak stack 4; the other counters and kinds are
+/// zero, and a kind with no rays has a mean of 0.00. Distinct values per counter, so a counter
+/// printed under another's key, or a total printed as the most, is seen.
+#[test]
+fn the_traversal_lines_of_known_counts() {
+    let mut traversal = lumen::TraversalStatistics::default();
+    let camera = &mut traversal.camera;
+    (camera.total.box_tests, camera.most.box_tests) = (10, 5);
+    (camera.total.leaf_visits, camera.most.leaf_visits) = (2, 1);
+    camera.total.peak_stack = 4;
+    let mut rays = lumen::RayOutcomes::default();
+    (rays.camera_hits, rays.camera_misses) = (2, 1);
+    let mut text = Vec::new();
+    write_traversal(&mut text, &traversal, &rays).expect("writes");
+    let text = String::from_utf8(text).expect("utf-8");
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 3 * 19);
+    assert_eq!(
+        lines[..19],
+        [
+            "traversal.camera.box-tests 10",
+            "traversal.camera.box-tests-mean 3.33",
+            "traversal.camera.box-tests-max 5",
+            "traversal.camera.box-entries 0",
+            "traversal.camera.box-entries-mean 0.00",
+            "traversal.camera.box-entries-max 0",
+            "traversal.camera.popped-skipped 0",
+            "traversal.camera.popped-skipped-mean 0.00",
+            "traversal.camera.popped-skipped-max 0",
+            "traversal.camera.interior-visits 0",
+            "traversal.camera.interior-visits-mean 0.00",
+            "traversal.camera.interior-visits-max 0",
+            "traversal.camera.leaf-visits 2",
+            "traversal.camera.leaf-visits-mean 0.67",
+            "traversal.camera.leaf-visits-max 1",
+            "traversal.camera.primitive-tests 0",
+            "traversal.camera.primitive-tests-mean 0.00",
+            "traversal.camera.primitive-tests-max 0",
+            "traversal.camera.peak-stack 4",
+        ]
+    );
+    assert_eq!(lines[19], "traversal.bounce.box-tests 0");
+    assert_eq!(lines[38], "traversal.shadow.box-tests 0");
+    assert_eq!(lines[56], "traversal.shadow.peak-stack 0");
+}
