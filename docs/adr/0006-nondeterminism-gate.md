@@ -66,8 +66,8 @@ them in CI (see Consequences), so this row is a check, not a recorded run.
   `Instant`. Unstable items cannot be used on the pinned stable toolchain and are not listed.
   `float-type` also covers every stable `Duration` method that takes or returns a float
   (`as_secs_f64`, `mul_f64`, `from_secs_f64`, `try_from_secs_f64`, `div_duration_f64` and their
-  `f32` forms) and Bunny's float bridge at the pinned commit: `bunny_num::Scalar`,
-  `FixedQ32_32::{from_f32, to_f32, try_from_f32}` and their `conversions` functions,
+  `f32` forms) and Bunny's float bridge at the pinned commit: `bunny_num::Scalar` and
+  `bunny_num::is_finite`, `FixedQ32_32::{from_f32, to_f32, try_from_f32}` and their `conversions` functions,
   `bunny_linalg::{Vec2, Vec3}` and `FixedVec{2,3}::try_from_float`, `bunny_geom::{Ray3, Aabb3,
   Sphere3}` and the `into_float`/`try_from_float` of their fixed forms, and `bunny_codec`'s float
   meshes (`ObjMesh`, `ObjVertex`, `ObjVertices`, `PlyBinaryMesh`, `PlyVertex`, `parse_obj_text`,
@@ -102,7 +102,15 @@ them in CI (see Consequences), so this row is a check, not a recorded run.
   is from the tarball with sha256
   `75a89ce0e81e67d0134bd7adb1f0e312110b8eaef2fdd07e3bfb072a7211317b`, and regenerating it
   reproduces the checked-in file byte for byte. Bunny's float bridge is listed by hand from its
-  sources at the pinned commit; when the pin moves, re-read them.
+  sources at the pinned commit; when the pin moves, re-read them. Last re-read at
+  `2cd551e248d55407a8f27e84dcb26d1b1d8768bd`: every public item of the seven crates and
+  `bunny-mesh` whose signature or fields name `f32`, `f64` or `Scalar` is listed, by type or by
+  function, and the token scan lists the same types and `bunny_num::is_finite` by path. Not
+  listable: the trait impls `TryFrom<f32> for FixedQ32_32`, `From<Vec2>`/`From<Vec3>` for the
+  fixed vectors and back, and `TryFrom`/`From` between the fixed and float geometry types. A path
+  ban cannot name a trait impl's method, so they are caught where the float value is named
+  (`f32`, a listed type) or comes from a listed function, and missed only when the float is
+  inferred from `Default::default()` and passed straight in.
 - **Deny by default.** The bans apply to every crate in the workspace. Code outside the
   deterministic core carries `#[expect(<lints>, reason = "<rule-ids>: <why>")]`: the `lumen`
   binary, the examples, `tests/cli.rs` and `xtask` at crate level, and the scheduler and two

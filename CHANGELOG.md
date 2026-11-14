@@ -35,6 +35,25 @@ All notable changes to lumen are recorded here. The format follows
   `c_double` and `c_float` of `core::ffi` (which `std::ffi` re-exports) and of `std::os::raw`, and the
   scan names `c_double`, `c_float`, `f16` and `f128` (and names with the word `f16` or `f128`).
   Before, `<core::ffi::c_double as From<u32>>::from(x).sin()` passed both layers in the core.
+- Bunny is pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (was
+  `d4fe51d38fa10f8d6496bd110955314edac30bbf`), Bunny's main with the counted compact traversals
+  (`compact_closest_hit_counted`, `compact_any_hit_counted` and `TraversalCounts`,
+  flyingrobots/bunny#335), which part of flyingrobots/lumen#29 waits for. Between the two pins
+  Bunny also stated and tested the BVH depth contract, pinned rounding and guard boundaries in
+  `bunny-optics` with new tests, added `parse_ascii_ply_with_limits`, made `TraceRay::from_ray`
+  accept a unit direction with a component of `2^32 + 1` raw (a `None` becomes a `Some`; neither
+  lumen nor the Bunny functions it calls use `from_ray`) and tightened its own gate; no
+  function lumen calls changed its output. Lumen calls none of the new APIs yet. The three
+  scenes' golden image hashes and golden content digests (reference, Fixed Point, canyon) are
+  unchanged, as is the render time (three
+  alternated runs each at 1280 by 720, 16 samples, 18 threads; the pull request records them).
+  Re-reading Bunny's public API at the new pin for float-typed items (ADR 0006) found nothing
+  new, and one function missed before: `bunny_num::is_finite`, which takes an `f32` and whose
+  name has no float word. It is now a Clippy ban (144, up from 143, each firing on the fixture)
+  and a token-scan path. The golden tests of the three scenes check `BUNNY_REV` against one
+  constant, `GOLDEN_BUNNY_REV` in `tests/golden/mod.rs`, the commit the golden values were last
+  checked at, instead of each its own literal, so a pin move is acknowledged in one place.
+
 - The nondeterminism gate checks the workspace boundary (flyingrobots/lumen#158, ADR 0006's
   amendment of 2026-11-14): `xtask nondeterminism` reads `cargo metadata` and fails on a workspace
   member that is neither reached by `lumen`'s normal and build dependencies nor classified as
@@ -49,6 +68,55 @@ All notable changes to lumen are recorded here. The format follows
   `.cargo/config.toml` or `.cargo/config` in the repository (flyingrobots/lumen#158).
 
 ### Fixed
+
+- The canyon heightfield's public helpers no longer wrap or panic on a spec the generator
+  would refuse (flyingrobots/lumen#160, the heightfield half). `HeightfieldSpec::bounds` and
+  `HeightfieldSpec::centre_256` now return `Result`, refusing with `generate`'s own
+  `HeightfieldError`: before, `bounds` of a layer of amplitude `i64::MAX` wrapped to a wrong
+  range in release and panicked in debug, and `centre_256` read a meander spacing of 0 as 1 and
+  overflowed past an amplitude of about `2^48`. `terrain::stratum_material` sums the corners in
+  `i128`, so extreme heights no longer overflow. Tests reach every refusal and accept each limit
+  (`tests/canyon/limits.rs`), and kill three generator mutations that survived (the plateau's
+  weight dropped from the bounds, the spread truncated instead of floored, the grid's column
+  check deleted). The scene's bytes are unchanged: the golden image hash, the 4K hash, the
+  content identity and the generator's heights for the scene's spec are the same before and
+  after.
+
+- The canyon's craft poses no longer panic or wrap on a public input (flyingrobots/lumen#160,
+  the poses half). `Rational`'s fields are private: `Rational::new` refuses a denominator that
+  is not positive and numerators off `cos^2 + sin^2 = hyp^2` with `PoseError::NotARotation`, and
+  `Rational::cos`, `sin` and `hyp` read it. `Pose::place` returns `Result`: before,
+  `Rational { cos: 1, sin: 0, hyp: 0 }` made it panic dividing by zero, and its products and
+  sums were unchecked; now a point whose posed coordinates leave `i64` is refused with
+  `PoseError::Overflow`. `craft::craft_part` and `craft::push_craft` return the error, the
+  latter as the new `CanyonError::Craft`, and the convex solids' means are checked. Tests in
+  `tests/canyon/pose.rs`. The scene's bytes are unchanged: the golden image hash, the 4K hash
+  and the content identity are the same before and after.
+
+- Statistics and scan tests that could not fail now compare against something computed
+  independently (flyingrobots/lumen#162). The memory test asserts all seven buffers, vertex
+  normals included, and the total as their sum on a scene with no normals (reference), one with
+  normals on every triangle (Fixed Point) and a three-triangle scene worked by hand; before, it
+  summed six terms on the reference scene alone, so dropping `vertex_normals` from
+  `SceneMemory::total` passed. The ray ceiling is tested at exactly four rays per sample (passes)
+  and one past (refused), which a `>=` fails. The scan's seeded forms include `FxHashMap` and
+  `FxHashSet`. The ray-count assertion `rays == statistics.count()`, which compared a value with
+  itself, compares both with the queries the observing tracer saw. The statistics test that
+  compared two calls checks every value of each call (before and after a render, and on a second
+  build) against values worked by hand and a tree walked by the test. The tree oracle starts from
+  a record of the test's own rather than from the value under test. A triangle with one or two
+  vertex normals is tested to render the flat bytes (ADR 0007 clarification): shading smooth only
+  when all three are present is equivalent.
+
+- `render --out` no longer refuses a valid long file name (flyingrobots/lumen#159). The temporary
+  file was named `.NAME.lumen-PID-N.tmp` after the whole destination name, so a destination of
+  244 bytes or more made a temporary name past the 255-byte limit and was refused as unwritable
+  (`File name too long`). The temporary name now keeps at most 32 bytes of the destination's
+  name, cut at a character boundary, and is at most 57 bytes. A name of 255 bytes, the limit, now
+  publishes. It is still in the destination's directory, still created exclusively, and still
+  removed on every failure. Tests publish 244- and 255-byte names through a file system seam that
+  enforces the 255-byte limit and through the host's own, fail a rename at the longest name, and
+  check the temporary name's form.
 
 - Documentation no longer claims more than the code does (flyingrobots/lumen#57, the
   documentation half). "Equal provenance means equal bytes" is scoped to a render of the scene as

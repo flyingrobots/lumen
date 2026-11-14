@@ -85,9 +85,10 @@ pub(super) const NAMES: [(&str, &str); 14] = [
 
 /// Banned path prefixes and their rules. Each is compared segment by segment after the path is
 /// resolved through the file's imports ([`resolve`](super::paths::resolve)); the `sleep` family is listed by name
-/// because `sleep_ms` is not under `sleep`. The Bunny types are its float bridge, whose values
-/// carry floats with no float token (`PlyVertex.x`).
-pub(super) const PATHS: [(&[&str], &str); 46] = [
+/// because `sleep_ms` is not under `sleep`. The Bunny paths are its float bridge, whose values
+/// carry floats with no float token (`PlyVertex.x`), and `bunny_num::is_finite`, which takes one
+/// and whose name has no float word.
+pub(super) const PATHS: [(&[&str], &str); 47] = [
     (&["std", "env"], "std-env"),
     (&["std", "fs"], "std-fs"),
     (&["std", "process"], "std-process"),
@@ -134,4 +135,5 @@ pub(super) const PATHS: [(&[&str], &str); 46] = [
     (&["bunny_codec", "ObjVertices"], "float-type"),
     (&["bunny_codec", "PlyBinaryMesh"], "float-type"),
     (&["bunny_codec", "PlyVertex"], "float-type"),
+    (&["bunny_num", "is_finite"], "float-type"),
 ];
