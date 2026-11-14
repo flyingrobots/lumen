@@ -9,6 +9,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 use crate::render::{RenderSettings, SettingsError};
+use crate::schedule::{Schedule, ScheduleError, TileSize, DEFAULT_TILE};
 
 /// The default image width: small enough to render in a few seconds in a debug build.
 pub const DEFAULT_WIDTH: u32 = 320;
@@ -21,15 +22,19 @@ pub const DEFAULT_SEED: u32 = 0;
 
 /// The usage text.
 pub const USAGE: &str = "\
-usage: lumen render --out FILE [--width W] [--height H] [--samples N] [--seed S]
+usage: lumen render [--out FILE] [--width W] [--height H] [--samples N] [--seed S]
+                    [--threads T] [--tile N | --tile WxH]
        lumen --help | --version
 
-Renders lumen's built-in reference scene to a PNG file on one thread, with N samples per
-pixel of a diffuse path (a shadow-casting sun, a uniform sky and one bounce), and prints the
-image hash (SHA-256 of the raw RGBA8 bytes).
-Defaults: --width 320 --height 180 --samples 4 --seed 0.
+Renders lumen's built-in reference scene in tiles on T threads, with N samples per pixel of a
+diffuse path (a shadow-casting sun, a uniform sky and one bounce), writes it to a PNG file if
+--out is given, and prints the image hash (SHA-256 of the raw RGBA8 bytes) and the timing.
+The image is the same for every thread count and tile size.
+Defaults: --width 320 --height 180 --samples 4 --seed 0 --tile 32, and as many threads as
+the system reports available.
 Width and height are 1..=32768 each, with at most 134217728 (2^27) pixels in all.
-Samples per pixel are a power of two from 1 to 1024; the seed is 0..=4294967295.";
+Samples per pixel are a power of two from 1 to 1024; the seed is 0..=4294967295.
+Threads are 1..=256; a tile is N by N pixels, or W by H, each at least 1.";
 
 /// A parsed command line.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,8 +51,13 @@ pub enum Command {
         height: u32,
         /// The samples per pixel and the seed.
         settings: RenderSettings,
-        /// The PNG file to write, with the bytes it was given.
-        out: PathBuf,
+        /// The worker threads asked for (checked against `1..=MAX_THREADS`), or `None` for as
+        /// many as the system reports available.
+        threads: Option<u32>,
+        /// The tile size.
+        tile: TileSize,
+        /// The PNG file to write, with the bytes it was given, if any.
+        out: Option<PathBuf>,
     },
 }
 
@@ -80,8 +90,10 @@ pub enum UsageError {
     },
     /// The sample count was refused.
     Samples(SettingsError),
-    /// `--out` was not given.
-    MissingOut,
+    /// The thread count or the tile size was refused.
+    Schedule(ScheduleError),
+    /// A tile is not `N` or `WxH` with decimal `u32`s.
+    InvalidTile(String),
 }
 
 impl fmt::Display for UsageError {
@@ -99,7 +111,11 @@ impl fmt::Display for UsageError {
                 write!(f, "{option} needs a whole number, not {value:?}")
             }
             Self::Samples(error) => write!(f, "--samples: {error}"),
-            Self::MissingOut => f.write_str("render needs --out FILE"),
+            Self::Schedule(error @ ScheduleError::EmptyTile) => write!(f, "--tile: {error}"),
+            Self::Schedule(error) => write!(f, "--threads: {error}"),
+            Self::InvalidTile(value) => {
+                write!(f, "--tile needs N or WxH with whole numbers, not {value:?}")
+            }
         }
     }
 }
@@ -107,7 +123,8 @@ impl fmt::Display for UsageError {
 impl std::error::Error for UsageError {}
 
 /// The options `render` takes.
-const OPTIONS: [&str; 5] = ["--width", "--height", "--samples", "--seed", "--out"];
+const OPTIONS: [&str; 7] =
+    ["--width", "--height", "--samples", "--seed", "--threads", "--tile", "--out"];
 
 /// Parses the arguments after the program name.
 ///
@@ -135,7 +152,8 @@ where
             });
         }
     }
-    let mut numbers: [Option<u32>; 4] = [None; 4];
+    let mut numbers: [Option<u32>; 5] = [None; 5];
+    let mut tile: Option<TileSize> = None;
     let mut out: Option<PathBuf> = None;
     while let Some(option) = args.next() {
         let name = match option.to_str() {
@@ -148,23 +166,50 @@ where
         };
         let value = args.next().ok_or(UsageError::MissingValue(name))?;
         let repeated = match OPTIONS.iter().position(|known| *known == name) {
-            Some(slot @ 0..=3) => numbers[slot].replace(number(name, &value)?).is_some(),
+            Some(slot @ 0..=4) => numbers[slot].replace(number(name, &value)?).is_some(),
+            Some(5) => tile.replace(tile_size(&value)?).is_some(),
             _ => out.replace(PathBuf::from(value)).is_some(),
         };
         if repeated {
             return Err(UsageError::Repeated(name));
         }
     }
-    let [width, height, samples, seed] = numbers;
+    let [width, height, samples, seed, threads] = numbers;
     let settings =
         RenderSettings::new(samples.unwrap_or(DEFAULT_SAMPLES), seed.unwrap_or(DEFAULT_SEED))
             .map_err(UsageError::Samples)?;
+    let tile = tile.unwrap_or(DEFAULT_TILE);
+    if let Some(threads) = threads {
+        Schedule::new(threads, tile).map_err(UsageError::Schedule)?;
+    }
     Ok(Command::Render {
         width: width.unwrap_or(DEFAULT_WIDTH),
         height: height.unwrap_or(DEFAULT_HEIGHT),
         settings,
-        out: out.ok_or(UsageError::MissingOut)?,
+        threads,
+        tile,
+        out,
     })
+}
+
+/// A tile size: `N` (N by N) or `WxH`, each a decimal `u32` of at least 1.
+fn tile_size(value: &OsStr) -> Result<TileSize, UsageError> {
+    let shown = || value.to_string_lossy().into_owned();
+    let text = value.to_str().ok_or_else(|| UsageError::InvalidTile(shown()))?;
+    let side = |part: &str| {
+        let digits = !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+        digits
+            .then(|| part.parse::<u32>().ok())
+            .flatten()
+            .ok_or_else(|| UsageError::InvalidTile(shown()))
+    };
+    let (width, height) = if let Some((width, height)) = text.split_once('x') {
+        (side(width)?, side(height)?)
+    } else {
+        let n = side(text)?;
+        (n, n)
+    };
+    TileSize::new(width, height).map_err(UsageError::Schedule)
 }
 
 /// A decimal `u32`: digits only, no sign, no spaces, no underscores.
@@ -199,7 +244,9 @@ mod tests {
                 width: 320,
                 height: 180,
                 settings: settings(4, 0),
-                out: "a.png".into()
+                threads: None,
+                tile: DEFAULT_TILE,
+                out: Some("a.png".into())
             })
         );
         assert_eq!(
@@ -208,7 +255,9 @@ mod tests {
                 width: 16,
                 height: 9,
                 settings: settings(16, 7),
-                out: "b.png".into()
+                threads: None,
+                tile: DEFAULT_TILE,
+                out: Some("b.png".into())
             })
         );
         assert_eq!(
@@ -217,7 +266,31 @@ mod tests {
                 width: 320,
                 height: 180,
                 settings: settings(1024, u32::MAX),
-                out: "c".into()
+                threads: None,
+                tile: DEFAULT_TILE,
+                out: Some("c".into())
+            })
+        );
+        assert_eq!(
+            parse_str("render --threads 7 --tile 16x8"),
+            Ok(Command::Render {
+                width: 320,
+                height: 180,
+                settings: settings(4, 0),
+                threads: Some(7),
+                tile: TileSize::new(16, 8).expect("valid"),
+                out: None
+            })
+        );
+        assert_eq!(
+            parse_str("render --tile 64 --threads 256"),
+            Ok(Command::Render {
+                width: 320,
+                height: 180,
+                settings: settings(4, 0),
+                threads: Some(256),
+                tile: TileSize::new(64, 64).expect("valid"),
+                out: None
             })
         );
         assert_eq!(parse_str("--help"), Ok(Command::Help));
@@ -230,7 +303,6 @@ mod tests {
         assert_eq!(parse_str(""), Err(UsageError::MissingCommand));
         assert_eq!(parse_str("draw"), Err(UsageError::UnknownCommand("draw".into())));
         assert_eq!(parse_str("--fast"), Err(UsageError::UnknownOption("--fast".into())));
-        assert_eq!(parse_str("render"), Err(UsageError::MissingOut));
         assert_eq!(parse_str("render --out"), Err(UsageError::MissingValue("--out")));
         assert_eq!(
             parse_str("render --out a --depth 3"),
@@ -245,7 +317,7 @@ mod tests {
             parse_str("render --seed 2 --seed 2 --out a"),
             Err(UsageError::Repeated("--seed"))
         );
-        for option in ["--width", "--height", "--samples", "--seed"] {
+        for option in ["--width", "--height", "--samples", "--seed", "--threads"] {
             for value in ["-1", "+5", "1.5", "abc", "4294967296", "0x10", ""] {
                 let args = ["render", option, value, "--out", "a"];
                 assert_eq!(
@@ -255,6 +327,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn threads_and_tiles_are_checked() {
+        assert_eq!(
+            parse_str("render --threads 0"),
+            Err(UsageError::Schedule(ScheduleError::NoThreads))
+        );
+        assert_eq!(
+            parse_str("render --threads 257"),
+            Err(UsageError::Schedule(ScheduleError::TooManyThreads(257)))
+        );
+        assert_eq!(
+            parse_str("render --threads 2 --threads 3"),
+            Err(UsageError::Repeated("--threads"))
+        );
+        for zero in ["0", "0x4", "4x0"] {
+            let line = format!("render --tile {zero}");
+            assert_eq!(parse_str(&line), Err(UsageError::Schedule(ScheduleError::EmptyTile)));
+        }
+        for bad in ["x", "4x", "x4", "4x4x4", "4X4", "-4", "4.5", "4 ", "4294967296", "4x+4"] {
+            let args = ["render", "--tile", bad];
+            assert_eq!(parse(args), Err(UsageError::InvalidTile(bad.into())), "{bad:?}");
+        }
+        assert_eq!(parse_str("render --tile 4 --tile 4"), Err(UsageError::Repeated("--tile")));
     }
 
     #[test]
@@ -288,16 +385,21 @@ mod tests {
         };
         // A non-Unicode output path keeps its bytes.
         let parsed = args(&[OsStr::new("--out"), bytes]);
-        let Ok(Command::Render { out, .. }) = parsed else { panic!("{parsed:?}") };
+        let Ok(Command::Render { out: Some(out), .. }) = parsed else { panic!("{parsed:?}") };
         assert_eq!(out.as_os_str().as_bytes(), bytes.as_bytes());
         // A non-Unicode number is a typed error.
-        for option in ["--width", "--height", "--samples", "--seed"] {
+        for option in ["--width", "--height", "--samples", "--seed", "--threads"] {
             let parsed = args(&[OsStr::new(option), bytes, OsStr::new("--out"), OsStr::new("a")]);
             assert_eq!(
                 parsed,
                 Err(UsageError::NotUnicode { option, value: "out-\u{fffd}\u{fffd}.png".into() })
             );
         }
+        // A non-Unicode tile is a typed error.
+        assert_eq!(
+            args(&[OsStr::new("--tile"), bytes]),
+            Err(UsageError::InvalidTile("out-\u{fffd}\u{fffd}.png".into()))
+        );
         // A non-Unicode option or command is unknown.
         assert_eq!(
             args(&[bytes]),

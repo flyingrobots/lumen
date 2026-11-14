@@ -1,8 +1,14 @@
 //! The integrator and the render loop: samples per pixel, each one diffuse path with a
 //! shadow-casting directional light and one bounce, composed only of Bunny calls, then Bunny's
-//! pixel path, on one thread.
+//! pixel path, on one or more threads.
+//!
+//! The image is a pure function of the scene and the settings. The [`Schedule`] (how many
+//! threads, how large the tiles) decides only who computes a pixel and when, never its value:
+//! every pixel's samples are accumulated for that pixel alone, by one worker, in its own
+//! `PixelAccumulator`, so no accumulation order exists between threads.
 
 use core::fmt;
+use core::ops::Add;
 
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
@@ -13,6 +19,8 @@ use bunny_query::TraceRay;
 
 use crate::image::{ImageSize, Rgba8Image, SizeError};
 use crate::scene::{Hit, Scene, SceneError, TraceError, Tracer};
+use crate::schedule::Schedule;
+use crate::workers::{render_pixels, WorkerError};
 
 /// The stable name and version of lumen's integrator, [`trace_path`].
 ///
@@ -138,6 +146,10 @@ pub enum RenderError {
     Shading,
     /// Memory for the image could not be reserved.
     OutOfMemory,
+    /// The operating system refused to start a worker thread.
+    Spawn,
+    /// A tile did not fit the image (an internal invariant of the scheduler, never expected).
+    TileGeometry,
 }
 
 impl fmt::Display for RenderError {
@@ -151,6 +163,8 @@ impl fmt::Display for RenderError {
             Self::Pixel(error) => write!(f, "pixel value refused: {error}"),
             Self::Shading => f.write_str("a shading step refused its input"),
             Self::OutOfMemory => f.write_str("not enough memory for the image"),
+            Self::Spawn => f.write_str("a worker thread could not be started"),
+            Self::TileGeometry => f.write_str("a tile did not fit the image (a lumen bug)"),
         }
     }
 }
@@ -202,9 +216,18 @@ impl RayCount {
     pub const fn total(self) -> u64 {
         self.closest + self.shadow
     }
+}
 
-    const fn add(self, other: Self) -> Self {
-        Self { closest: self.closest + other.closest, shadow: self.shadow + other.shadow }
+impl Add for RayCount {
+    type Output = Self;
+
+    /// The rays of both. Ray counts of a render stay far below `u64::MAX` (an image has at most
+    /// 2^27 pixels of at most 1024 samples of at most five rays), so the sums never saturate.
+    fn add(self, other: Self) -> Self {
+        Self {
+            closest: self.closest.saturating_add(other.closest),
+            shadow: self.shadow.saturating_add(other.shadow),
+        }
     }
 }
 
@@ -321,15 +344,7 @@ pub fn pixel_radiance(
     x: u32,
     y: u32,
 ) -> Result<([FixedQ32_32; 3], RayCount), RenderError> {
-    let sampler = settings.sampler(x, y);
-    let mut accumulator = PixelAccumulator::new();
-    let mut rays = RayCount::default();
-    for sample in 0..settings.samples_per_pixel() {
-        let path = trace_path(scene, scene, camera, sampler, sample)?;
-        accumulator.add_sample(path.radiance)?;
-        rays = rays.add(path.rays);
-    }
-    Ok((accumulator.resolve()?, rays))
+    Frame { scene, tracer: scene, camera, settings }.radiance(x, y)
 }
 
 /// A rendered image and the rays it took.
@@ -341,39 +356,111 @@ pub struct Render {
     pub rays: RayCount,
 }
 
-/// Renders `scene` at `size` with `settings` on one thread.
+/// The pixels of one render, shared read-only by every worker: the scene, the tracer that
+/// answers its ray queries, the camera at the image size and the settings.
+struct Frame<'a, T: ?Sized> {
+    scene: &'a Scene,
+    tracer: &'a T,
+    camera: &'a PinholeCamera,
+    settings: RenderSettings,
+}
+
+impl<T: Tracer + ?Sized> Frame<'_, T> {
+    /// [`pixel_radiance`] with the frame's tracer.
+    fn radiance(&self, x: u32, y: u32) -> Result<([FixedQ32_32; 3], RayCount), RenderError> {
+        let sampler = self.settings.sampler(x, y);
+        let mut accumulator = PixelAccumulator::new();
+        let mut rays = RayCount::default();
+        for sample in 0..self.settings.samples_per_pixel() {
+            let path = trace_path(self.scene, self.tracer, self.camera, sampler, sample)?;
+            accumulator.add_sample(path.radiance)?;
+            rays = rays + path.rays;
+        }
+        Ok((accumulator.resolve()?, rays))
+    }
+
+    /// The four RGBA8 bytes of pixel `(x, y)`: its radiance through [`TONE_CURVE`] and
+    /// `write_rgba8`.
+    fn rgba(&self, x: u32, y: u32) -> Result<([u8; 4], RayCount), RenderError> {
+        let (radiance, rays) = self.radiance(x, y)?;
+        let mut rgba = [0_u8; 4];
+        write_rgba8(&mut rgba, TONE_CURVE, radiance)?;
+        Ok((rgba, rays))
+    }
+}
+
+/// Renders `scene` at `size` with `settings` on the workers of `schedule`, with `tracer`
+/// answering the ray queries.
 ///
-/// Each pixel is [`pixel_radiance`], written by `write_rgba8` through [`TONE_CURVE`]: opaque
-/// RGBA8, row-major, row 0 at the top. Pixels are visited row by row, but each pixel is a pure
-/// function of its coordinates, so any order (or any split into tiles) gives the same bytes.
+/// Each pixel is the radiance of [`pixel_radiance`] (with `tracer` in place of the scene),
+/// written by `write_rgba8` through [`TONE_CURVE`]: opaque RGBA8, row-major, row 0 at the top.
+/// The scene and the tracer are shared read-only by every worker. [`render_pixels`] decides who
+/// computes which pixel and when, never its value: every pixel's samples go into its own
+/// `PixelAccumulator`, so the image and the ray count are the same for every schedule.
 ///
 /// # Errors
 ///
-/// [`RenderError::Camera`] if Bunny refuses the camera at this size,
-/// [`RenderError::OutOfMemory`] if the buffer cannot be reserved, and any error of
-/// [`pixel_radiance`] or `write_rgba8`.
+/// [`RenderError::Camera`] if Bunny refuses the camera at this size; the error of
+/// [`pixel_radiance`] or `write_rgba8` for the first failing pixel in raster order;
+/// [`RenderError::OutOfMemory`] if a buffer cannot be reserved; [`RenderError::Spawn`] if a
+/// worker thread cannot be started.
+pub fn render_traced<T: Tracer + Sync + ?Sized>(
+    scene: &Scene,
+    tracer: &T,
+    size: ImageSize,
+    settings: RenderSettings,
+    schedule: Schedule,
+) -> Result<Render, RenderError> {
+    let camera = scene.camera().camera(size.width(), size.height())?;
+    let frame = Frame { scene, tracer, camera: &camera, settings };
+    match render_pixels(size, schedule, RayCount::default(), |x, y| frame.rgba(x, y)) {
+        Ok((image, rays)) => Ok(Render { image, rays }),
+        Err(WorkerError::Pixel { error, .. }) => Err(error),
+        Err(WorkerError::OutOfMemory) => Err(RenderError::OutOfMemory),
+        Err(WorkerError::Spawn) => Err(RenderError::Spawn),
+        Err(WorkerError::TileGeometry) => Err(RenderError::TileGeometry),
+    }
+}
+
+/// Renders `scene` at `size` with `settings` on the workers of `schedule`: [`render_traced`]
+/// with the scene as its own tracer.
+///
+/// # Errors
+///
+/// Any error of [`render_traced`].
+pub fn render_scheduled(
+    scene: &Scene,
+    size: ImageSize,
+    settings: RenderSettings,
+    schedule: Schedule,
+) -> Result<Render, RenderError> {
+    render_traced(scene, scene, size, settings, schedule)
+}
+
+/// Renders `scene` at `size` with `settings` on one thread: [`render_scheduled`] with
+/// [`Schedule::single`].
+///
+/// Each pixel is [`pixel_radiance`], written by `write_rgba8` through [`TONE_CURVE`]: opaque
+/// RGBA8, row-major, row 0 at the top. Each pixel is a pure function of its coordinates, so any
+/// order, any split into tiles and any number of threads give the same bytes.
+///
+/// # Errors
+///
+/// Any error of [`render_traced`].
 pub fn render(
     scene: &Scene,
     size: ImageSize,
     settings: RenderSettings,
 ) -> Result<Render, RenderError> {
-    let camera = scene.camera().camera(size.width(), size.height())?;
-    let len = size.byte_len().ok_or(RenderError::OutOfMemory)?;
-    let mut bytes = Vec::new();
-    bytes.try_reserve_exact(len).map_err(|_| RenderError::OutOfMemory)?;
-    bytes.resize(len, 0);
-    let row_len = len / usize::try_from(size.height()).map_err(|_| RenderError::OutOfMemory)?;
-    let mut rays = RayCount::default();
-    for (y, row) in (0..size.height()).zip(bytes.chunks_exact_mut(row_len)) {
-        for (x, pixel) in (0..size.width()).zip(row.chunks_exact_mut(4)) {
-            let (radiance, pixel_rays) = pixel_radiance(scene, &camera, settings, x, y)?;
-            write_rgba8(pixel, TONE_CURVE, radiance)?;
-            rays = rays.add(pixel_rays);
-        }
-    }
-    let image = Rgba8Image::from_bytes(size, bytes).ok_or(RenderError::OutOfMemory)?;
-    Ok(Render { image, rays })
+    render_scheduled(scene, size, settings, Schedule::single())
 }
+
+/// The scene is shared by reference between worker threads, so it and everything reachable from
+/// it must be `Sync` as it is, with no lock or wrapper. This fails to compile if it is not.
+const _: () = {
+    const fn shared_read_only<T: Sync + ?Sized>() {}
+    shared_read_only::<Scene>();
+};
 
 /// Renders the built-in reference scene at `width` by `height` with `settings`.
 ///
