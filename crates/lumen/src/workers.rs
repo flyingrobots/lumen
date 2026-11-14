@@ -245,6 +245,55 @@ impl<'a> Shared<'a> {
     }
 }
 
+/// One worker between steps: its outcome so far and the band it is in, if any. `work` runs it to
+/// the end on a thread; the unit tests' simulated workers run the same steps one at a time.
+struct Worker<'s, 'a, T, E> {
+    shared: &'s Shared<'a>,
+    outcome: Outcome<T, E>,
+    /// The band being rendered, with its first row, and the rows of it not yet begun.
+    band: Option<(u32, Rows<'a>)>,
+}
+
+impl<'s, 'a, T, E> Worker<'s, 'a, T, E>
+where
+    T: Copy + Add<Output = T>,
+{
+    const fn new(shared: &'s Shared<'a>, zero: T) -> Self {
+        Self { shared, outcome: Outcome::new(zero), band: None }
+    }
+
+    /// One step: take the next band, render the next row of the band, or leave the band when its
+    /// rows are done or it is to be left. `false` when no band is left or wanted: the worker is
+    /// done.
+    fn step<F>(&mut self, pixel: &F) -> bool
+    where
+        F: Fn(u32, u32) -> Result<(Rgba, T), E>,
+    {
+        match self.band.as_mut() {
+            None => {
+                self.band = self.shared.take();
+                self.band.is_some()
+            }
+            Some((_, rows)) => {
+                match rows.next() {
+                    None => self.band = None,
+                    Some((y, row)) => {
+                        if self.shared.render_row(y, row, pixel, &mut self.outcome) == Row::Leave {
+                            self.band = None;
+                        }
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    /// The worker's sum and earliest failure.
+    fn finish(self) -> Outcome<T, E> {
+        self.outcome
+    }
+}
+
 /// One worker: takes bands until none is left or wanted, renders each row by row, and returns
 /// its sum and its earliest failure.
 fn work<T, E, F>(shared: &Shared<'_>, pixel: &F, zero: T) -> Outcome<T, E>
@@ -252,15 +301,36 @@ where
     T: Copy + Add<Output = T>,
     F: Fn(u32, u32) -> Result<(Rgba, T), E>,
 {
-    let mut outcome = Outcome::new(zero);
-    while let Some((_, rows)) = shared.take() {
-        for (y, row) in rows {
-            if shared.render_row(y, row, pixel, &mut outcome) == Row::Leave {
-                break;
+    let mut worker = Worker::new(shared, zero);
+    while worker.step(pixel) {}
+    worker.finish()
+}
+
+/// Starts helpers 1 to `workers - 1` with `start`, in order, and returns what it gave for each.
+/// If `start` refuses one, halts the workers already started (they stop at their next row) and
+/// returns [`WorkerError::Spawn`] for it with the refusal.
+fn start_helpers<H, E>(
+    shared: &Shared<'_>,
+    workers: u32,
+    mut start: impl FnMut(u32) -> io::Result<H>,
+) -> Result<Vec<H>, WorkerError<E>> {
+    // `Schedule::workers` is at least 1: the calling thread.
+    let helpers = widen(workers).saturating_sub(1);
+    let mut handles = Vec::new();
+    handles.try_reserve_exact(helpers).map_err(|error| WorkerError::OutOfMemory {
+        reserving: Reservation::Workers { handles: helpers },
+        error,
+    })?;
+    for worker in 1..workers {
+        match start(worker) {
+            Ok(handle) => handles.push(handle),
+            Err(error) => {
+                shared.halt();
+                return Err(WorkerError::Spawn(SpawnError::new(worker, error)));
             }
         }
     }
-    outcome
+    Ok(handles)
 }
 
 /// Renders every pixel of `size` with `pixel` on `schedule.workers(size)` workers, the calling
@@ -321,29 +391,15 @@ where
 {
     let mut image = blank(size)?;
     let workers = schedule.workers(size);
-    // `Schedule::workers` is at least 1: the calling thread.
-    let helpers = widen(workers).saturating_sub(1);
     let outcome = {
         let (pixels, _) = image.bytes_mut().as_chunks_mut::<4>();
         let shared = &Shared::new(size, schedule, pixels);
         let pixel = &pixel;
         std::thread::scope(|scope| {
-            let mut handles = Vec::new();
-            handles.try_reserve_exact(helpers).map_err(|error| WorkerError::OutOfMemory {
-                reserving: Reservation::Workers { handles: helpers },
-                error,
+            // On a refusal the scope joins the workers already started.
+            let handles = start_helpers(shared, workers, |worker| {
+                spawner.spawn(scope, worker, move || work(shared, pixel, zero))
             })?;
-            for worker in 1..workers {
-                match spawner.spawn(scope, worker, move || work(shared, pixel, zero)) {
-                    Ok(handle) => handles.push(handle),
-                    Err(error) => {
-                        // The scope joins the workers already started; they stop at their next
-                        // row.
-                        shared.halt();
-                        return Err(WorkerError::Spawn(SpawnError::new(worker, error)));
-                    }
-                }
-            }
             let mine = work(shared, pixel, zero);
             let theirs = handles.into_iter().map(|handle| {
                 handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))

@@ -1,6 +1,6 @@
 //! Hand-out orders explored on one thread, with no clock and no real threads: simulated workers
-//! advance one step at a time (take a band, render one row of it, return the outcome) through
-//! the same `take`, `render_row` and `combine` the threads run, in an order chosen by a
+//! advance one step at a time (take a band, render one row of it, leave the band) through the
+//! same `Worker::step` and `combine` the threads run, in an order chosen by a
 //! policy: a seeded generator, or a scripted worst case. Every failure message names the policy,
 //! so any order can be replayed. A step budget, not a timeout, ends a simulation that does not
 //! finish.
@@ -35,11 +35,26 @@ enum Policy {
     LowestBandFirst,
 }
 
-/// A simulated worker: idle, or partway through a band (its first row and its rows left).
-struct Sim<'a> {
-    outcome: Outcome<u64, Coord>,
-    band: Option<(u32, Rows<'a>)>,
-    done: bool,
+/// A simulated worker: running (the production `Worker`, idle or partway through a band), done
+/// with its outcome, or ended by a panic in the pixel function.
+enum Sim<'s, 'a> {
+    Live(Worker<'s, 'a, u64, Coord>),
+    Done(Outcome<u64, Coord>),
+    Panicked,
+}
+
+impl Sim<'_, '_> {
+    const fn is_live(&self) -> bool {
+        matches!(self, Self::Live(_))
+    }
+
+    /// The first row of the band the worker is in, if it is in one.
+    fn band(&self) -> Option<u32> {
+        match self {
+            Self::Live(worker) => worker.band.as_ref().map(|(first, _)| *first),
+            _ => None,
+        }
+    }
 }
 
 /// The pixel function under test: a colour from the coordinates, the value 1 per pixel, and a
@@ -54,8 +69,8 @@ fn pixel(failing: &[Coord]) -> impl Fn(u32, u32) -> PixelResult + '_ {
 }
 
 /// The next worker to move under `policy`, or `None` when all are done.
-fn pick(sims: &[Sim<'_>], policy: Policy, rng: &mut u64) -> Option<usize> {
-    let live: Vec<usize> = (0..sims.len()).filter(|&n| !sims[n].done).collect();
+fn pick(sims: &[Sim<'_, '_>], policy: Policy, rng: &mut u64) -> Option<usize> {
+    let live: Vec<usize> = (0..sims.len()).filter(|&n| sims[n].is_live()).collect();
     let first = *live.first()?;
     Some(match policy {
         Policy::First => first,
@@ -67,31 +82,18 @@ fn pick(sims: &[Sim<'_>], policy: Policy, rng: &mut u64) -> Option<usize> {
             live[usize::try_from(*rng % count).expect("below the count")]
         }
         Policy::LowestBandFirst => {
-            let idle = live.iter().copied().find(|&n| sims[n].band.is_none());
+            let idle = live.iter().copied().find(|&n| sims[n].band().is_none());
             idle.unwrap_or_else(|| {
-                let band = |n: usize| sims[n].band.as_ref().map_or(0, |(first, _)| *first);
-                live.iter().copied().max_by_key(|&n| band(n)).expect("live")
+                live.iter().copied().max_by_key(|&n| sims[n].band().unwrap_or(0)).expect("live")
             })
         }
     })
 }
 
-/// Moves worker `sim` one step: the steps of `work`, one at a time.
-fn step<'a>(shared: &Shared<'a>, sim: &mut Sim<'a>, pixel: &impl Fn(u32, u32) -> PixelResult) {
-    match sim.band.as_mut() {
-        None => {
-            sim.band = shared.take();
-            sim.done = sim.band.is_none();
-        }
-        Some((_, rows)) => match rows.next() {
-            None => sim.band = None,
-            Some((y, row)) => {
-                if shared.render_row(y, row, pixel, &mut sim.outcome) == Row::Leave {
-                    sim.band = None;
-                }
-            }
-        },
-    }
+/// Moves worker `sim` one step, `Worker::step` as `work` runs it.
+fn advance(sim: &mut Sim<'_, '_>, pixel: &impl Fn(u32, u32) -> PixelResult) {
+    let Sim::Live(mut worker) = core::mem::replace(sim, Sim::Panicked) else { return };
+    *sim = if worker.step(pixel) { Sim::Live(worker) } else { Sim::Done(worker.finish()) };
 }
 
 /// Runs `workers` simulated workers over the 13 by 9 image in bands of `rows` in the order
@@ -114,9 +116,8 @@ fn simulate(
     };
     let outcome = {
         let shared = Shared::new(size, schedule, image.bytes_mut().as_chunks_mut::<4>().0);
-        let mut sims: Vec<Sim<'_>> = (0..workers)
-            .map(|_| Sim { outcome: Outcome::new(0), band: None, done: false })
-            .collect();
+        let mut sims: Vec<Sim<'_, '_>> =
+            (0..workers).map(|_| Sim::Live(Worker::new(&shared, 0))).collect();
         // At most 9 bands, each taken once, each of its at most 9 rows rendered once and one
         // more step to see it end; each worker also makes one last take. More steps mean a
         // scheduler that does not end.
@@ -128,10 +129,14 @@ fn simulate(
                 shared.halt();
                 flag.set(true);
             }
-            step(&shared, &mut sims[n], pixel);
+            advance(&mut sims[n], pixel);
             steps += 1;
         }
-        combine(0, sims.into_iter().map(|sim| sim.outcome))
+        let outcomes = sims.into_iter().map(|sim| match sim {
+            Sim::Done(outcome) => outcome,
+            Sim::Live(_) | Sim::Panicked => unreachable!("every worker ran to its end"),
+        });
+        combine(0, outcomes)
     };
     let total = outcome.into_result()?;
     Ok((image.bytes().to_vec(), total))
