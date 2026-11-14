@@ -5,7 +5,8 @@
 //! material (a Bunny [`Albedo`]) for each, the [`Lighting`] and the placement of a pinhole camera.
 //! Building it prepares everything a ray needs, so tracing allocates nothing: Bunny's
 //! `TraceTriangle` and `TriangleSurface` per triangle, and the bounding volume hierarchy (see
-//! [`Scene::new`]), and the scene's content identity ([`SceneContentId`], ADR 0005). The built-in
+//! [`Scene::new`]), and the scene's content identity ([`SceneContentId`], ADR 0005). What a built
+//! scene holds can be counted on request ([`Scene::statistics`], ADR 0008). The built-in
 //! reference scene is in [`crate::reference`].
 
 use bunny_geom::FixedAabb3;
@@ -21,6 +22,7 @@ use crate::schedule::widen;
 mod content_id;
 mod error;
 mod primitive_index;
+mod statistics;
 mod tracer;
 mod tree;
 
@@ -30,6 +32,10 @@ mod tests;
 pub use content_id::{SceneContentId, SCENE_CONTENT_ENCODING};
 pub use error::{SceneBuffer, SceneError};
 pub use primitive_index::PrimitiveIndex;
+pub use statistics::{
+    SceneMemory, SceneStatistics, StatisticsError, TreeStatistics, LEAF_SIZE_BUCKETS, TREE_BUILDER,
+    TREE_LAYOUT,
+};
 pub use tracer::{Hit, TraceError, Tracer, FAR};
 use tree::{build_tree, Tree};
 
@@ -116,6 +122,7 @@ pub struct Scene {
     material_of: Vec<u32>,
     materials: Vec<Albedo>,
     normals: Vec<[Option<FixedUnitVec3>; 3]>,
+    smooth_triangles: usize,
     lighting: Lighting,
     camera: CameraPlacement,
     tree: Tree,
@@ -222,6 +229,8 @@ impl Scene {
         materials.extend_from_slice(spec.materials);
         let mut normals = reserved(SceneBuffer::VertexNormals, spec.normals.len())?;
         normals.extend_from_slice(spec.normals);
+        let smooth_triangles =
+            normals.iter().filter(|normals| normals.iter().any(Option::is_some)).count();
         Ok(Self {
             content,
             triangles,
@@ -229,6 +238,7 @@ impl Scene {
             material_of,
             materials,
             normals,
+            smooth_triangles,
             lighting: spec.lighting,
             camera: spec.camera,
             tree,
@@ -255,11 +265,25 @@ impl Scene {
         self.materials.get(widen(material))
     }
 
+    /// The materials, in table order: the albedos [`SceneSpec::materials`] gave, including any no
+    /// triangle names.
+    #[must_use]
+    pub fn materials(&self) -> &[Albedo] {
+        &self.materials
+    }
+
     /// The vertex normals of the triangle at `primitive`, in the order of its vertices, or
     /// `None` for an index out of range or a scene given no vertex normals.
     #[must_use]
     pub fn vertex_normals(&self, primitive: PrimitiveIndex) -> Option<&[Option<FixedUnitVec3>; 3]> {
         self.normals.get(primitive.to_usize())
+    }
+
+    /// How many triangles have at least one vertex normal: the triangles that
+    /// `lumen-smooth-diffuse-path/1` shades smooth. Zero for a scene given no vertex normals.
+    #[must_use]
+    pub const fn smooth_triangles(&self) -> usize {
+        self.smooth_triangles
     }
 
     /// The light and the sky.

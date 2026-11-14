@@ -15,7 +15,8 @@
 
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 use lumen::{render_reference, write_png, BuiltinScene, RenderSettings};
 
@@ -244,6 +245,7 @@ fn bad_arguments_are_refused_with_usage_and_write_nothing() {
     }
 }
 
+/// A refused size is a refused argument value: exit code 2, as for samples, threads and band rows.
 #[test]
 fn bad_sizes_are_refused_before_anything_is_written() {
     let dir = Scratch::new("sizes");
@@ -257,9 +259,99 @@ fn bad_sizes_are_refused_before_anything_is_written() {
     for (width, height, message) in cases {
         let output =
             dir.lumen(&["render", "--width", width, "--height", height, "--out", path_str(&out)]);
-        assert_refused(&output, 1, message);
+        assert_refused(&output, 2, message);
         assert!(!out.exists(), "{width}x{height} wrote a file");
     }
+}
+
+/// The report's lines that do not depend on the clock.
+fn stable_lines(stdout: &str) -> Vec<&str> {
+    stdout.lines().filter(|line| !line.contains("information only")).collect()
+}
+
+/// A value that reads as an option is refused for every option that takes a value, writes
+/// nothing, and exits 2; `--option=value` and negative numbers are values.
+#[test]
+fn an_option_looking_value_is_refused_unless_written_with_an_equals_sign() {
+    let dir = Scratch::new("option-like-value");
+    let cases: [(&[&str], &str); 8] = [
+        (&["render", "--out", "--width"], "--out needs a value, not the option \"--width\""),
+        (&["render", "--out", "--width", "8"], "--out needs a value, not the option \"--width\""),
+        (&["render", "--width", "--height", "5"], "--width needs a value, not the option"),
+        (&["render", "--samples", "--out", "x.png"], "--samples needs a value, not the option"),
+        (&["render", "--seed", "-h"], "--seed needs a value, not the option \"-h\""),
+        (&["render", "--threads", "--seed=1"], "--threads needs a value, not the option"),
+        (&["render", "--band-rows", "--scene"], "--band-rows needs a value, not the option"),
+        (&["render", "--scene", "--out=x.png"], "--scene needs a value, not the option"),
+    ];
+    for (args, message) in cases {
+        assert_refused(&dir.lumen(args), 2, message);
+        assert!(dir.is_empty(), "{args:?} wrote a file");
+    }
+    // The message says how to write the value; written so, it is the value.
+    let refused = dir.lumen(&["render", "--out", "--width"]);
+    assert!(text(&refused.stderr).contains("write --out=--width"), "{}", text(&refused.stderr));
+    let output = dir.lumen(&["render", "--width=8", "--height=4", "--samples=1", "--out=--width"]);
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert_eq!(field(&text(&output.stdout), "png").split(' ').next(), Some("--width"));
+    assert!(dir.file("--width").is_file());
+    // A negative number is a value, so a number option refuses it as a number.
+    assert_refused(&dir.lumen(&["render", "--height", "-3"]), 2, "--height needs a whole number");
+}
+
+/// Leading zeros are accepted for every numeric option and mean the same decimal number.
+#[test]
+fn leading_zeros_mean_the_same_number_for_every_numeric_option() {
+    let dir = Scratch::new("leading-zeros");
+    let plain = dir.lumen(&[
+        "render",
+        "--width",
+        "24",
+        "--height",
+        "16",
+        "--samples",
+        "2",
+        "--seed",
+        "7",
+        "--threads",
+        "2",
+        "--band-rows",
+        "3",
+    ]);
+    let zeros = dir.lumen(&[
+        "render",
+        "--width",
+        "000024",
+        "--height",
+        "016",
+        "--samples",
+        "0002",
+        "--seed",
+        "0007",
+        "--threads",
+        "02",
+        "--band-rows",
+        "003",
+    ]);
+    assert!(plain.status.success() && zeros.status.success());
+    let (plain, zeros) = (text(&plain.stdout), text(&zeros.stdout));
+    assert_eq!(stable_lines(&plain), stable_lines(&zeros));
+    assert_eq!(field(&zeros, "size"), "24x16");
+    // The padded zero is still zero, and a padded refused value is refused.
+    assert_refused(&dir.lumen(&["render", "--threads", "000"]), 2, "threads must be at least 1");
+    assert_refused(&dir.lumen(&["render", "--samples", "0003"]), 2, "must be a power of two");
+}
+
+/// The report's byte count is what the file holds.
+#[test]
+fn the_reported_byte_count_is_the_files_length() {
+    let dir = Scratch::new("byte-count");
+    let out = dir.file("a.png");
+    let output = dir.lumen(&small_render(path_str(&out), &[]));
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let png = field(&text(&output.stdout), "png").to_owned();
+    let length = std::fs::metadata(&out).expect("the file").len();
+    assert_eq!(png, format!("{} ({length} bytes)", out.display()));
 }
 
 #[test]
@@ -276,6 +368,85 @@ fn a_directory_is_not_a_file_to_write() {
     let dir = Scratch::new("directory-as-file");
     let output = dir.lumen(&["render", "--width", "4", "--height", "3", "--out", path_str(&dir)]);
     assert_refused(&output, 1, path_str(&dir));
+}
+
+/// A render that would run for hours if it started: 2^27 pixels at 1024 samples.
+const HOURS_OF_RENDERING: [&str; 7] =
+    ["render", "--width", "32768", "--height", "4096", "--samples", "1024"];
+
+/// Runs the command and fails the test if it has not exited within a minute: a refusal takes
+/// milliseconds, so a command that is still running has started to render. The child is killed
+/// by its own handle.
+fn lumen_that_must_refuse_quickly(dir: &Scratch, extra: &[&str]) -> Output {
+    let mut child = dir
+        .command()
+        .args(HOURS_OF_RENDERING)
+        .args(extra)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("lumen starts");
+    let started = Instant::now();
+    while child.try_wait().expect("polls").is_none() {
+        if started.elapsed() > Duration::from_mins(1) {
+            child.kill().expect("kills its own child");
+            child.wait().expect("reaps");
+            panic!("{extra:?}: still running after a minute: it started to render");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    child.wait_with_output().expect("output")
+}
+
+/// An unwritable destination is refused before the render starts (the render here would take
+/// hours), with the same message and exit code as before, and nothing is left behind.
+#[test]
+fn an_unwritable_destination_is_refused_before_any_pixel_is_computed() {
+    let dir = Scratch::new("refused-before-render");
+    let readonly = dir.file("readonly.png");
+    std::fs::write(&readonly, b"keep me").expect("old file");
+    let mut permissions = std::fs::metadata(&readonly).expect("meta").permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&readonly, permissions).expect("read-only");
+    let subdirectory = dir.file("sub");
+    std::fs::create_dir(&subdirectory).expect("sub");
+    let missing = dir.file("no-such-directory").join("x.png");
+    let cases = [
+        (missing.as_path(), "no-such-directory"),
+        (subdirectory.as_path(), "sub: is a directory"),
+        (readonly.as_path(), "readonly.png: the file is read-only"),
+    ];
+    for (destination, message) in cases {
+        let output = lumen_that_must_refuse_quickly(&dir, &["--out", path_str(destination)]);
+        assert_refused(&output, 1, message);
+    }
+    assert_eq!(std::fs::read(&readonly).expect("file"), b"keep me");
+    let mut names: Vec<_> = std::fs::read_dir(&*dir)
+        .expect("dir")
+        .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["readonly.png", "sub"]);
+}
+
+/// A render that replaces a file leaves the complete PNG and no temporary file next to it.
+#[test]
+fn a_render_replaces_an_existing_file_and_leaves_no_temporary_file() {
+    let dir = Scratch::new("replace");
+    let out = dir.file("a.png");
+    std::fs::write(&out, b"the old file").expect("old file");
+    let output = dir.lumen(&small_render(path_str(&out), &[]));
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let render =
+        render_reference(40, 24, RenderSettings::new(2, 5).expect("valid")).expect("renders");
+    let mut expected = Vec::new();
+    write_png(&mut expected, &render.image).expect("writes to memory");
+    assert_eq!(std::fs::read(&out).expect("the file"), expected);
+    let names: Vec<_> = std::fs::read_dir(&*dir)
+        .expect("dir")
+        .map(|entry| entry.expect("entry").file_name())
+        .collect();
+    assert_eq!(names, [std::ffi::OsString::from("a.png")]);
 }
 
 /// Arguments that are not Unicode, possible on Unix only.
@@ -472,4 +643,75 @@ fn help_lists_the_scenes() {
     for scene in BuiltinScene::ALL {
         assert!(help.contains(scene.name()), "{}", scene.name());
     }
+}
+
+/// Oracle: `lumen stats` against the library. The header is the scene's name and golden content
+/// identity; every other line is `key value...` with a key used once; the counts are those of
+/// `Scene::statistics`; the command writes no file.
+#[test]
+fn stats_prints_the_scenes_statistics_without_rendering() {
+    let dir = Scratch::new("stats");
+    for scene in BuiltinScene::ALL {
+        let output = dir.lumen(&["stats", "--scene", scene.name()]);
+        assert!(output.status.success(), "{}", text(&output.stderr));
+        let stdout = text(&output.stdout);
+        let content = match scene {
+            BuiltinScene::Reference => GOLDEN_REFERENCE_CONTENT,
+            BuiltinScene::FixedPoint => GOLDEN_FIXED_POINT_CONTENT,
+        };
+        let header = format!("scene {}\nscene-content {content}\nintegrator ", scene.id());
+        assert!(stdout.starts_with(&header), "{stdout}");
+        let keys: Vec<&str> =
+            stdout.lines().map(|line| line.split_once(' ').expect("key value").0).collect();
+        let unique: std::collections::BTreeSet<&str> = keys.iter().copied().collect();
+        assert_eq!(unique.len(), keys.len(), "a key repeats in {stdout}");
+        let stats = scene.build().expect("builds").statistics().expect("counts");
+        assert_eq!(field(&stdout, "scene.triangles"), stats.triangles.to_string());
+        assert_eq!(field(&stdout, "tree.nodes"), stats.tree.nodes.to_string());
+        let total = format!("{} (information only: this build's type sizes)", stats.memory.total());
+        assert_eq!(field(&stdout, "memory.total-bytes"), total);
+        assert!(!stdout.contains("image ") && !stdout.contains("seconds"), "{stdout}");
+        assert!(dir.is_empty());
+    }
+}
+
+/// Oracle: the report without `--stats`, from the same command line, and the library. With
+/// `--stats` the output is the plain report (timing values aside), then the scene block that
+/// `lumen stats` prints, then the ray lines, whose counts are the library's.
+#[test]
+fn render_stats_appends_the_statistics_after_the_unchanged_report() {
+    let dir = Scratch::new("render-stats");
+    let args = ["render", "--width", "12", "--height", "6", "--samples", "2", "--threads", "2"];
+    let plain = text(&dir.lumen(&args).stdout);
+    let output = dir.lumen(&[&args[..], &["--stats"]].concat());
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let with = text(&output.stdout);
+    // A timing line keeps its key; its value is a wall-clock reading.
+    let untimed = |report: &str| -> Vec<String> {
+        let mask = |line: &str| match line.split_once(' ') {
+            Some((key, rest))
+                if key.ends_with("seconds")
+                    || key.contains("per-") && rest.contains("information only") =>
+            {
+                key.to_owned()
+            }
+            _ => line.to_owned(),
+        };
+        report.lines().map(mask).collect()
+    };
+    let (plain, with) = (untimed(&plain), untimed(&with));
+    assert_eq!(with[..plain.len()], plain[..], "the report itself is unchanged");
+    let stats = text(&dir.lumen(&["stats"]).stdout);
+    let scene_block: Vec<&str> = stats.lines().skip(3).collect();
+    let after = &with[plain.len()..];
+    assert_eq!(after[..scene_block.len()], scene_block[..]);
+    let rays = after[scene_block.len()..].join("\n");
+    assert!(rays.starts_with("rays.camera 144\n"), "{rays}");
+    let scene = lumen::reference_scene().expect("builds");
+    let settings = RenderSettings::new(2, 0).expect("settings");
+    let size = lumen::ImageSize::new(12, 6).expect("size");
+    let render = lumen::render(&scene, size, settings).expect("renders");
+    assert!(rays.contains(&format!("\nrays.total {}\n", render.rays.total())), "{rays}");
+    let max = format!("\nrays.per-pixel-max {}\n", render.statistics.max_pixel_rays);
+    assert!(rays.contains(&max), "{rays}");
 }
