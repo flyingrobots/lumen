@@ -638,7 +638,8 @@ off the face and chest.
 ## The canyon scene
 
 The canyon scene (flyingrobots/lumen#40) is built in `crates/lumen/src/scenes/canyon/`. Its
-terrain exists in the library so far: `scenes::canyon::terrain` places the heights of
+terrain, its three craft and its planet exist in the library so far; the bunny and the
+assembled scene do not yet. `scenes::canyon::terrain` places the heights of
 `lumen-canyon-heightfield/1` ([below](#canyon-terrain-lumen-canyon-heightfield1)) on the scene's
 grid and makes the mesh, and `terrain_triangles` returns its triangles with their materials.
 
@@ -654,6 +655,33 @@ on the walls and one and a half times on the plateau, and a centre line that ben
 to the left between 30 and 60 units from `z = 12`. One shelf (`LEDGE`) cuts a level ledge 3
 units up into the left wall near the canyon's mouth. Each cell is coloured by its rock stratum:
 its four corners' mean height in bands 1.5 units thick picks material 0, 1, 0, 2 in turn (`STRATA`).
+
+**The craft** (170 triangles, `scenes::canyon::craft`), shapes of lumen's own, each a painted
+hull and dark engine blocks built from convex solids (`convex`: corners and faces, each face a
+fan wound away from the solid's centre), drawn nose toward `-Z` in 64ths of 3 units and posed
+by rational rotations (a bank about `+Z`, then a heading about `+Y`, each coordinate floored to
+the grid): the skiff (a hexagonal hull with a pointed nose, straight swept wings and a fin,
+orange) high at `(-2.5, 7, -10)`, banked by `-atan(7/24)` and turned by `atan(7/24)`; the tug (a
+wedge tapering to a narrow nose between two pontoons joined by a short wing, cream) at
+`(-7.5, 5.5, -15)`, banked and turned by `-atan(7/24)`; and the kite (a flat diamond wing with
+two engine pods, teal) leading low at `(-5.5, 4, -24)`, banked by `atan(7/24)`. `push_craft`
+appends them to a `CanyonContent` in that order, each its hull then its engines.
+
+**The planet** (16 128 triangles, `scenes::canyon::planet`): a sphere of radius 22 centred at
+`(-44, 48, -200)`, 128 longitudes by 64 latitude rows, its points from Bunny's table-based
+`FixedAngle::sin_cos` (each within one raw unit) floored to the grid, its axis tilted a
+thirty-second of a turn toward `-X`, in eight latitude bands (8, 6, 10, 6, 12, 6, 8 and 8 rows
+from the south pole), each its own material. `push_planet` appends the bands.
+
+`CanyonContent` (`scenes::canyon::content`) holds triangles in primitive order with each one's
+material index, vertex normals and named part (`PartKind`: the terrain, a craft's hull or
+engines, the bunny, a planet band).
+
+Tests (`crates/lumen/tests/canyon/parts.rs`): every craft part's and band's triangle count,
+derived by hand; every triangle inside the trace domain and none degenerate; one material per
+part, eight distinct for the bands, no vertex normals; and every craft at least half a unit above
+every terrain triangle under it (each triangle's vertices below the craft's lowest point, so the
+whole triangle is), the three craft's boxes apart.
 
 Tests (`crates/lumen/tests/canyon/terrain.rs`): two triangles per cell in row order on the grid
 points of their corners, inside Bunny's trace domain, none degenerate, each facing up (an exact
