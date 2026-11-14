@@ -171,6 +171,13 @@ fn xorshift(state: &mut u64) -> u64 {
     *state
 }
 
+/// The next number below `n`: the generator's output reduced in `u64`, so it is the same on a
+/// 32-bit target (WebAssembly), where most outputs do not fit `usize`.
+fn below(state: &mut u64, n: usize) -> usize {
+    let n = u64::try_from(n).expect("a length fits u64");
+    usize::try_from(xorshift(state) % n).expect("below a length, so it fits usize")
+}
+
 /// Over generated corruptions of a valid file (bytes replaced by characters that matter to the
 /// grammar, bytes deleted or duplicated, the text cut short), the reader never panics, and every
 /// text it accepts has exactly the declared shape. The seed and case are printed on failure.
@@ -183,7 +190,7 @@ fn generated_corrupt_files_are_refused_without_panicking() {
     for case in 0..20_000 {
         let mut bytes = SMALL.as_bytes().to_vec();
         for _ in 0..=xorshift(&mut state) % 3 {
-            let at = usize::try_from(xorshift(&mut state)).expect("fits") % bytes.len();
+            let at = below(&mut state, bytes.len());
             match xorshift(&mut state) % 4 {
                 0 => bytes.truncate(at),
                 1 => {
@@ -191,9 +198,7 @@ fn generated_corrupt_files_are_refused_without_panicking() {
                 }
                 2 => bytes.insert(at, bytes[at]),
                 _ => {
-                    let pick =
-                        usize::try_from(xorshift(&mut state)).expect("fits") % ALPHABET.len();
-                    bytes[at] = ALPHABET[pick];
+                    bytes[at] = ALPHABET[below(&mut state, ALPHABET.len())];
                 }
             }
             if bytes.is_empty() {

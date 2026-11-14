@@ -177,6 +177,11 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- The PLY reader's generated-corruption test assumed a 64-bit `usize`: it converted each 64-bit
+  generator output to `usize` before reducing it, which fails on `wasm32` and aborted the
+  WebAssembly test run (found by the new WebAssembly job, flyingrobots/lumen#23). It now reduces
+  in `u64` first; on 64-bit targets the generated cases are the same as before.
+
 - `lumen render` reads its arguments with `std::env::args_os()`, so an argument that is not
   valid Unicode no longer panics: a non-Unicode `--out` path is used as given, and a
   non-Unicode number or option is a usage error (flyingrobots/lumen#12).
