@@ -426,6 +426,7 @@ fn a_refused_worker_is_reported_with_its_number_and_its_error() {
 
 /// The payload of the simulated pixel function's panic, raised with `resume_unwind`, which
 /// unwinds like a panic but prints no message.
+#[cfg(panic = "unwind")]
 #[derive(Debug, PartialEq, Eq)]
 struct PixelPanic(Coord);
 
@@ -541,7 +542,8 @@ fn simulate_refusal(
 /// Oracle: the halt rule on a refused start, through the start-up the threads run. When helper
 /// `refuse` cannot be started after helpers 1 to `refuse - 1` have started and run for `gap`
 /// steps each, start-up returns `Spawn` for it, and no started worker computes a pixel after the
-/// refusal, under every order, gap, band height and refused worker tried. Witness count: refusals
+/// refusal, under every order, gap, band height and refused worker tried. `Hold(4)` stops the
+/// first helper partway through its band, so it meets the halt between two rows of a band. Witness count: refusals
 /// that came while a started worker was running and bands were left, so a start-up that did not
 /// halt would have rendered more.
 #[test]
@@ -550,7 +552,8 @@ fn after_a_refused_start_no_started_worker_begins_a_row() {
     for rows in [1, 2, 9] {
         for (workers, refuse) in [(2, 1), (4, 2), (4, 3), (7, 6)] {
             for gap in [0, 1, 3, 10] {
-                for policy in [Policy::First].into_iter().chain((0..20).map(Policy::Seeded)) {
+                let scripted = [Policy::First, Policy::Hold(4)];
+                for policy in scripted.into_iter().chain((0..20).map(Policy::Seeded)) {
                     let (got, after, pending) =
                         simulate_refusal(rows, workers, refuse, gap, policy);
                     let label = format!("{policy:?}, bands of {rows}, worker {refuse} of {workers} refused after {gap} steps");

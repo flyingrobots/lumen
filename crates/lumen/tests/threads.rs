@@ -338,6 +338,7 @@ fn a_traversal_failure_is_the_same_typed_error_at_every_schedule() {
 }
 
 /// The payload of the injected pixel function's panic.
+#[cfg(panic = "unwind")]
 #[derive(Debug)]
 struct PixelPanic;
 
