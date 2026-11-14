@@ -54,6 +54,19 @@ All notable changes to lumen are recorded here. The format follows
   `#anchor` a heading of its page, with GitHub's anchors. Offline; links with a scheme are not
   followed.
 
+### Added
+
+- `CountingTracer`, the ray-query port's counted form (part of flyingrobots/lumen#29, ADR 0008):
+  `closest_counted` and `occluded_counted` answer as `Tracer::closest` and `Tracer::occluded` do
+  and also return Bunny's `TraversalCounts` for the search (box tests, boxes entered, popped
+  entries skipped, interior and leaf visits, primitive tests, deepest stack). `Scene` implements
+  it with Bunny's `compact_closest_hit_counted` and `compact_any_hit_counted`; the uncounted
+  queries still call the uncounted searches. `tests/traversal_counts.rs` checks the counts
+  derived by hand for a one-triangle tree (a hit, a ray through the box beside the triangle and a
+  ray that misses the box, for both searches) and for a two-leaf tree where a nearer hit skips
+  the farther leaf, and compares every camera ray of a 32 by 18 image of each built-in scene with
+  Bunny's counted searches called directly on a tree rebuilt in the test.
+
 ### Changed
 
 - The scan follows aliases across files (flyingrobots/lumen#157): an `extern crate std as host`

@@ -106,9 +106,13 @@ giving the same answers. Lumen uses the binned-SAH tree in the compact layout, t
 four on a small render of the reference scene. The scene module keeps that choice in one file:
 `crates/lumen/src/scene/mod.rs` holds the scene model (`Scene`, `SceneSpec`, `Lighting`,
 `CameraPlacement`, `SceneError`), `scene/tracer.rs` the ray-query port (`Tracer`, `Hit`,
-`TraceError`, `FAR`), `scene/primitive_index.rs` the triangle's name (`PrimitiveIndex`, its
-position in input order, which breaks ties and so is part of the scene), and `scene/tree.rs` the
-adapter that builds Bunny's tree and answers the port's queries with it.
+`TraceError`, `FAR`, and `CountingTracer`, the same two queries also returning Bunny's
+`TraversalCounts` for the search that answered them), `scene/primitive_index.rs` the triangle's
+name (`PrimitiveIndex`, its position in input order, which breaks ties and so is part of the
+scene), and `scene/tree.rs` the adapter that builds Bunny's tree and answers both ports' queries
+with it: `Tracer` with Bunny's `compact_closest_hit` and `compact_any_hit`, `CountingTracer` with
+their counted forms, which return the same answers (`tests/traversal_counts.rs` checks the counts
+by hand on constructed trees and against Bunny's counted searches called directly).
 `crates/lumen/examples/traversal.rs` repeats the measurement, checks that all four give the same radiance bits, and prints the build times:
 
 ```sh
