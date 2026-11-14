@@ -29,30 +29,35 @@
 pub(crate) const GOLDEN_96X54_4SPP: &str =
     "sha256:4f9d5436dde802b5956d1ad6b83fe9671021ae5838f54bc697ae18690ebb9a46";
 
-/// The golden image hash of the Fixed Point scene, `lumen-fixed-point-scene/1`: 96 by 54 pixels,
+/// The golden image hash of the Fixed Point scene, `lumen-fixed-point-scene/2`: 96 by 54 pixels,
 /// 4 samples per pixel, seed 0, rendered from `fixed_point_scene()` (and by
 /// `lumen render --scene fixed-point`).
 ///
-/// Recorded for `lumen-fixed-point-scene/1`, `lumen-diffuse-path/1` (Bunny's
-/// `bunny-sobol-owen/1` and `bunny-diffuse-shading/1`), `bunny-tone-srgb/1` and
-/// `bunny-rgba8-opaque/1`, recorded against Bunny dcd6bd37613738de93f7084e7c8aa0283de964ea,
-/// unchanged at 3c395f9950ac63d5ecfbd2055c306954111daf9d, 3c0dab3e77c0d45de8904906a134e846dfe5ec6c
-/// and d4fe51d38fa10f8d6496bd110955314edac30bbf; first recorded
-/// on aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). Like the
-/// reference scene's, it is the one expected value for every platform and build profile, checked
-/// by the same `Determinism / ...` jobs. Never add a per-platform value.
+/// Recorded for `lumen-fixed-point-scene/2`, `lumen-smooth-diffuse-path/1` (Bunny's
+/// `bunny-sobol-owen/1`, `bunny-diffuse-shading/1`, `bunny-smooth-shading/1` and
+/// `bunny-smooth-normal/1`), `bunny-tone-srgb/1` and `bunny-rgba8-opaque/1`, against Bunny
+/// d4fe51d38fa10f8d6496bd110955314edac30bbf; first recorded on aarch64 Linux (the rust-dev:1.96.0
+/// container on an Apple M5 Pro). Like the reference scene's, it is the one expected value for
+/// every platform and build profile, checked by the same `Determinism / ...` jobs. Never add a
+/// per-platform value.
 ///
 /// Updating it is legitimate only when one of those identities, the settings above or the
 /// pinned Bunny commit changes, and the new hash is the intended effect of that change. A
-/// change to the scene's triangles, their order, its materials, lighting or camera is a new
-/// scene version (`lumen-fixed-point-scene/2`) and updates this hash with it. Any other
-/// change of this hash is a determinism bug: do not update it to make the test pass.
+/// change to the scene's triangles, their order, its materials, normals, lighting or camera is a
+/// new scene version and updates this hash with it. Any other change of this hash is a
+/// determinism bug: do not update it to make the test pass.
+///
+/// Record of updates: `lumen-fixed-point-scene/1` (the decimated bunny, flat, under
+/// `lumen-diffuse-path/1`) was
+/// `sha256:0688b03cf16be6d0336f17eacbdaf83fe03d62e9c66b8370e8208bb9c879634e`;
+/// version 2 (flyingrobots/lumen#39: the full-resolution bunny shaded smooth, the glasses'
+/// right arm refitted, a white puck with a thin black rim and bolder letters) replaced it.
 #[allow(
     dead_code,
     reason = "each test crate that includes this module uses only the hashes it needs"
 )]
 pub(crate) const GOLDEN_FIXED_POINT_96X54_4SPP: &str =
-    "sha256:0688b03cf16be6d0336f17eacbdaf83fe03d62e9c66b8370e8208bb9c879634e";
+    "sha256:914e42de3d5543984f70da11fdc0ebd5a3c536a22be02e19329473729b2d1a5a";
 
 /// The golden content identity (`Scene::content_id`, `lumen-scene-content/2`, ADR 0005) of the
 /// reference scene, `lumen-reference-scene/3`. Like the image hashes it is one value for every
@@ -71,11 +76,12 @@ pub(crate) const GOLDEN_FIXED_POINT_96X54_4SPP: &str =
 pub(crate) const GOLDEN_REFERENCE_CONTENT: &str =
     "sha256:c1e109477c09328421d76efefd923bd625d842fe3afb93dfadb21ae905bd0f66";
 
-/// The golden content identity of the Fixed Point scene, `lumen-fixed-point-scene/1`, on the
-/// same terms as [`GOLDEN_REFERENCE_CONTENT`].
+/// The golden content identity of the Fixed Point scene, `lumen-fixed-point-scene/2`, on the
+/// same terms as [`GOLDEN_REFERENCE_CONTENT`]. Version 1's, under `lumen-scene-content/2`, was
+/// `sha256:7094ced63e59606707dc9c172c1801426183ff0b1ceda06a1c65a6a11062a086`.
 #[allow(
     dead_code,
     reason = "each test crate that includes this module uses only the constants it needs"
 )]
 pub(crate) const GOLDEN_FIXED_POINT_CONTENT: &str =
-    "sha256:7094ced63e59606707dc9c172c1801426183ff0b1ceda06a1c65a6a11062a086";
+    "sha256:355ff8253a068906a502b1db5822af20ef5c2ed45d434c72e40539e212ab385a";

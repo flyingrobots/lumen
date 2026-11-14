@@ -29,7 +29,7 @@ use crate::scenes::fixed_point::{fixed_point_scene, FixedPointError, FIXED_POINT
 ///
 /// let scene: BuiltinScene = "fixed-point".parse()?;
 /// assert_eq!(scene, BuiltinScene::FixedPoint);
-/// assert_eq!(scene.id(), "lumen-fixed-point-scene/1");
+/// assert_eq!(scene.id(), "lumen-fixed-point-scene/2");
 /// assert!("fixed point".parse::<BuiltinScene>().is_err());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```

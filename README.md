@@ -361,8 +361,8 @@ shaded smooth ([below](#smooth-shading-lumen-smooth-diffuse-path1)).
 
 ## The Fixed Point scene
 
-`lumen-fixed-point-scene/1` (`crates/lumen/src/scenes/fixed_point/`) is a showpiece: the Stanford
-bunny in dark sunglasses at a craps table, with two identical dice and the ON puck on the 8. In
+`lumen-fixed-point-scene/2` (`crates/lumen/src/scenes/fixed_point/`) is a showpiece: the
+full-resolution Stanford bunny, smooth-shaded, in dark sunglasses at a craps table, with two identical dice and the ON puck on the 8. In
 craps the point is the number the shooter must roll again, and the ON puck marks it. Both dice
 show four pips on every face, so every roll is a hard eight and the point is fixed: a picture of
 determinism, from a ray tracer built on fixed-point arithmetic.
@@ -392,9 +392,12 @@ Arguments: `OUT [WIDTH HEIGHT [SAMPLES [SEED [THREADS]]]]`, defaulting to 480 by
 samples per pixel, seed 0 and the thread count the host reports (the example asks; the library
 does not). The image does not depend on the thread count. It prints the scene identity, the
 triangle count, the settings, the rays traced, the image hash and the render time. The 1280 by
-720 render at 64 samples traces 132 650 051 rays and took 8.1 s with 4 threads (Apple M5 Pro, `rust-dev:1.96.0` container limited to 4 CPUs, run alone with `--exclusive`, release profile; one reading, for information); its image hash, `sha256:e638f32442d90d5fb5bc8212044856433b1f4998a5d17ca549370747313d253c`, is the same at 1 thread (29.9 s).
+720 render at 64 samples through the command has the image hash
+`sha256:078b8a2b8f5504a0bba817054e128ea0da28090ce8d363f8e5228a35b3ca553d`. Version 1 (the
+decimated, flat bunny and the black-rimmed puck) is retired: its 1280 by 720 hash was
+`sha256:e638f32442d90d5fb5bc8212044856433b1f4998a5d17ca549370747313d253c`.
 
-**What it is made of.** Triangles only, 5 975 of them, every coordinate a whole number of
+**What it is made of.** Triangles only, 71 575 of them, every coordinate a whole number of
 `2^-16` grid steps; a die is about half a unit wide. In primitive order:
 
 1. the table: the green felt (`x = -7.5..=7.5`, `z = -12..=3.25`, at `y = 0`, 2 triangles); a
@@ -404,31 +407,43 @@ triangle count, the settings, the rays traced, the image hash and the render tim
    1.75 wide and 3 deep, for 4, 5, 6, 8, 9 and 10, each with a seven-segment block numeral
    (cells 0.6875 wide and 1.375 deep, strokes 0.1875, 10 in two cells) in the box's near half,
    reading upright from the camera;
-2. the puck in the far half of the 8 box, clear of the 8: a 24-sided disc of radius 0.5 and
-   height 3/16, a white face of radius 0.4 inside a black rim, and "ON" in black block letters
-   (134 triangles);
+2. the ON puck in the far half of the 8 box, clear of the 8: a 24-sided disc of radius 0.5 and
+   height 1/8 (a quarter of its radius, as a casino puck's), a white face of radius 15/32 inside
+   a black rim 1/32 wide, a white side, and "ON" in bold black block letters (strokes 3/32,
+   0.5625 by 0.4375 in all), so that from the camera's low view it reads as a white disc with
+   black lettering (134 triangles);
 3. the two dice, each a chamfered cube about 0.5 wide (32 800 grid steps, chamfer 2 625) with
    four raised white 12-sided pips on every face (908 triangles each): the same mesh under two
    rigid motions, the left die turned by `atan(3/4)` (about 36.9 degrees) and the right one by
    `-atan(7/24)` (about -16.3 degrees) about the vertical. Every coordinate of the die's mesh
    is a multiple of 25 grid steps, so both turns are exact: nothing is rounded. Raised pips
    mean each die rests on the four pips of its bottom face;
-4. the Stanford bunny (3 851 triangles, none dropped): turned a quarter so it faces the camera,
-   scaled by 32 (about 4.85 units tall, nearly ten dice), floored to the grid with its lowest
-   vertex exactly on the felt, then turned by `-atan(5/12)` (about 22.6 degrees, toward the
-   camera's right) about its nose, each coordinate floored to the grid, so it stands
-   three-quarters on behind the number boxes with its tall ear and its back in profile;
+4. the full-resolution Stanford bunny (`bun_zipper.ply`, 69 451 triangles, none dropped):
+   turned a quarter so it faces the camera, scaled by 32 (about 4.9 units tall, nearly ten
+   dice), floored to the grid with its lowest vertex exactly on the felt, then turned by
+   `-atan(5/12)` (about 22.6 degrees, toward the camera's right) about its nose, each
+   coordinate floored to the grid, so it stands three-quarters on behind the number boxes with
+   its tall ear and its back in profile. Each vertex is placed and posed once and the faces keep
+   their indices, so its smooth-shading normals are Bunny's `VertexNormals` (area-weighted,
+   `bunny-vertex-normals/1`) over the positions that are traced: computed after placement, they
+   need no transform and agree with the floored geometry. No face gets zero area and every
+   triangle has a normal at all three vertices; the 1 113 vertices no face names get none and
+   are referred to by no triangle. The holes in its base face the felt and do not show;
 5. the sunglasses (22 triangles): two flat wraparound wayfarer lenses, a bridge and two arms in
    near black. They are fitted by measurement: the nose tip is the vertex farthest along the
    facing direction in the upper half of the bunny's height, the lenses' centre line is 0.5
    above it, their inner edges 1/32 in front of it, and each lens slopes back by a quarter of
    its distance from the centre line; the arms run back along the head, the left one outside
-   the base of the swept-back ear. The glasses are built facing the camera and then turned with
-   the bunny.
+   the base of the swept-back ear, the right one, refitted to the full mesh, just clear of the
+   side of the head. The glasses are built facing the camera and then turned with the bunny.
+
+Only the bunny is smooth: the dice, the table, the puck and the glasses keep their facets, so
+the scene is rendered by `lumen-smooth-diffuse-path/1` (see
+[Smooth shading](#smooth-shading-lumen-smooth-diffuse-path1)).
 
 Materials (linear albedo in 256ths): felt `(14, 62, 32)`, leather `(45, 22, 14)`, layout paint
-`(225, 225, 215)`, die red `(170, 12, 16)`, pips and puck face `(240, 240, 232)`, puck rim and
-letters `(10, 10, 10)`, the bunny's light warm grey `(205, 200, 192)` and the glasses
+`(225, 225, 215)`, die red `(170, 12, 16)`, pips and the puck's face and side
+`(240, 240, 232)`, puck rim and letters `(10, 10, 10)`, the bunny's light warm grey `(205, 200, 192)` and the glasses
 `(6, 6, 8)`. The sun comes from high on the camera's left front, toward `(-0.5, 1.0, 0.875)`
 (about 45 degrees up), irradiance `(1024, 985, 920) / 256`, so it lights the bunny's face and
 the dice and the bunny cast their shadows back and to the right across the felt; the sky is a
@@ -440,6 +455,12 @@ middle, the dice near the bottom.
 Lumen renders diffuse surfaces with one sun and a sky, so the lenses are plain black. Mirror
 lenses, a glass of whisky on the rail and a lamp over the table wait for the materials and
 lights they need. Shadowed fur is tinted green: that is the one-bounce light from the felt.
+Where a shadow falls across the smooth bunny (the cheek below the glasses, the neck), its edge
+follows the mesh's triangles: shadow rays leave the geometric surface, so a facet tilted away
+from the sun is in shadow even where its interpolated normal faces the sun. That is the shadow
+terminator of interpolated normals on a mesh, and Bunny's `bunny-smooth-shading/1` keeps it by
+design (its shadow ray is the geometric one); at 69 451 faces it shows only as a slightly
+jagged shadow edge.
 
 **How it is tested** (`crates/lumen/tests/fixed_point/`, through the public API):
 
@@ -456,10 +477,14 @@ lights they need. Shadowed fur is tinted green: that is the one-bounce light fro
   the bunny crosses a triangle of the other (an exact integer test written in the test);
 - the triangle counts of every part; every triangle in Bunny's trace domain and none degenerate;
   the dice, the puck and the bunny resting exactly on the felt (a tolerance of zero grid steps);
+  every bunny triangle with a vertex normal at all three corners and no other part with any;
+- the puck as the camera sees it: its face and side white and its rim and letters black, at
+  least three times as many pixels of a 480 by 270 image showing white puck as black, and the
+  pixels wholly inside each colour rendering bright and dark (means 224 and 53 when recorded);
 - every camera, shadow and bounce ray of a 32 by 18 image at 2 samples equals a test of every
   triangle, with hits on the bunny, the dice and the layout;
 - a golden hash: 96 by 54 pixels, 4 samples per pixel, seed 0,
-  `sha256:0688b03cf16be6d0336f17eacbdaf83fe03d62e9c66b8370e8208bb9c879634e`, under the same
+  `sha256:914e42de3d5543984f70da11fdc0ebd5a3c536a22be02e19329473729b2d1a5a`, under the same
   rules as the reference scene's: it changes only with an identity, the settings or the Bunny
   commit. Any change to the scene's triangles, their order, materials, lighting or camera is a
   new scene version and a new hash. Every platform in [Determinism](#determinism) checks it.

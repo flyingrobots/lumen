@@ -60,6 +60,20 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- Fixed Point is `lumen-fixed-point-scene/2` (part of flyingrobots/lumen#39); version 1 is
+  retired. The bunny is the full-resolution Stanford bunny (69 451 triangles, none dropped),
+  shaded smooth with Bunny's `VertexNormals` computed over the placed and posed positions (each
+  vertex placed once, the faces kept as indices), so the scene is rendered by
+  `lumen-smooth-diffuse-path/1`; scale, turn and position are unchanged. The glasses' right arm
+  ends further out (240/256 instead of 210/256), measured to clear the full mesh's head. The
+  puck reads as a white disc with black lettering: its rim is a 1/32 ring, its side is white
+  (the new `PartKind::PuckSide`), it is 1/8 high instead of 3/16, and "ON" is bolder. New
+  `FixedPointError::Normals` (with Bunny's `VertexNormalError` as its source) and
+  `FixedPointContent::normals`. New tests: every bunny triangle has three vertex normals and no
+  other part any; the puck as the camera sees it (white and black pixel counts and rendered
+  levels). Golden 96 by 54 hash
+  `sha256:914e42de3d5543984f70da11fdc0ebd5a3c536a22be02e19329473729b2d1a5a`, content
+  `sha256:355ff8253a068906a502b1db5822af20ef5c2ed45d434c72e40539e212ab385a`.
 - The scene content encoding is `lumen-scene-content/2` (part of flyingrobots/lumen#39; ADR
   0005): after the camera, a `u64` count of vertex-normal entries (zero, or one per triangle),
   then per vertex a tag and, if present, the normal's three raw components. Every content digest
