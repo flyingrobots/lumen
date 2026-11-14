@@ -1,28 +1,32 @@
 //! Renders the Fixed Point scene (`lumen-fixed-point-scene/1`) to a PNG file, without the CLI.
 //!
 //! ```sh
-//! cargo run --release --locked -p lumen --example fixed_point -- OUT [WIDTH HEIGHT [SAMPLES [SEED]]]
+//! cargo run --release --locked -p lumen --example fixed_point -- OUT [WIDTH HEIGHT [SAMPLES [SEED [THREADS]]]]
 //! ```
 //!
-//! The defaults are 480 by 270 pixels, 16 samples per pixel and seed 0. It prints the scene
-//! identity, the settings, the rays traced, the image hash and the render time.
+//! The defaults are 480 by 270 pixels, 16 samples per pixel, seed 0 and as many threads as the
+//! host reports (`std::thread::available_parallelism`; the library itself asks the host
+//! nothing, so this program passes the count). The image does not depend on the thread count.
+//! It prints the scene identity, the settings, the rays traced, the image hash and the render
+//! time.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use lumen::png::write_png;
-use lumen::{fixed_point_scene, render, ImageSize, RenderSettings, FIXED_POINT_SCENE_ID};
+use lumen::{fixed_point_scene, render_scheduled, write_png, ImageSize, RenderSettings, Schedule};
+use lumen::{DEFAULT_TILE, FIXED_POINT_SCENE_ID};
 
-const USAGE: &str = "usage: fixed_point OUT [WIDTH HEIGHT [SAMPLES [SEED]]]";
+const USAGE: &str = "usage: fixed_point OUT [WIDTH HEIGHT [SAMPLES [SEED [THREADS]]]]";
 
-/// The output path, the size, the samples per pixel and the seed.
+/// The output path, the size, the samples per pixel, the seed and the thread count.
 struct Args {
     out: String,
     size: (u32, u32),
     samples: u32,
     seed: u32,
+    threads: u32,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -32,7 +36,9 @@ fn parse_args() -> Result<Args, String> {
         args.next().map_or(Ok(default), |text| text.parse().map_err(|_| format!("{USAGE}: {text}")))
     };
     let size = (number(480)?, number(270)?);
-    Ok(Args { out, size, samples: number(16)?, seed: number(0)? })
+    let host =
+        std::thread::available_parallelism().map_or(1, |n| u32::try_from(n.get()).unwrap_or(1));
+    Ok(Args { out, size, samples: number(16)?, seed: number(0)?, threads: number(host)? })
 }
 
 fn run() -> Result<(), String> {
@@ -41,7 +47,8 @@ fn run() -> Result<(), String> {
     let settings = RenderSettings::new(args.samples, args.seed).map_err(|e| e.to_string())?;
     let started = Instant::now();
     let scene = fixed_point_scene().map_err(|e| e.to_string())?;
-    let rendered = render(&scene, size, settings).map_err(|e| e.to_string())?;
+    let schedule = Schedule::new(args.threads, DEFAULT_TILE).map_err(|e| e.to_string())?;
+    let rendered = render_scheduled(&scene, size, settings, schedule).map_err(|e| e.to_string())?;
     let seconds = started.elapsed().as_secs_f64();
     let file = File::create(&args.out).map_err(|e| format!("{}: {e}", args.out))?;
     let mut writer = BufWriter::new(file);
@@ -52,6 +59,7 @@ fn run() -> Result<(), String> {
     println!("size {}x{}", size.width(), size.height());
     println!("samples {}", settings.samples_per_pixel());
     println!("seed {}", settings.seed());
+    println!("threads {}", args.threads);
     println!("rays {}", rendered.rays.total());
     println!("image {}", rendered.image.hash());
     println!("png {}", args.out);

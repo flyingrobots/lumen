@@ -3,8 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use lumen::png::write_png;
-use lumen::{render_reference, RenderSettings};
+use lumen::{render_reference, write_png, RenderSettings};
 
 fn lumen(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_lumen")).args(args).output().expect("lumen runs")

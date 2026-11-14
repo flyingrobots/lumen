@@ -10,7 +10,7 @@ use super::{per_256, BUNNY_FIRST_PRIMITIVE, REFERENCE_TRIANGLE_COUNT};
 pub const REFERENCE_ALBEDO_256: [[i64; 3]; 5] =
     [[150, 145, 135], [175, 165, 145], [50, 95, 200], [205, 60, 45], [70, 165, 85]];
 
-/// The material index of each object of [`reference_triangles`]: ground 0, wall 1, octahedron
+/// The material index of each object of [`reference_triangles`](super::reference_triangles): ground 0, wall 1, octahedron
 /// 2, sphere 3, bunny 4.
 pub const REFERENCE_MATERIAL_OF: [u32; 5] = [0, 1, 2, 3, 4];
 

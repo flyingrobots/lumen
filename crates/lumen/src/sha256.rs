@@ -87,7 +87,7 @@ const H0: [u32; 8] = [
 
 /// An incremental SHA-256 computation.
 #[derive(Clone, Debug)]
-pub struct Sha256 {
+pub(crate) struct Sha256 {
     state: [u32; 8],
     block: [u8; 64],
     filled: usize,
@@ -103,12 +103,12 @@ impl Default for Sha256 {
 impl Sha256 {
     /// A computation over no bytes yet.
     #[must_use]
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self { state: H0, block: [0; 64], filled: 0, length_bits: 0 }
     }
 
     /// Adds `bytes` to the message.
-    pub fn update(&mut self, mut bytes: &[u8]) {
+    pub(crate) fn update(&mut self, mut bytes: &[u8]) {
         // The message length is taken modulo 2^64 bits, as the standard specifies.
         self.length_bits = self.length_bits.wrapping_add((bytes.len() as u64).wrapping_mul(8));
         while !bytes.is_empty() {
@@ -126,7 +126,7 @@ impl Sha256 {
 
     /// The digest of every byte added.
     #[must_use]
-    pub fn finish(mut self) -> [u8; 32] {
+    pub(crate) fn finish(mut self) -> [u8; 32] {
         let length = self.length_bits;
         // Padding: one bit, zeros up to 56 bytes modulo 64, then the 64-bit big-endian length.
         let mut padding = [0_u8; 72];
@@ -180,7 +180,7 @@ fn compress(state: &mut [u32; 8], block: &[u8; 64]) {
 
 /// The SHA-256 digest of `bytes`.
 #[must_use]
-pub fn digest(bytes: &[u8]) -> [u8; 32] {
+pub(crate) fn digest(bytes: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     hasher.finish()
@@ -188,7 +188,7 @@ pub fn digest(bytes: &[u8]) -> [u8; 32] {
 
 /// Lowercase hexadecimal of `bytes`.
 #[must_use]
-pub fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut text = String::with_capacity(bytes.len() * 2);
     for byte in bytes {

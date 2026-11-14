@@ -26,6 +26,17 @@ All notable changes to lumen are recorded here. The format follows
   everything resting on the felt; every traced ray against brute force; a golden hash (96 by 54,
   4 samples, seed 0). The reference scene's golden hash is unchanged.
 
+- `RenderProvenance` (flyingrobots/lumen#19): the record of what was rendered, built from the
+  scene's identity, the image size and the settings. `fields()` lists `scene`, `integrator`,
+  `shading`, `sampler`, `tone`, `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed` and
+  `bounces` in that stable order as `ProvenanceValue`s. `lumen render` prints its first twelve
+  lines from it. Threads, tile, file and times are facts of the run and stay in the command's
+  report.
+- Compiling doc examples for building a scene, rendering, hashing and provenance, and writing a
+  PNG into memory; `crates/lumen/tests/library.rs`, a render through the library API alone
+  checked against the golden hash and PNG bytes recorded before the change.
+- `docs/adr/0002-library-api-surface.md`: the crate root is the API, and what is and is not
+  provenance.
 - Rendering on all cores (flyingrobots/lumen#4): `lumen render --threads N` (`1..=256`, default
   what `std::thread::available_parallelism` reports) and `--tile N | WxH` (default 32 by 32).
   Tiles are handed out from an atomic counter to whichever worker asks next; each worker renders
@@ -126,6 +137,15 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The command line moves out of the library (flyingrobots/lumen#19): `lumen::cli` is gone, and
+  argument parsing, the usage text, the default thread count, the clock, the file and the
+  terminal live in the `lumen` binary (`crates/lumen/src/bin/lumen/`). The command's output and
+  exit codes are unchanged byte for byte apart from the timing values.
+- The library's API is the crate root: the `image`, `png`, `render`, `scene`, `schedule`,
+  `sha256` and `workers` modules are private, and their public items are re-exported at the
+  root (`lumen::trace_path`, `lumen::SceneSpec`, `lumen::write_png`, ...). `reference` and
+  `mesh` stay public modules. The SHA-256 implementation, the PNG signature and the CRC-32 and
+  Adler-32 types are internal. No pixel and no golden hash changes.
 - `lumen render --out FILE` is optional: without it the image is rendered and hashed but not
   written, and the report says `png none`. `UsageError::MissingOut` is gone; `UsageError` gains
   `Schedule` and `InvalidTile`, and `Command::Render` gains `threads` and `tile`.

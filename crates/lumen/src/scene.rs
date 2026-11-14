@@ -227,6 +227,33 @@ impl Scene {
     /// refuses, [`SceneError::UnknownMaterial`] for the first triangle whose material index is
     /// out of range, [`SceneError::OutOfMemory`] when a buffer cannot be reserved, and
     /// [`SceneError::BvhBuild`] if Bunny refuses to build or convert the tree.
+    ///
+    /// # Examples
+    ///
+    /// One triangle in front of the reference camera, with the reference scene's first material,
+    /// sun and sky:
+    ///
+    /// ```
+    /// use bunny_linalg::FixedVec3;
+    /// use bunny_num::FixedQ32_32;
+    /// use lumen::reference::{reference_camera, reference_lighting, reference_materials};
+    /// use lumen::{Scene, SceneSpec};
+    ///
+    /// let at = |x: i64, y: i64, z: i64| {
+    ///     let unit = |n: i64| FixedQ32_32::from_raw(n << 32);
+    ///     FixedVec3::new(unit(x), unit(y), unit(z))
+    /// };
+    /// let triangles = [[at(-4, -1, -4), at(4, -1, -4), at(0, 3, -4)]];
+    /// let scene = Scene::new(&SceneSpec {
+    ///     triangles: &triangles,
+    ///     material_of: &[0],
+    ///     materials: &reference_materials(),
+    ///     lighting: reference_lighting(),
+    ///     camera: reference_camera(),
+    /// })?;
+    /// assert_eq!(scene.triangles().len(), 1);
+    /// # Ok::<(), lumen::SceneError>(())
+    /// ```
     pub fn new(spec: &SceneSpec<'_>) -> Result<Self, SceneError> {
         let count = spec.triangles.len();
         if count == 0 {

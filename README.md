@@ -89,6 +89,36 @@ status 2); a tile is `N` (N by N pixels) or `WxH`, each side at least 1.
 The PNG is uncompressed (see below), so it is about four bytes per pixel: 922 266 bytes at
 640 by 360, and 33 188 430 bytes (about 33 MB) at 3840 by 2160.
 
+## Library and command
+
+The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the `lumen` command
+(`crates/lumen/src/bin/lumen/`) is a front end over it.
+
+- **The library's API is the crate root.** Every type and function a front end, a `Tracer` or a
+  test needs is re-exported there: scene building (`Scene`, `SceneSpec`, `CameraPlacement`,
+  `Lighting`, `reference_scene`, `fixed_point_scene`), rendering (`render`, `render_scheduled`, `render_traced`,
+  `Schedule`, `TileSize`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
+  its `hash`), its provenance (`RenderProvenance`), PNG encoding into any writer (`write_png`,
+  `png_len`), and the integrator's parts for custom tracers (`trace_path`, `pixel_radiance`,
+  `Tracer`, `Hit`, `TraceError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
+  content, as `reference` is) and `lumen::mesh` (the mesh reader they use) are public modules. The SHA-256 and PNG checksum code
+  is internal. [ADR 0002](docs/adr/0002-library-api-surface.md) records the rule.
+- **The library touches nothing outside its arguments.** It parses no arguments, opens no files,
+  reads no clock or environment, prints nothing and asks the host nothing: the caller passes the
+  thread count and the writer. It builds for `wasm32-unknown-unknown`. Threads are started only
+  by `render_pixels`, at the count the caller gave, and never for one thread.
+- **Provenance is a fact about the image; timing is a fact about the run.**
+  `RenderProvenance::new(scene, size, settings)` gives every field that decides the image's bytes,
+  and `fields()` lists them by name in a fixed order: `scene`, `integrator`, `shading`, `sampler`,
+  `tone`, `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed`, `bounces`. New fields are
+  added at the end. Equal provenance means equal bytes. The thread count, the tile size, the
+  output file and the wall-clock times do not change a pixel, so they are not provenance. The
+  command prints them from its own report (`crates/lumen/src/bin/lumen/report.rs`), after the
+  provenance, the ray count and the image hash.
+- **The command owns everything at the edge**: argument parsing and the usage text (`cli.rs`,
+  `cli/usage_error.rs`, with its tests in `cli/tests.rs`), the default thread count from
+  `available_parallelism`, the clock, the output file and the terminal (`main.rs`, `report.rs`).
+
 ## The reference scene
 
 `lumen-reference-scene/3` is built in `crates/lumen/src/reference/`, entirely in Q32.32 integers
@@ -229,11 +259,11 @@ python3 $D lumen ~/git/lumen --worktree --fetch --export fixed-point.png --out "
   bash -c 'mkdir -p /scratch/out && cargo run --locked --release -q -p lumen --example fixed_point -- /scratch/out/fixed-point.png 1280 720 64'
 ```
 
-Arguments: `OUT [WIDTH HEIGHT [SAMPLES [SEED]]]`, defaulting to 480 by 270, 16 samples per pixel
-and seed 0. It prints the scene identity, the triangle count, the settings, the rays traced,
-the image hash and the render time. The 1280 by 720 render at 64 samples traces about
-132.7 million rays and took 29.9 s on one thread (the example uses `lumen::render`; Apple M5 Pro, `rust-dev:1.96.0` container, run
-alone with `--exclusive`, release profile; one reading, for information).
+Arguments: `OUT [WIDTH HEIGHT [SAMPLES [SEED [THREADS]]]]`, defaulting to 480 by 270, 16
+samples per pixel, seed 0 and the thread count the host reports (the example asks; the library
+does not). The image does not depend on the thread count. It prints the scene identity, the
+triangle count, the settings, the rays traced, the image hash and the render time. The 1280 by
+720 render at 64 samples traces 132 650 051 rays and took 8.1 s with 4 threads (Apple M5 Pro, `rust-dev:1.96.0` container limited to 4 CPUs, run alone with `--exclusive`, release profile; one reading, for information); its image hash, `sha256:e638f32442d90d5fb5bc8212044856433b1f4998a5d17ca549370747313d253c`, is the same at 1 thread (29.9 s).
 
 **What it is made of.** Triangles only, 5 975 of them, every coordinate a whole number of
 `2^-16` grid steps; a die is about half a unit wide. In primitive order:
@@ -633,7 +663,14 @@ D=~/git/devcontainers/bin/devrun
 python3 $D lumen ~/git/lumen --worktree --fetch -- cargo fmt --all --check
 python3 $D lumen ~/git/lumen --worktree -- cargo clippy --workspace --all-targets --locked -- -D warnings
 python3 $D lumen ~/git/lumen --worktree -- cargo test --locked --workspace
+python3 $D lumen ~/git/lumen --worktree -- bash -c 'RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked'
+python3 $D lumen ~/git/lumen --worktree -- cargo check -p lumen --lib --target wasm32-unknown-unknown --locked
 ```
+
+The tests include the doc examples (one per workflow: build a scene, render it, hash it and
+record its provenance, write a PNG into memory) and `crates/lumen/tests/library.rs`, which renders
+through the library alone. The `wasm32-unknown-unknown` check shows the library builds without the
+command; it is not in CI yet (flyingrobots/lumen#23).
 
 `--fetch` is needed on the first run in a worktree; it downloads the Bunny git dependency, and
 later phases build offline. Use `--commit HEAD` instead of `--worktree` for evidence pinned to a

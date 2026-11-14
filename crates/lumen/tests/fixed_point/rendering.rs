@@ -6,10 +6,9 @@ use std::cell::Cell;
 use bunny_num::FixedQ32_32;
 use bunny_optics::SHADOW_T_MAX;
 use bunny_query::TraceRay;
-use lumen::render::{trace_path, TONE_CURVE};
-use lumen::scene::{Hit, TraceError, Tracer, FAR};
 use lumen::scenes::fixed_point::PartKind;
 use lumen::{fixed_point_scene, render, ImageSize, RenderSettings, Scene, BUNNY_REV};
+use lumen::{trace_path, Hit, TraceError, Tracer, FAR, TONE_CURVE};
 
 use crate::support::content;
 

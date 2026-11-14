@@ -7,10 +7,10 @@ use bunny_linalg::FixedVec3;
 use bunny_num::fixed_q32_32::ONE_RAW;
 use bunny_num::FixedQ32_32;
 use bunny_query::{TraceRay, TraceTriangle};
-use lumen::scene::FAR;
 use lumen::scenes::fixed_point::player::BUNNY_TURN;
 use lumen::scenes::fixed_point::sunglasses::LENS_MAX_GAP;
 use lumen::scenes::fixed_point::{PartKind, Side};
+use lumen::FAR;
 
 use crate::support::{content, orient, part, Steps, STEP_RAW};
 
