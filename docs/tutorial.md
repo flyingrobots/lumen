@@ -13,7 +13,8 @@ and a network connection for the first build; nothing else.
 - **Git and a network connection** for the first build: Cargo fetches Lumen's only dependency,
   Bunny's crates, from `https://github.com/flyingrobots/bunny` at the commit `Cargo.lock` pins.
   Lumen uses no crates.io crate.
-- About 7 MB of disk for the checkout, and BUILD_SIZE for the build in `target/`.
+- About 7 MB of disk for the checkout, 30 MB for the build in `target/` and 7 MB for the
+  downloaded Bunny sources in Cargo's home (measured on aarch64 Linux).
 
 ## 1. Get the source
 
