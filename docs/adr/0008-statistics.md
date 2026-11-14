@@ -2,9 +2,7 @@
 
 Status: accepted (flyingrobots/lumen#29); what the measurements show stated (see
 [Clarification, 2026-11-14](#clarification-2026-11-14-what-the-cost-measurements-show)). The scene,
-ray and run statistics, `lumen stats` and
-`render --stats` are built. The traversal statistics are decided here and wait for
-flyingrobots/bunny#335.
+ray, run and traversal statistics, `lumen stats` and `render --stats` are built.
 
 ## Context
 
@@ -199,23 +197,60 @@ worker, and the token scan and Clippy bans would need a waiver in the scheduler 
 also asked for time spent holding and waiting for the image lock; there is no image lock since
 ADR 0003 (each band is a disjoint slice), and the one lock left is held for one iterator step.
 
-### Traversal statistics (decided, not yet built; waits for flyingrobots/bunny#335)
+### Traversal statistics (built)
 
-Nodes visited, box tests, leaf visits and triangle tests per ray kind, with totals and maxima,
-and the same counters for flyingrobots/lumen#16's BVH-cost view, which needs them per camera ray:
-one set of counters serves both.
+Per ray kind (camera, bounce, shadow): Bunny's `TraversalCounts` (box tests, boxes entered,
+popped entries skipped, interior and leaf visits, primitive tests, the deepest stack) summed over
+the kind's rays, and the most any one ray took, counter by counter. Each is a `TraversalWork`;
+the three are a `TraversalStatistics`, returned beside the render by
+`render_traced_with_traversal`. The same counts are what flyingrobots/lumen#16's BVH-cost view
+needs per camera ray.
 
-They come from Bunny: flyingrobots/bunny#335 asks for counting variants of the compact
-traversals that return the same bits as the uncounted ones (a differential test) with a record of
-counts, while the uncounted functions keep their cost (measured). Lumen will call the counted
-functions only when traversal statistics are asked for, through a counting tracer beside the
-scene's own, so the uncounted render does not change.
+They come from Bunny (flyingrobots/bunny#335): `compact_closest_hit_counted` and
+`compact_any_hit_counted` return the uncounted searches' answers with a record of counts. Lumen
+calls them through `CountingTracer`, a port beside `Tracer` that `Scene` implements, and only
+when traversal statistics are asked for. The path is generic, privately, over a `Probe`: `Plain`
+calls `Tracer`'s uncounted queries and records `Unmeasured`, a zero-sized type; `Counted` calls
+the counted queries and adds each query's counts under its kind, after the query answers. A
+path's record is added into its pixel's, each pixel's into its worker's sum, and the workers' at
+`join`, by the scheduler's existing generic sum: no shared counter. Sums and maxima do not depend
+on the order, so the counts are the same at every thread count and band height
+(`tests/traversal_statistics.rs` checks them at 1, 2, 4 and 18 threads and band heights 1 and 3
+for every built-in scene, with the golden images; against a tracer that records every query
+itself and tells camera from bounce rays by their origin; by hand on a scene where every camera
+ray makes one box test; and `tests/traversal_counts.rs` checks the per-query counts by hand on
+constructed trees and against Bunny's counted searches called directly).
+
+**What it costs.** Measured on the machine and settings of the ray statistics above
+(`lumen-reference-scene/3`, 1280 by 720, 16 samples, seed 0, 39 479 111 rays, render seconds).
+Base is the commit before the counting render (7c4daa8), head is 6ae578e. Both binaries were built
+in one exclusive session and alternated over 14 rounds at 18 threads and 3 rounds at 1 thread.
+Every run gave the same image hash and ray count.
+
+| Threads | Base | Head | Base `--stats` | Head `--stats` |
+| ---: | --- | --- | --- | --- |
+| 18 (14 runs) | median 0.5565 (0.542 to 0.577) | 0.5625 (0.542 to 0.582) | 0.6170 (0.602 to 0.627) | 0.6190 (0.602 to 0.634) |
+| 1 (3 runs) | 7.314, 7.148, 7.111 (7.148) | 7.518, 7.159, 7.109 (7.159) | 8.585, 7.906, 7.913 (7.913) | 8.222, 7.876, 7.950 (7.950) |
+
+Without `--stats`, head and base differ by +1.1 % at 18 threads (rank-sum z 1.10) and +0.2 % at
+one thread, within the noise of these runs. The render that does not ask for traversal counts
+calls the uncounted searches, and its record is zero-sized. With `--stats`, head (run and
+traversal counts) is +0.3 % on base `--stats` (run counts only; z 0.78) and +0.5 % at one
+thread. So the counted searches add little to what `--stats` already cost. Bunny measured them
+at +4 to 6 % per closest-hit search and +13 to 15 % per any-hit search, but a search is only part
+of a path's time. In this session `--stats` as a whole cost +10 to 11 % against the plain render, at
+18 threads and at one thread alike. That is more than the +2.5 % measured for the run statistics
+above, in another session. These runs do not separate the share of the run counting from that of
+the traversal counting. It is paid only when asked for.
 
 Rejected: a replica of Bunny's search loop in lumen, built from `TraceRay::box_entry`, the node
 view and `hit_triangle` and asserted identical to Bunny's on every ray. It is what Bunny's own
 profile does inside Bunny's harness, but in lumen it would duplicate numerical traversal code
 outside the tests, which lumen does not do: every number that decides a pixel comes from Bunny,
 and a copy drifts when Bunny's search changes.
+
+The per-ray figures for every built-in scene are in
+`docs/measurements/2026-11-14-traversal-cost.md`.
 
 ### Output (built)
 
@@ -228,7 +263,7 @@ and a copy drifts when Bunny's search changes.
   request records it), and in `tests/cli.rs` the plain report is exactly the start of the
   `--stats` output.
 - **Format: `key value` lines.** A key has no spaces and is dotted by group (`scene.`, `light.`,
-  `camera.`, `tree.`, `memory.`, `rays.`, `run.`); the value is one token or a vector of
+  `camera.`, `tree.`, `memory.`, `rays.`, `traversal.`, `run.`); the value is one token or a vector of
   tokens separated by single spaces; an information-only line ends in ` (information only)`, as
   the timing lines already do. Keys are stable; new keys are added, never renamed. Fixed-point
   values print in decimal with six places from their exact raw integers (rounded to nearest, ties
@@ -240,7 +275,6 @@ and a copy drifts when Bunny's search changes.
 
 ### Bunny gaps
 
-- **No traversal counters**: flyingrobots/bunny#335.
 - **No versioned identities for the tree builder and the layout**: lumen names them by function
   path (`tree.builder`, `tree.layout`), qualified by the Bunny commit. A change of Bunny's builder
   output at the same name would show only as a new commit. Typed constructors and identities are
@@ -265,10 +299,13 @@ and a copy drifts when Bunny's search changes.
   `render_pixels_by_worker`, `Rendered` and `WorkerRun`; `render_pixels` is unchanged.
 - Memory byte counts can differ between targets with different type sizes; nothing else in the
   scene statistics can.
+- `Scene` gains `CountingTracer`; the crate root gains `CountingTracer`,
+  `render_traced_with_traversal`, `TraversalStatistics` and `TraversalWork`. `render --stats`
+  gains the `traversal.` lines, between the ray lines and the run lines.
 
 ## Clarification, 2026-11-14: what the cost measurements show
 
-Added for flyingrobots/lumen#161; the decisions are unchanged. Three statements above say more
+Added for flyingrobots/lumen#161; the decisions are unchanged. These statements above say more
 than their measurements:
 
 - **"No second path"** (ray statistics) was true when written. Since the run statistics,
@@ -293,3 +330,12 @@ than their measurements:
   per band, and the test's 23 by 17 image gave 17, 9 and 4 workers at 18 threads. The test's
   image is now 23 by 90, so every band height it tries gives 18 workers, and it asserts the
   worker count; the scheduler's own per-worker test is now 31 by 54 in bands of 3, 18 bands.
+- **The traversal entry point** follows the same rule. `render_traced_with_traversal` and
+  `render --stats` count through `CountingTracer`; a render that does not ask calls the
+  uncounted searches with a zero-sized record. Its measurement above ("What it costs", under
+  the traversal statistics) shows no cost above the noise of 14 runs at 18 threads (+1.1 %,
+  rank-sum z 1.10) and three at one thread (+0.2 %), not zero; the comments in `render.rs` and
+  `main.rs` and the CHANGELOG say that, not "pays nothing". Its tests do reach the workers they
+  name: `tests/traversal_statistics.rs` renders 96 by 54, so bands of 1 and 3 give 54 and 18
+  bands and 18 threads are 18 workers; its failure test renders 32 by 18, 18 workers at bands of
+  1 and 6 at bands of 3, and says "threads".
