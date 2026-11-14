@@ -171,7 +171,7 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
 
 - **The library's API is the crate root.** Every type and function a front end, a `Tracer` or a
   test needs is re-exported there: scene building (`Scene`, `SceneSpec`, `CameraPlacement`,
-  `Lighting`, `reference_scene`, `fixed_point_scene`, and `BuiltinScene`, the registry of
+  `Lighting`, `reference_scene`, `fixed_point_scene`, `canyon_scene`, and `BuiltinScene`, the registry of
   named scenes with their identities that the command's `--scene` reads), rendering (`render`, `render_scheduled`, `render_traced`,
   `Schedule`, `BandRows`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
   its `hash`), its provenance (`RenderProvenance`), a scene's statistics (`Scene::statistics`,
@@ -652,11 +652,14 @@ off the face and chest.
 
 ## The canyon scene
 
-The canyon scene (flyingrobots/lumen#40) is built in `crates/lumen/src/scenes/canyon/`. Its
-terrain, its three craft and its planet exist in the library so far; the bunny and the
-assembled scene do not yet. `scenes::canyon::terrain` places the heights of
-`lumen-canyon-heightfield/1` ([below](#canyon-terrain-lumen-canyon-heightfield1)) on the scene's
-grid and makes the mesh, and `terrain_triangles` returns its triangles with their materials.
+`lumen-canyon-scene/1` (`crates/lumen/src/scenes/canyon/`) is a large-triangle-count scene and a
+picture: a fractal canyon of integer terrain, three small craft of lumen's own design flying
+along it in a chase, the full-resolution Stanford bunny on a ledge, a low sun, a near-black sky
+and a banded planet. Composition after a 1990s canyon-chase render; no image from it is in the
+repository. The library builds it with `lumen::canyon_scene()`; `canyon_content()` returns its
+566 005 triangles in primitive order (the terrain, each craft's hull and engines, the bunny, the
+planet's bands) with the part each belongs to, its material and its vertex normals. Every
+coordinate is a whole number of `2^-16` grid steps.
 
 **The terrain** (480 256 triangles) is a grid of 513 by 470 vertices, an eighth of a unit apart
 across the canyon (X, from -40 to 24) and three eighths along it (Z, from 16 to -159.875), so
@@ -688,6 +691,28 @@ appends them to a `CanyonContent` in that order, each its hull then its engines.
 thirty-second of a turn toward `-X`, in eight latitude bands (8, 6, 10, 6, 12, 6, 8 and 8 rows
 from the south pole), each its own material. `push_planet` appends the bands.
 
+**The bunny** (69 451 triangles, `scenes::canyon::bunny`): the full-resolution Stanford bunny
+(`bun_zipper.ply`, none dropped), turned half a turn to face across the canyon (`+X`), scaled by
+16 (about 2.4 units tall), floored to the grid and moved by whole grid steps so that its lowest
+vertex is exactly on the ledge (3 units up) and the middle of its footprint is at column 220,
+row 39 of the terrain grid (`x = -12.5`, `z = 1.375`). Its smooth-shading normals are Bunny's
+`VertexNormals` over the placed positions, as in Fixed Point.
+
+**The look** (`scenes::canyon::look`). Only the bunny is smooth, so the scene is rendered by
+`lumen-smooth-diffuse-path/1` (ADR 0007): the terrain keeps its facets, which suit rock, cost a
+flat hit each, and avoid the shadow-terminator steps of interpolated normals
+(flyingrobots/bunny#340) that a smooth heightfield would show on every wall. Materials (linear
+albedo in 256ths): rock `(150, 96, 64)`, `(178, 128, 86)` and `(118, 74, 52)`; skiff
+`(225, 105, 25)`, kite `(30, 150, 165)`, tug `(215, 205, 180)`, engines `(36, 36, 40)`, bunny
+`(205, 200, 192)`; planet bands from the south `(200, 170, 125)`, `(150, 95, 60)`,
+`(225, 205, 165)`, `(175, 110, 70)`, `(235, 220, 185)`, `(120, 80, 55)`, `(205, 185, 150)` and
+`(140, 160, 185)`. The sun comes from low behind the camera and a little to its right, toward
+`(0.1875, 0.375, 1.0)` (about 20 degrees up), irradiance `(1152, 1075, 950) / 256`: the right
+wall throws a long shadow across the floor, the craft throw theirs on it and the bunny's ears
+theirs on the wall behind it. The sky is a near-black `(2, 2, 3) / 256`. The camera stands over
+the floor at `(-4.5, 4.25, 12)` and looks along `(-0.03125, 0.1, -1)` (its Y is 6 553 grid
+steps), up `+Y`, with a vertical half-angle whose tangent is 0.5.
+
 `CanyonContent` (`scenes::canyon::content`) holds triangles in primitive order with each one's
 material index, vertex normals and named part (`PartKind`: the terrain, a craft's hull or
 engines, the bunny, a planet band).
@@ -697,6 +722,14 @@ derived by hand; every triangle inside the trace domain and none degenerate; one
 part, eight distinct for the bands, no vertex normals; and every craft at least half a unit above
 every terrain triangle under it (each triangle's vertices below the craft's lowest point, so the
 whole triangle is), the three craft's boxes apart.
+
+Tests of the assembled scene (`crates/lumen/tests/canyon/integrity.rs`, the content and the
+scene built once per test binary): the parts in order covering all 566 005 primitives, 16
+materials; every triangle inside the trace domain and none degenerate; only the bunny smooth,
+so the integrator is the smooth one; and the bunny resting on its ledge to the grid step (its
+lowest vertex at the ledge's height, no terrain vertex under it above that, and the cell under
+its lowest vertex level at that height on all four corners). Building the scene takes about 0.7
+seconds in the release profile and about 3 in the test profile.
 
 Tests (`crates/lumen/tests/canyon/terrain.rs`): two triangles per cell in row order on the grid
 points of their corners, inside Bunny's trace domain, none degenerate, each facing up (an exact
