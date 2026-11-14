@@ -33,15 +33,41 @@ pub(super) fn paths(toks: &[Located]) -> Vec<(usize, Vec<String>)> {
     out
 }
 
-/// The names `use` declarations bring in (the last segment, or the rename) and their paths.
+/// The names `use` declarations and `extern crate ... as` items bring in (the last segment, or
+/// the rename) and their paths.
 pub(super) fn imports(toks: &[Located]) -> Vec<(String, Vec<String>)> {
     let leaves = (0..toks.len()).filter_map(|i| use_at(toks, i)).flat_map(|(_, leaves)| leaves);
-    leaves
+    let mut out: Vec<(String, Vec<String>)> = leaves
         .filter_map(|(path, alias)| {
             let full: Vec<String> = path.into_iter().filter(|s| s != "self").collect();
             Some((alias.or_else(|| full.last().cloned())?, full))
         })
-        .collect()
+        .collect();
+    for window in toks.windows(5) {
+        let words: Vec<&Token> = window.iter().map(|(_, t)| t).collect();
+        if let [Token::Ident(e), Token::Ident(c), Token::Ident(krate), Token::Ident(keyword), Token::Ident(alias)] =
+            words.as_slice()
+        {
+            if e == "extern" && c == "crate" && keyword == "as" && alias != "_" {
+                out.push((alias.clone(), vec![krate.clone()]));
+            }
+        }
+    }
+    out
+}
+
+/// `path` with its first segment replaced by what an import names, repeatedly (`extern crate
+/// std as host; use host::env as e;` makes `e::var` `std::env::var`), at most eight times.
+pub(super) fn resolve(path: &[String], imports: &[(String, Vec<String>)]) -> Vec<String> {
+    let mut resolved = path.to_vec();
+    for _ in 0..8 {
+        let Some((_, full)) = imports.iter().find(|(alias, _)| resolved.first() == Some(alias))
+        else {
+            break;
+        };
+        resolved = [&full[..], &resolved[1..]].concat();
+    }
+    resolved
 }
 
 /// If a `use` declaration starts at `i`: the index of its `;` and its leaves ([`use_tree`]).

@@ -69,8 +69,16 @@ unit tests (`xtask/src/nondeterminism/tests.rs`).
   `HashSet`, `RandomState`, `available_parallelism`) and `std::env`, `fs`, `process`, `net`
   paths wherever they are spelled; open addressing in any line; and the form of every Clippy
   waiver (an `expect` with a reason that starts with a rule ID, never an `allow`). It resolves a
-  path's first segment through the file's `use` trees (groups, `self`, renames, globs), file-wide,
-  so it can only over-report. A scan finding is waived by
+  path's first segment through the file's `use` trees (groups, `self`, renames, globs) and
+  `extern crate ... as` aliases, repeatedly (`extern crate std as host; use host::env as e;`
+  makes `e::var` a `std-env` finding), file-wide, so it can only over-report. The prefix rule
+  bans whole modules (`std::env`, `fs`, `process`, `net`), so it also catches members
+  `clippy.toml` does not list (`host::fs::exists`, `host::env::set_current_dir`,
+  `host::env::consts::OS`); the `std::thread` sleeps are listed by name (`sleep`, `sleep_ms`,
+  `sleep_until`, `park_timeout`, `park_timeout_ms`), since a prefix of whole segments does not
+  make `sleep_ms` a `sleep`. A name with the word `f32` or `f64` (`as_secs_f64`, `mul_f32`,
+  `from_secs_f64`, Bunny's `to_f32`) is `float-type`: a float passes through such a call even
+  when no float type or literal is written (`d.mul_f64(d.as_secs_f64())`). A scan finding is waived by
   `// nondeterminism: allow <rule-id> -- <reason>` on its line or the line above; an unknown
   rule, a missing reason or a waiver that waives nothing fails. It runs as `Gates / nondeterminism`.
 - **A waiver is a comment, and nothing else turns a ban off** (flyingrobots/lumen#119). The scan

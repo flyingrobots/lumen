@@ -485,6 +485,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- The nondeterminism scan resolves `extern crate std as host` and chains of renames
+  (`use host::env as e; e::var`), so std members `clippy.toml` does not list are caught by the
+  scan's module rule when reached through an alias: `host::fs::exists`,
+  `host::env::set_current_dir`, `host::env::consts::OS` (part of flyingrobots/lumen#115 and
+  flyingrobots/lumen#119). `std::thread::sleep_ms`, `sleep_until`, `park_timeout` and
+  `park_timeout_ms` are `thread-sleep`. A name with the word `f32` or `f64` (`as_secs_f64`,
+  `mul_f64`, `from_secs_f64`, `to_f32`) is `float-type`, which closes float arithmetic written
+  with no float token. Main has none of these.
 - Nothing but a reasoned `expect` turns a nondeterminism ban off (part of
   flyingrobots/lumen#119). Scan waivers are taken from comments only, so
   `// nondeterminism: allow ...` inside a string literal no longer waives a finding on its line.

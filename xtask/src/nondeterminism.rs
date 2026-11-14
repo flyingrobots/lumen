@@ -6,9 +6,10 @@
 //! and macro bodies, and ignores comments and strings. In the deterministic core it reports
 //! float types, float literals and casts to a float; the names `Instant`, `SystemTime`,
 //! `UNIX_EPOCH`, `available_parallelism`, `HashMap`, `HashSet` and `RandomState`; the
-//! `env!` and `option_env!` macros; and paths into `std::env`, `std::fs`, `std::process`,
-//! `std::net` and `std::thread::sleep`, written out, through a `use` tree (groups, `self`,
-//! renames) or through a name a `use` brought in. Any line that names open addressing is
+//! `env!` and `option_env!` macros; names with the word `f32` or `f64` (`as_secs_f64`); and
+//! paths into `std::env`, `std::fs`, `std::process`, `std::net` and the `std::thread` sleeps,
+//! written out, raw (`std::r#fs`), through a `use` tree (groups, `self`, renames), through a name
+//! a `use` brought in, or through an `extern crate std as ...` alias, chained. Any line that names open addressing is
 //! `hand-hashed-table`, and an attribute built from a macro metavariable is a `waiver` finding.
 //! In every file it checks each lint-level attribute that could turn a Clippy ban off
 //! ([`waiver_forms`]).
@@ -24,7 +25,7 @@ mod tests;
 pub(crate) mod tokens;
 mod waivers;
 
-use paths::{imports, paths};
+use paths::{imports, paths, resolve};
 use tokens::{is_float, tokens, Token};
 use waivers::apply_waivers;
 pub(crate) use waivers::waiver_forms;
@@ -66,13 +67,19 @@ const NAMES: [(&str, &str); 9] = [
     ("FxHashSet", "unordered-container"),
 ];
 
-/// Banned path prefixes and their rules.
-const PATHS: [(&[&str], &str); 5] = [
+/// Banned path prefixes and their rules. Each is compared segment by segment after the path is
+/// resolved through the file's imports ([`resolve`]); the `sleep` family is listed by name
+/// because `sleep_ms` is not under `sleep`.
+const PATHS: [(&[&str], &str); 9] = [
     (&["std", "env"], "std-env"),
     (&["std", "fs"], "std-fs"),
     (&["std", "process"], "std-process"),
     (&["std", "net"], "network"),
     (&["std", "thread", "sleep"], "thread-sleep"),
+    (&["std", "thread", "sleep_ms"], "thread-sleep"),
+    (&["std", "thread", "sleep_until"], "thread-sleep"),
+    (&["std", "thread", "park_timeout"], "thread-sleep"),
+    (&["std", "thread", "park_timeout_ms"], "thread-sleep"),
 ];
 
 /// One finding: the 1-based line, the rule and what was found.
@@ -104,6 +111,11 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
                 add(*line, if cast { "float-cast" } else { "float-type" }, name);
             }
             Token::Num(number) if is_float(number) => add(*line, "float-literal", number),
+            // A name with the word `f32` or `f64` (`as_secs_f64`, `mul_f32`, `to_f32`): a float
+            // passes through it even when no float type or literal is written.
+            Token::Ident(name) if name.split('_').any(|w| w == "f32" || w == "f64") => {
+                add(*line, "float-type", name);
+            }
             Token::Ident(name) => {
                 if let Some((_, rule)) = NAMES.iter().find(|(n, _)| n == name) {
                     add(*line, rule, name);
@@ -118,10 +130,7 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
     }
     let imports = imports(&toks);
     for (line, path) in paths(&toks) {
-        let resolved = imports
-            .iter()
-            .find(|(alias, _)| path.first() == Some(alias))
-            .map_or_else(|| path.clone(), |(_, full)| [&full[..], &path[1..]].concat());
+        let resolved = resolve(&path, &imports);
         for (prefix, rule) in PATHS {
             let under =
                 |p: &[String]| p.len() >= prefix.len() && p.iter().zip(prefix).all(|(a, b)| a == b);
