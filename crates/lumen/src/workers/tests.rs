@@ -5,6 +5,8 @@
 //! so any order can be replayed. A step budget, not a timeout, ends a simulation that does not
 //! finish.
 
+use core::cell::Cell;
+
 use super::*;
 use crate::schedule::TileSize;
 
@@ -95,13 +97,17 @@ fn step(shared: &Shared<'_, u64, Coord>, sim: &mut Sim, pixel: &impl Fn(u32, u32
 }
 
 /// Runs `workers` simulated workers over a 13 by 9 image in `tile` tiles in the order `policy`
-/// chooses, and returns what `render_pixels` would.
-fn simulate(tile: TileSize, workers: usize, policy: Policy, failing: &[Coord]) -> Outcome {
+/// chooses, with `pixel` as the pixel function, and returns what `render_pixels` would.
+fn simulate(
+    tile: TileSize,
+    workers: usize,
+    policy: Policy,
+    pixel: &impl Fn(u32, u32) -> PixelResult,
+) -> Outcome {
     let size = ImageSize::new(13, 9).expect("size");
     let mut bytes = blank(size)?;
     let tiles = Tiles::new(size, tile).expect("tiles");
     let shared = Shared::new(tiles, &mut bytes, 0_u64);
-    let pixel = pixel(failing);
     let mut sims: Vec<Sim> = (0..workers)
         .map(|_| Sim { lane: Lane { buffer: Vec::new(), total: 0 }, job: None, done: false })
         .collect();
@@ -117,7 +123,7 @@ fn simulate(tile: TileSize, workers: usize, policy: Policy, failing: &[Coord]) -
             let total = finish(shared)?;
             return Ok((bytes, total));
         };
-        step(&shared, &mut sims[n], &pixel);
+        step(&shared, &mut sims[n], pixel);
     }
     panic!("{policy:?}: no end within {budget} steps");
 }
@@ -156,7 +162,7 @@ fn every_hand_out_order_gives_the_raster_image() {
     for (tw, th) in TILES {
         for workers in WORKERS {
             for policy in policies() {
-                let got = simulate(tile(tw, th), workers, policy, &[]);
+                let got = simulate(tile(tw, th), workers, policy, &pixel(&[]));
                 assert_eq!(
                     got,
                     Ok((want.clone(), 13 * 9)),
@@ -182,11 +188,55 @@ fn every_hand_out_order_reports_the_raster_first_failure() {
         for (tw, th) in TILES {
             for workers in WORKERS {
                 for policy in policies() {
-                    let got = simulate(tile(tw, th), workers, policy, failing);
+                    let got = simulate(tile(tw, th), workers, policy, &pixel(failing));
                     let want = Err(WorkerError::Pixel { x, y, error: (x, y) });
                     assert_eq!(got, want, "{policy:?}, {workers} workers, {tw}x{th}, {failing:?}");
                 }
             }
         }
     }
+}
+
+/// Oracle: the stop rule. Once a pixel fails, no tile past its row of tiles is claimed, and one
+/// already in flight is abandoned at its next row; tiles up to the end of that row still run, since
+/// an earlier failure may hide there. So under every order, no pixel below the failing pixel's
+/// row of tiles is computed after the failure is recorded. In the simulation the failure is
+/// recorded in the same step it happens, so "after" is exact, not a matter of timing.
+#[test]
+fn after_a_failure_no_pixel_below_its_row_of_tiles_is_rendered() {
+    let witnesses = Cell::new(0_usize);
+    for (fx, fy) in [(0, 0), (6, 4), (12, 3)] {
+        for (tw, th) in TILES {
+            let end = (fy / th + 1).saturating_mul(th);
+            for workers in WORKERS {
+                for policy in policies() {
+                    let (failed, lowest, checked) =
+                        (Cell::new(false), Cell::new(None), Cell::new(0));
+                    let counting = |x, y| {
+                        if failed.get() {
+                            checked.set(checked.get() + 1);
+                            lowest.set(lowest.get().max(Some(y)));
+                        }
+                        let result = pixel(&[(fx, fy)])(x, y);
+                        failed.set(failed.get() || result.is_err());
+                        result
+                    };
+                    let got = simulate(tile(tw, th), workers, policy, &counting);
+                    let label = format!("{policy:?}, {workers} workers, {tw}x{th}, ({fx}, {fy})");
+                    assert_eq!(
+                        got,
+                        Err(WorkerError::Pixel { x: fx, y: fy, error: (fx, fy) }),
+                        "{label}"
+                    );
+                    assert!(
+                        lowest.get().is_none_or(|y| y < end),
+                        "{label}: row {lowest:?} after the failure"
+                    );
+                    witnesses.set(witnesses.get() + checked.get());
+                }
+            }
+        }
+    }
+    // Witness count: the rule was checked on pixels computed after a failure, not vacuously.
+    assert!(witnesses.get() > 0);
 }

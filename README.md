@@ -352,7 +352,9 @@ then runs real threads at fixed counts:
   fails at chosen pixels returns the raster-first one at every thread count and tile size, also
   when it is not in the lowest-numbered failing tile (`(40, 0)` in tile 1 before `(3, 5)` in tile
   0); on one thread a failure in the first pixel renders exactly the rest of the first row of
-  tiles and nothing more, and on several threads at most that plus one tile per worker; and a
+  tiles and nothing more (on several threads, how much runs before the failure is recorded depends
+  on scheduling, so the simulator checks the stop rule instead: under every order, no pixel below
+  the failing pixel's row of tiles is computed after the failure); and a
   tracer that fails real traversals in two regions with two different errors returns the one a
   raster-order loop over `trace_path` meets first, at every schedule.
 

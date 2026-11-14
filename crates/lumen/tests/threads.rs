@@ -214,7 +214,9 @@ fn workers_stop_after_a_failure() {
         );
         assert_eq!(result, first);
         assert_eq!(asked.load(Ordering::SeqCst), 1 + 15 * 32 * 32);
-        // On many threads, at most the first row of tiles and one tile per worker in flight.
+        // On many threads the same error. How much work runs before the failure is recorded
+        // depends on the operating system's scheduling, so it is not bounded here; the stop rule
+        // itself is checked exactly, under every hand-out order, in `src/workers/tests.rs`.
         for threads in [2, 4, 7, 16] {
             let asked = AtomicUsize::new(0);
             let result = render_pixels(
@@ -224,8 +226,6 @@ fn workers_stop_after_a_failure() {
                 failing_pixels(&[(0, 0)], &asked, 512 * 512),
             );
             assert_eq!(result, first);
-            let bound = (16 + threads as usize) * 32 * 32;
-            assert!(asked.load(Ordering::SeqCst) <= bound, "{threads}: {asked:?}");
         }
     }
 }
