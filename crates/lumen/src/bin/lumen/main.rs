@@ -97,8 +97,8 @@ fn run(
             .map_err(|error| Failure::Output { path: path.to_path_buf(), error })?;
     }
     let built = started.elapsed();
-    // Only `--stats` asks the workers and the traversals to count: without it the render pays
-    // nothing for run or traversal statistics (ADR 0008).
+    // Only `--stats` asks the workers and the traversals to count: without it the render does no
+    // counting work for run or traversal statistics (ADR 0008).
     let (render, counted) = match detail {
         Detail::Report => (
             render_scheduled(&built_scene, size, settings, schedule).map_err(Failure::Render)?,

@@ -33,7 +33,8 @@ pub const CANYON_ALBEDO_256: [[i64; 3]; 16] = [
     [140, 160, 185],
 ];
 
-/// The direction toward the sun in sixteenths: low over the right rim, ahead of the camera.
+/// The direction toward the sun in sixteenths: low over the right rim, behind the camera
+/// (it points to +Z; the camera looks along -Z).
 pub const CANYON_TOWARD_SUN_16: [i64; 3] = [3, 6, 16];
 
 /// The sun's irradiance per channel in 256ths: about `(4.5, 4.2, 3.7)`, warm.

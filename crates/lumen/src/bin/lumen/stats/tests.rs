@@ -180,6 +180,65 @@ fn a_scene_without_a_sun_says_so() {
     assert!(!text.contains("light.sun-toward"), "{text}");
 }
 
+/// The command reference, `docs/reference/cli.md`, as it is in the repository.
+const REFERENCE: &str = include_str!("../../../../../../docs/reference/cli.md");
+
+/// Whether the command reference documents `key`, a key `lumen stats` or `render --stats`
+/// prints. A material's or a worker's number is written `N` there, and the memory buffers are
+/// listed by name under `memory.NAME-bytes`; a traversal key is `traversal.KIND.COUNTER` with its
+/// `-mean` and `-max` forms, each counter named in the table.
+fn documented(key: &str) -> bool {
+    let parts: Vec<&str> = key.split('.').collect();
+    let general: String = parts
+        .iter()
+        .map(|part| if part.bytes().all(|b| b.is_ascii_digit()) { "N" } else { part })
+        .collect::<Vec<_>>()
+        .join(".");
+    let named = |text: &str| REFERENCE.contains(&format!("`{text}`"));
+    match parts.as_slice() {
+        ["memory", buffer] => {
+            named("memory.NAME-bytes") && named(buffer.strip_suffix("-bytes").unwrap_or(buffer))
+        }
+        ["run", "worker", _, field] => named(&general) || named(&format!(".{field}")),
+        ["traversal", _, "peak-stack"] => named("traversal.KIND.peak-stack"),
+        ["traversal", _, field] => {
+            let (counter, form) = field
+                .strip_suffix("-mean")
+                .map(|counter| (counter, "traversal.KIND.COUNTER-mean"))
+                .or_else(|| field.strip_suffix("-max").map(|c| (c, "traversal.KIND.COUNTER-max")))
+                .unwrap_or((field, "traversal.KIND.COUNTER"));
+            named(form) && named(counter)
+        }
+        _ => named(&general),
+    }
+}
+
+/// Oracle: the command reference's key tables. Every key the statistics blocks print, for a
+/// scene with a sun, two materials, a rendered run on two workers and the traversal lines (whose
+/// keys do not depend on the counts), is documented there.
+/// Witness count: the keys checked, more than the 31 the scene block alone prints.
+#[test]
+fn every_printed_key_is_in_the_command_reference() {
+    let scene = one_triangle();
+    let size = lumen::ImageSize::new(4, 3).expect("size");
+    let settings = lumen::RenderSettings::new(2, 0).expect("settings");
+    let schedule = lumen::Schedule::new(2, lumen::DEFAULT_BAND_ROWS).expect("schedule");
+    let (render, run) =
+        lumen::render_traced_with_run(&scene, &scene, size, settings, schedule).expect("renders");
+    let rays = render.statistics.outcomes;
+    let mut text = Vec::new();
+    write_stats(&mut text, "a-name/1", &scene, &scene.statistics().expect("counts"))
+        .and_then(|()| write_rays(&mut text, &render.statistics, settings))
+        .and_then(|()| write_traversal(&mut text, &lumen::TraversalStatistics::default(), &rays))
+        .and_then(|()| write_run(&mut text, &run))
+        .expect("writes");
+    let text = String::from_utf8(text).expect("utf-8");
+    let keys: Vec<&str> = text.lines().filter_map(|line| line.split(' ').next()).collect();
+    let missing: Vec<&&str> = keys.iter().filter(|key| !documented(key)).collect();
+    assert!(missing.is_empty(), "not in docs/reference/cli.md: {missing:?}");
+    assert!(keys.len() > 31, "only {} keys checked", keys.len());
+}
+
 /// Oracle: the lines, written by hand from the values set. Camera rays: 3, whose box tests total
 /// 10 (mean 3.33, most 5), leaf visits 2 (0.67, 1), peak stack 4; the other counters and kinds are
 /// zero, and a kind with no rays has a mean of 0.00. Distinct values per counter, so a counter
