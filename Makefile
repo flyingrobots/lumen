@@ -14,6 +14,7 @@
 #   make test            the test suite, debug and release
 #   make nondeterminism  the nondeterminism scan (ADR 0006)
 #   make clippy-bans     the check that every clippy.toml ban resolves and fires (ADR 0006)
+#   make doc-links       every relative link and anchor of the Markdown
 #   make help            this list
 #
 # Override on the command line, for example:
@@ -34,7 +35,7 @@ RUN   = python3 $(DEVRUN) lumen $(ROOT) --worktree --fetch --cpus $(CPUS) --memo
 
 VIEWS  ?= normals shading-normals depth primitive-id material-id wireframe bvh-cost
 
-.PHONY: views help demo reference fixed-point canyon 4k 4k-fixed-point 4k-canyon test nondeterminism clippy-bans check-devrun
+.PHONY: views help demo reference fixed-point canyon 4k 4k-fixed-point 4k-canyon test nondeterminism clippy-bans doc-links check-devrun
 
 help:
 	@sed -n '1,/^$$/p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
@@ -94,3 +95,6 @@ nondeterminism: check-devrun
 
 clippy-bans: check-devrun
 	$(RUN) -- cargo run --locked -q -p xtask -- clippy-bans
+
+doc-links: check-devrun
+	$(RUN) -- cargo run --locked -q -p xtask -- doc-links

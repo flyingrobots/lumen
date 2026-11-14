@@ -19,6 +19,10 @@
 //! `clippy.toml`, the lint groups holding a ban lint are the ones the scan refuses, and every
 //! std item the bans cover is listed. `cargo run --locked -p xtask -- std-items <dir> <version>`
 //! writes that std item list from the toolchain's documentation ([`clippy_bans::std_items`]).
+//!
+//! `cargo run --locked -p xtask -- doc-links` checks every relative link of the repository's
+//! Markdown: the file or directory it names exists, and its `#anchor` is a heading of the page
+//! ([`doc_links`]). It exits 1 on any broken link. Links with a scheme are not followed.
 
 #![expect(
     clippy::disallowed_methods,
@@ -29,6 +33,7 @@
 )]
 
 mod clippy_bans;
+mod doc_links;
 mod file_length;
 mod layout;
 mod nondeterminism;
@@ -65,6 +70,16 @@ fn main() -> ExitCode {
                 }
             };
         }
+        [command] if command == "doc-links" => {
+            return match markdown(&root) {
+                Ok(pages) if doc_links_gate(&root, &pages) => ExitCode::SUCCESS,
+                Ok(_) => ExitCode::FAILURE,
+                Err(error) => {
+                    eprintln!("xtask: {error}");
+                    ExitCode::from(2)
+                }
+            };
+        }
         [command] if command == "clippy-bans" => {
             return match clippy_bans::run::gate(&root) {
                 Ok(true) => ExitCode::SUCCESS,
@@ -77,7 +92,8 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: cargo run --locked -p xtask -- file-length|nondeterminism|clippy-bans"
+                "usage: cargo run --locked -p xtask -- \
+                 file-length|nondeterminism|clippy-bans|doc-links"
             );
             return ExitCode::from(2);
         }
@@ -161,12 +177,19 @@ fn nondeterminism_gate(
             failures += 1;
         }
     }
+    let core_texts: Vec<&str> = files
+        .iter()
+        .filter(|(path, _)| layout.is_core(path))
+        .map(|(_, text)| text.as_str())
+        .collect();
+    let names: Vec<String> = boundary.libraries.iter().map(|l| l.name.replace('-', "_")).collect();
+    let aliases = nondeterminism::crate_aliases(&core_texts, &names);
     let mut core = 0;
     for (path, text) in files {
         let mut found = nondeterminism::waiver_forms(text);
         if layout.is_core(path) {
             core += 1;
-            found.extend(nondeterminism::core_findings(text));
+            found.extend(nondeterminism::core_findings(text, &aliases));
         }
         for finding in &found {
             println!(
@@ -219,6 +242,57 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>, crates: &mut Vec<PathBuf>) -> io:
             out.push(path);
         } else if path.file_name().is_some_and(|name| name == "Cargo.toml") {
             crates.push(dir.to_path_buf());
+        }
+    }
+    Ok(())
+}
+
+/// The link check over the Markdown `pages`; true when no link is broken.
+fn doc_links_gate(root: &Path, pages: &[(String, String)]) -> bool {
+    let broken = doc_links::check(pages, |path| root.join(path).exists());
+    for link in &broken {
+        println!("::error file={},line={}::{}: {}", link.page, link.line, link.link, link.why);
+    }
+    println!("doc-links: {} pages, {} broken links", pages.len(), broken.len());
+    broken.is_empty()
+}
+
+/// Every `.md` file of the repository with its text, relative to `root` with `/` separators,
+/// sorted by path: hidden directories, `target` and `out` (where `make` puts images) skipped.
+fn markdown(root: &Path) -> io::Result<Files> {
+    let mut paths = Vec::new();
+    collect_markdown(root, &mut paths)?;
+    let mut pages = Vec::new();
+    for path in paths {
+        let relative = path.strip_prefix(root).map_err(io::Error::other)?;
+        let parts: Vec<String> =
+            relative.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+        pages.push((parts.join("/"), fs::read_to_string(&path)?));
+    }
+    pages.sort();
+    Ok(pages)
+}
+
+/// Adds every `.md` file under `dir` to `out`, skipping hidden directories, `target`, `out` and
+/// symbolic links.
+fn collect_markdown(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        // A symbolic link is not followed: a link to a directory above it would repeat pages
+        // forever. Links in pages still resolve through one (`Path::exists` follows it).
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        let name = path.file_name().map(|name| name.to_string_lossy().into_owned());
+        let skipped = |name: &str| name.starts_with('.') || name == "target" || name == "out";
+        if kind.is_dir() {
+            if name.is_some_and(|name| !skipped(&name)) {
+                collect_markdown(&path, out)?;
+            }
+        } else if path.extension().is_some_and(|ext| ext == "md") {
+            out.push(path);
         }
     }
     Ok(())
