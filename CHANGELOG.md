@@ -186,6 +186,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- `scene.rs` is split by responsibility (part of flyingrobots/lumen#20): `scene/mod.rs` (the
+  scene model: `Scene`, `SceneSpec`, `Lighting`, `CameraPlacement`, `SceneError`),
+  `scene/tracer.rs` (the `Tracer` port with `Hit`, `TraceError` and `FAR`), `scene/tree.rs` (the
+  adapter that builds and holds Bunny's tree and implements `Tracer` for `Scene`) and
+  `scene/tests.rs`. A move only: the crate root's paths, every image hash and the command's
+  output are unchanged. Each file is under 300 lines of code, so the file-length gate's exception
+  for `scene.rs` is removed.
+
 - CI: the `fmt, clippy, test` job is now `fmt, clippy`; the tests run in the `Determinism / ...`
   jobs (flyingrobots/lumen#23). The README's and the crate documentation's platform claim is
   narrowed to the five platforms those jobs check, with a table of which job proves which.
