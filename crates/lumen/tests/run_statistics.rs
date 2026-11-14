@@ -82,7 +82,11 @@ fn the_schedulers_per_worker_sums_add_up_to_its_total() {
         })
         .expect("renders");
         assert_eq!(done.total, 31 * 54, "{threads} threads");
-        assert_eq!(done.workers.len(), usize::try_from(threads).expect("small"), "{threads} threads");
+        assert_eq!(
+            done.workers.len(),
+            usize::try_from(threads).expect("small"),
+            "{threads} threads"
+        );
         let total: u64 = done.workers.iter().map(|w| w.total).sum();
         assert_eq!(total, done.total, "{threads} threads");
         let bands: u32 = done.workers.iter().map(|w| w.bands).sum();
