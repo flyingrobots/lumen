@@ -6,7 +6,9 @@ use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use lumen::{BuiltinSceneError, RenderError, ScheduleError, SizeError, StatisticsError};
+use lumen::{
+    BuiltinSceneError, RayCheckError, RenderError, ScheduleError, SizeError, StatisticsError,
+};
 
 use crate::cli::{UsageError, USAGE};
 use crate::publish::PublishError;
@@ -28,6 +30,9 @@ pub(crate) enum Failure {
     Statistics(StatisticsError),
     /// The render failed: exit code 1.
     Render(RenderError),
+    /// The render's ray statistics contradict its size and settings: exit code 1. A render the
+    /// library produced never does.
+    RayCheck(RayCheckError),
     /// The PNG file could not be published, or the destination was refused before the render:
     /// exit code 1, with the path.
     Output {
@@ -50,6 +55,7 @@ impl Failure {
             Self::Scene(_)
             | Self::Statistics(_)
             | Self::Render(_)
+            | Self::RayCheck(_)
             | Self::Output { .. }
             | Self::Stdout(_) => ExitCode::FAILURE,
         }
@@ -66,6 +72,7 @@ impl fmt::Display for Failure {
             Self::Scene(error) => write!(f, "{error}"),
             Self::Statistics(error) => write!(f, "statistics: {error}"),
             Self::Render(error) => write!(f, "{error}"),
+            Self::RayCheck(error) => write!(f, "ray statistics: {error}"),
             Self::Output { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Stdout(error) => write!(f, "stdout: {error}"),
         }
@@ -81,6 +88,7 @@ impl std::error::Error for Failure {
             Self::Scene(error) => Some(error),
             Self::Statistics(error) => Some(error),
             Self::Render(error) => Some(error),
+            Self::RayCheck(error) => Some(error),
             Self::Output { error, .. } => Some(error),
             Self::Stdout(error) => Some(error),
         }
@@ -125,6 +133,11 @@ mod tests {
             (
                 Failure::Statistics(StatisticsError::MalformedTree { node: 3 }),
                 "statistics: the scene's tree is malformed at compact node 3".to_owned(),
+                ExitCode::FAILURE,
+            ),
+            (
+                Failure::RayCheck(RayCheckError::CameraRays { expected: 4, observed: 3 }),
+                "ray statistics: 3 camera rays counted, expected one per sample, 4".to_owned(),
                 ExitCode::FAILURE,
             ),
             (
