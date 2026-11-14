@@ -11,7 +11,9 @@ Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
 
 Lumen renders a built-in scene, prints its image hash and timing, and writes it to a PNG file
 if asked; `lumen stats` prints what a scene holds ([Statistics](#statistics)). `--scene reference` (the default) is the reference scene, which includes the Stanford
-bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece. The
+bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece;
+`--scene canyon` is [the canyon](#the-canyon-scene), a picture and a large-triangle-count
+benchmark. The
 reference render:
 
 - in bands of rows on all cores (`--threads`, below), with the same bytes at every thread count;
@@ -100,7 +102,7 @@ rays-per-second <rate> (information only: wall clock, all threads)
 ns-per-ray <time> (information only: wall clock, all threads)
 ```
 
-Usage: `lumen render [--scene reference|fixed-point] [--out FILE] [--width W] [--height H]
+Usage: `lumen render [--scene reference|fixed-point|canyon] [--out FILE] [--width W] [--height H]
 [--samples N] [--seed S] [--threads T] [--band-rows R]`; the defaults are the reference scene,
 320 by 180, 4 samples per pixel, seed 0, bands of 1 row and as many threads as the system
 reports available. Without `--out`
@@ -266,8 +268,9 @@ through the public API and checks its values and its chain.
   (`UnknownMaterial`); the buffer, the item count and the allocator's error (`OutOfMemory`,
   with a `SceneBuffer`); Bunny's `CompactError` (`BvhCompact`, named in words, since Bunny's has
   no text) or the room given when `build_bvh_sah` refuses (`BvhBuild`); and the camera, mesh and
-  constant errors as sources. `FixedPointError`, `BuiltinSceneError` and `PlaceError` return
-  theirs from `source()` too.
+  constant errors as sources. `FixedPointError`, `CanyonError`, `BuiltinSceneError` and
+  `PlaceError` return theirs from `source()` too; `HeightfieldError` names the parameter of a
+  refused heightfield spec.
 - **A PNG** (`write_png`) fails with a `PngError`: `Write` with the writer's `io::Error` as its
   source and its text; `ChunkTooLong` and `BlockTooLong` carry the length for the encoder's own
   length checks, which no image reaches.
@@ -280,8 +283,8 @@ through the public API and checks its values and its chain.
   types through `From` or `try_from`, not `as`; the one `as` left on such a value is `widen`
   (`u32` to `usize`, lossless under a compile-time assertion, behind a scoped lint exception).
 - `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
-  `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `BuiltinSceneError` and
-  `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
+  `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `CanyonError`,
+  `HeightfieldError`, `BuiltinSceneError` and `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
 
 ## Statistics
 
@@ -646,6 +649,18 @@ repository. The library builds it with `lumen::canyon_scene()`; `canyon_content(
 planet's bands) with the part each belongs to, its material and its vertex normals. Every
 coordinate is a whole number of `2^-16` grid steps.
 
+Render it with the command (`--scene canyon`):
+
+```sh
+python3 $D lumen ~/git/lumen --worktree --fetch --export canyon.png --out "$(mktemp -d)" -- \
+  bash -c 'mkdir -p /scratch/out && cargo run --locked --release -q -p lumen -- render --scene canyon --width 1280 --height 720 --samples 64 --out /scratch/out/canyon.png'
+```
+
+The 1280 by 720 render at 64 samples has the image hash
+`sha256:1bd910dcea9c3daaa3ea57e3972a639202aa341ba59e0e075a2e55184dc56446` (158 564 967 rays).
+`BuiltinScene::Canyon` is the registry entry; its content identity is
+`sha256:a809761e5cbc96944721e8e2095ae9e0eaa76d8f3ac8bf25e536446835eaf88d`.
+
 **The terrain** (480 256 triangles) is a grid of 513 by 470 vertices, an eighth of a unit apart
 across the canyon (X, from -40 to 24) and three eighths along it (Z, from 16 to -159.875), so
 that a wall's facets are about as tall as they are long; two triangles per cell, wound up, none
@@ -715,6 +730,23 @@ so the integrator is the smooth one; and the bunny resting on its ledge to the g
 lowest vertex at the ledge's height, no terrain vertex under it above that, and the cell under
 its lowest vertex level at that height on all four corners). Building the scene takes about 0.7
 seconds in the release profile and about 3 in the test profile.
+
+Rendering tests (`crates/lumen/tests/canyon/rendering.rs`): the composition as pixels (of a 320
+by 180 image, the camera ray through each pixel's centre meets the bunny in at least 900 pixels,
+each craft in at least 40 and the planet in at least 800); every camera, shadow and bounce ray
+of a 48 by 27 image at 1 sample (1 296 samples) equal to a test of all 566 005 triangles, a
+large test that runs in the release profile only (about 12 seconds; the test profile skips it
+with `#[cfg_attr(debug_assertions, ignore = ...)]`, and CI runs both profiles); and a golden
+hash: 96 by 54 pixels, 4 samples per pixel, seed 0,
+`sha256:019fcdddaaff8761f3f6e64dfe28d1ce7d2b07200b8c69663345ca4a495466c5`, under the same rules
+as the other scenes', the same at every thread count and band height (`tests/threads.rs`). The
+canyon's test binary is not in the WebAssembly job's list; that job checks the canyon's content
+identity and a small render through `tests/library.rs`.
+
+**Known limits of version 1.** The tug reads as a box from behind; the near right wall is a dark
+mass in shadow, lit only by the bounce; the far right wall shows vertical fluting where the low
+sun rakes a steep heightfield; and the ledge's back is a cut cliff, flat where the shelf sliced
+the wall. A change for any of these is a new scene version.
 
 Tests (`crates/lumen/tests/canyon/terrain.rs`): two triangles per cell in row order on the grid
 points of their corners, inside Bunny's trace domain, none degenerate, each facing up (an exact
