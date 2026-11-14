@@ -95,13 +95,16 @@ part was built.
   clippy-bans` checks on a seeded fixture that every ban resolves and fires and that the std item
   list (`xtask/bans/std-items.txt`, from the toolchain's documentation) is complete; the token
   scan (`xtask nondeterminism`) covers what Clippy cannot see, over the deterministic core found
-  by following the module tree, and fails every lint attribute that would silence a ban. The
+  by following the module tree, resolving aliases across files (`extern crate std as host`, a
+  `pub use std as x` reached from another file) and refusing a glob import of a std module or a
+  std path built from a macro metavariable (`hidden-path`); it fails every lint attribute that
+  would silence a ban. The
   scan also checks the workspace boundary from `cargo metadata`: every deterministic crate's
   library is core and must deny float arithmetic; a member neither reached by `lumen` nor
   classified as tooling, a path dependency outside the workspace, a dependency from anywhere but
   Bunny's repository at a full commit, a build script or procedural macro in a deterministic
   crate, a member's own lint levels, a `[patch]` or `[replace]`, and any `.cargo/config` fail.
-  (flyingrobots/lumen#17, #115, #119, #120, #156, #158.)
+  (flyingrobots/lumen#17, #115, #119, #120, #156, #157, #158.)
 - **Repository tooling**: `xtask` (`file-length`, `nondeterminism`, `clippy-bans`, `std-items`,
   `doc-links`) and a `Makefile` (`make demo`, `reference`, `fixed-point`, `4k`,
   `4k-fixed-point`, `canyon`, `4k-canyon`, `test`, `nondeterminism`, `clippy-bans`,
