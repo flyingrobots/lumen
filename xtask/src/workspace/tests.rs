@@ -6,6 +6,7 @@
 //! deterministic crates and failures each case must give written out.
 
 use super::json::{parse, Json};
+use super::manifest::{is_cargo_config, lints_failure, patch_failures};
 use super::{boundary, packages, Boundary};
 
 const REV: &str = "d4fe51d38fa10f8d6496bd110955314edac30bbf";
@@ -224,4 +225,63 @@ fn json_reads_escapes_numbers_and_words_and_refuses_what_is_not_json() {
     assert!(parse(&deep).is_err(), "nested 65 deep");
     let fine = format!("{}{}", "[".repeat(64), "]".repeat(64));
     assert!(parse(&fine).is_ok(), "nested 64 deep");
+}
+
+#[test]
+fn a_deterministic_crate_outside_the_scanned_directories_fails() {
+    let mut all = tooling();
+    all.push(package("lumen", "crates/lumen", &["lib"], &[("dep", None, Some("tools/dep"), None)]));
+    all.push(package("dep", "tools/dep", &["lib"], &[]));
+    let failures = judged(&all).failures;
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(failures[0]
+        .contains("`dep` is a deterministic crate in tools/dep, outside crates/ and xtask/"));
+}
+
+#[test]
+fn a_member_takes_its_lint_levels_from_the_workspace_alone() {
+    let inherited = "[package]\nname = \"x\"\n\n# levels\n[lints] # the workspace's\nworkspace = true # always\n";
+    assert_eq!(lints_failure(inherited), None);
+    for (manifest, what) in [
+        ("[package]\nname = \"x\"\n", "has no `[lints]` table"),
+        ("[lints]\nworkspace = false\n", "sets its own lint levels (workspace = false)"),
+        (
+            "[lints]\nworkspace = true\n\n[lints.clippy]\ndisallowed_methods = \"allow\"\n",
+            "[lints.clippy]",
+        ),
+        ("[lints.clippy]\ndisallowed_methods = \"allow\"\n", "[lints.clippy]"),
+        ("[lints]\nworkspace = true\nclippy = { disallowed_methods = \"allow\" }\n", "clippy = "),
+        ("lints.workspace = true\n[package]\n", "lints.workspace"),
+        ("[package]\nlints = { workspace = true }\n", "lints = "),
+    ] {
+        let failure = lints_failure(manifest).unwrap_or_default();
+        assert!(failure.contains(what), "{manifest:?}: {failure}");
+    }
+}
+
+#[test]
+fn a_patch_a_replace_or_a_cargo_configuration_file_fails() {
+    let root = "[workspace]\nmembers = []\n[patch.\"https://github.com/flyingrobots/bunny\"]\nbunny-num = { path = \"v\" }\n[patch.crates-io]\n[replace]\n";
+    assert_eq!(patch_failures(root).len(), 3);
+    assert_eq!(
+        patch_failures("[workspace]\n[workspace.dependencies]\n[profile.release]\n"),
+        Vec::<String>::new()
+    );
+    for path in [
+        ".cargo/config.toml",
+        ".cargo/config",
+        "crates/lumen/.cargo/config.toml",
+        "xtask/.cargo/config",
+    ] {
+        assert!(is_cargo_config(path), "{path}");
+    }
+    for path in [
+        ".cargo/credentials.toml",
+        "cargo/config.toml",
+        ".cargo/config.toml.bak",
+        "config.toml",
+        "x.cargo/config",
+    ] {
+        assert!(!is_cargo_config(path), "{path}");
+    }
 }

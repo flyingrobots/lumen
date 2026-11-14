@@ -42,7 +42,7 @@ use file_length::{code_lines, judge, Measured, EXCEPTIONS};
 use layout::Layout;
 
 /// The directories read, relative to the repository root.
-const ROOTS: [&str; 2] = ["crates", "xtask"];
+pub(crate) const ROOTS: [&str; 2] = ["crates", "xtask"];
 
 /// Each file's path, relative to the repository root with `/` separators, and its text.
 type Files = Vec<(String, String)>;
@@ -85,7 +85,7 @@ fn main() -> ExitCode {
     let read = sources(&root).and_then(|found| Ok((found, workspace::run::boundary_of(&root)?)));
     match read {
         Ok(((files, crates), boundary)) => {
-            if gate(&files, &Layout::new(&files, &crates), &boundary) {
+            if gate(&files, &Layout::new(&files, &crates, &boundary.libraries), &boundary) {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE
@@ -149,7 +149,19 @@ fn nondeterminism_gate(
     for failure in &boundary.failures {
         println!("::error file=Cargo.toml::[workspace] {failure}");
     }
-    let (mut core, mut failures) = (0, boundary.failures.len());
+    let mut failures = boundary.failures.len();
+    for library in &boundary.libraries {
+        let root = files.iter().find(|(path, _)| *path == library.root).map(|(_, text)| text);
+        if !root.is_some_and(|text| nondeterminism::denies_float_arithmetic(text)) {
+            println!(
+                "::error file={}::[float-type] `{}` is a deterministic crate: its root must have \
+                 #![deny(clippy::float_arithmetic)]",
+                library.root, library.name
+            );
+            failures += 1;
+        }
+    }
+    let mut core = 0;
     for (path, text) in files {
         let mut found = nondeterminism::waiver_forms(text);
         if layout.is_core(path) {

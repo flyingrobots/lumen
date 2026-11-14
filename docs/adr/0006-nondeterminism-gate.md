@@ -163,7 +163,9 @@ them in CI (see Consequences), so this row is a check, not a recorded run.
 
 ## Scope
 
-The deterministic core is every module of the `lumen` library except its tests. It decides the
+The deterministic core is every module of the deterministic crates' libraries except their
+tests: `lumen` and every workspace member its package depends on (the amendment of 2026-11-14
+below derives them from `cargo metadata`; there is none besides `lumen` today). It decides the
 image bytes, the image hash, the scene content digest and the provenance. `xtask/src/layout.rs`
 finds it by following the library's module tree from `src/lib.rs` the way `rustc` resolves `mod`
 declarations (`foo.rs` or `foo/mod.rs`, `#[path]` relative to the declaring file, inline
@@ -185,7 +187,8 @@ loads depends on the `cfg`). `#[path]` takes only a string literal (`rustc` refu
 `#[path = concat!(..)]`), so no macro can build the path, and the rule holds at every level of
 indirection because each loaded file is itself walked. `include_str!` and `include_bytes!` read
 data, not code, and stay allowed (the library embeds its PLY meshes with them). Not covered:
-code a build script generates (there is none; one would have to be `include!`d, which fails) and
+code a build script generates (a deterministic crate may have no build script, see the
+amendment) and
 `mod` declarations that a macro builds from its arguments (`mod $name;`), which are resolved
 relative to the macro's file, not the caller's. Outside the core, each for a reason:
 
@@ -233,8 +236,10 @@ relative to the macro's file, not the caller's. Outside the core, each for a rea
   `--cfg lumen_clippy_fixture`, which only the check passes, so it is linted with the
   workspace's own lint levels and lock file, and ordinary builds compile an empty crate. It costs
   the `fmt, clippy` job one `xtask` build and one Clippy run over a single small crate. It
-  checks that each listed ban works, not that the list is complete; nor does it read lint levels
-  set outside source files (`RUSTFLAGS`, `.cargo/config.toml`).
+  checks that each listed ban works, not that the list is complete. Lint levels set outside
+  source files are the workspace boundary's (amendment of 2026-11-14): a member's own `[lints]`
+  table and any `.cargo/config.toml` fail; `RUSTFLAGS` in the builder's own environment is not
+  read by any gate.
 
 ## Amendment, 2026-11-14: the workspace boundary
 
@@ -261,4 +266,24 @@ looked at it), and a build script that sets a `cfg` the library branches on.
   `include!`; and a procedural macro, whose output is code the gates never read. No
   deterministic crate needs either today. The fixture's `build.rs`, which only declares its
   `cfg`, is tooling's.
-- Failures print as `[workspace]` errors of `Gates / nondeterminism`.
+- **Every deterministic crate is core.** The module walk starts at each deterministic crate's
+  library root, and the scan reads every file it reaches outside `#[cfg(test)]` as core, plus
+  any other file under that crate's `src/` outside `src/bin/`, as it always did for `lumen`.
+  The gates read only `crates/` and `xtask/`, so a deterministic crate elsewhere fails.
+- **`clippy::float_arithmetic` is denied at each deterministic crate's root**, as an inner
+  `#![deny(...)]` or `#![forbid(...)]` that names it; the gate fails a root without one. It is
+  not a workspace lint because the binary, the tests and the tooling do float arithmetic (the
+  command's timings, `tests/cli.rs`, the examples), and a workspace lint would need a waiver in
+  each. `clippy.toml`'s bans already apply to every crate.
+- **Lint levels and flags outside source files.** Every member's manifest must have `[lints]`
+  with `workspace = true` alone and no `[lints.*]` table of its own (one lowered
+  `disallowed_methods` in no file the scan reads; the workspace's own `[workspace.lints]` is
+  checked by the fixture, which inherits it). The root manifest may have no `[patch]` or
+  `[replace]` table, which would swap a Bunny crate for code the gates do not read. And the
+  repository may hold no Cargo configuration file (`.cargo/config.toml` or `.cargo/config`, at
+  any depth, since Cargo reads them from the directory it runs in upwards): one can set
+  `rustflags` with a `--cfg` the core branches on, or `-A` of a ban lint, and nothing needs
+  one. A `cfg` the core names that no build script or `check-cfg` declares is an
+  `unexpected_cfgs` error, which `warnings = "deny"` makes fatal.
+- Failures print as `[workspace]` errors of `Gates / nondeterminism`, the root check as
+  `[float-type]`.
