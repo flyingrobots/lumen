@@ -13,9 +13,11 @@ use bunny_optics::{
 };
 use bunny_query::{TraceRay, TraceTriangle};
 use lumen::reference::{reference_camera, BUNNY_FIRST_PRIMITIVE, REFERENCE_TRIANGLE_COUNT};
-use lumen::render::{pixel_radiance, render, trace_path, RenderSettings, TONE_CURVE};
-use lumen::scene::{CameraPlacement, Hit, Lighting, SceneSpec, TraceError, FAR};
-use lumen::{reference_scene, render_reference, ImageSize, Rgba8Image, Scene, Tracer, BUNNY_REV};
+use lumen::{
+    pixel_radiance, reference_scene, render, render_reference, trace_path, CameraPlacement, Hit,
+    ImageSize, Lighting, RenderSettings, Rgba8Image, Scene, SceneSpec, TraceError, Tracer,
+    BUNNY_REV, FAR, TONE_CURVE,
+};
 use std::cell::Cell;
 
 mod golden;

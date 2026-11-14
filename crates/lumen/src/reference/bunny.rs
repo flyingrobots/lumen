@@ -27,7 +27,7 @@ pub const BUNNY_DROPPED_FACES: usize = 0;
 /// The bunny's triangles in the reference scene.
 pub const BUNNY_TRIANGLE_COUNT: usize = BUNNY_FACE_COUNT - BUNNY_DROPPED_FACES;
 
-/// The bunny's placement in the reference scene ([`crate::scene::reference_scene`]): a half turn
+/// The bunny's placement in the reference scene ([`crate::reference_scene`]): a half turn
 /// about `+Y` (the file's bunny faces `-X`; turned, it faces `+X`, toward the sphere, three-quarters
 /// toward the camera), a scale of
 /// 8 (about 1.24 units long, 1.21 tall and 0.96 deep), and a translation that puts it left of the
