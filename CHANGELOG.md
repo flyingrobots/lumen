@@ -8,6 +8,11 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The `lumen` command's `main` maps one typed `Failure` to its message and exit code (part of
+  flyingrobots/lumen#21), in place of `Result<(), String>` and errors turned into strings as
+  they arose. Each variant keeps the library's or the system's error as its `source()`. Every
+  message and exit code is byte-identical to before.
+
 - `write_png` returns `Result<(), PngError>` instead of an `io::Result` built partly from
   strings (part of flyingrobots/lumen#21). `PngError::Write` keeps the writer's `io::Error` as
   its `source()` and its text; the encoder's own length checks are `ChunkTooLong { length }`

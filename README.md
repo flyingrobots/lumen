@@ -165,6 +165,10 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
 - **The command owns everything at the edge**: argument parsing and the usage text (`cli.rs`,
   `cli/usage_error.rs`, with its tests in `cli/tests.rs`), the default thread count from
   `available_parallelism`, the clock, the output file and the terminal (`main.rs`, `report.rs`).
+  Every way the command can fail is a variant of one typed `Failure` (`failure.rs`), which keeps
+  the library's or the system's error as its source; its `Display` and `exit_code` are the one
+  place that turns a failure into the message after `lumen: ` and the exit status (2 for a
+  refused command line, 1 for anything after it).
 
 ### Errors
 
