@@ -1,0 +1,15 @@
+[package]
+name = "lumen"
+description = "Lumen: a deterministic ray tracer built on Bunny's integer math."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+keywords = ["ray-tracing", "deterministic"]
+categories = ["rendering"]
+publish = false
+
+[lints]
+workspace = true
