@@ -6,20 +6,30 @@
 //! and macro bodies, and ignores comments and strings. In the deterministic core it reports
 //! float types, float literals and casts to a float; the names `Instant`, `SystemTime`,
 //! `UNIX_EPOCH`, `available_parallelism`, `HashMap`, `HashSet` and `RandomState`; the
-//! `env!` and `option_env!` macros; and paths into `std::env`, `std::fs`, `std::process`,
-//! `std::net` and `std::thread::sleep`, written out, through a `use` tree (groups, `self`,
-//! renames) or through a name a `use` brought in. Any line that names open addressing is
-//! `hand-hashed-table`. In every file it checks the form of Clippy waivers ([`waiver_forms`]).
+//! `env!` and `option_env!` macros; names with the word `f32` or `f64` or ending `_float`
+//! (`as_secs_f64`, `into_float`); Bunny's float-bridge types (`bunny_linalg::Vec3`, `bunny_codec::PlyVertex`); and
+//! paths into `std::env`, `std::fs`, `std::process`, `std::net` and the `std::thread` sleeps,
+//! written out, raw (`std::r#fs`), through a `use` tree (groups, `self`, renames), through a name
+//! a `use` brought in, or through an `extern crate std as ...` alias, chained. Any line that names open addressing is
+//! `hand-hashed-table`, and an attribute built from a macro metavariable is a `waiver` finding.
+//! In every file it checks each lint-level attribute that could turn a Clippy ban off
+//! ([`waiver_forms`]).
 //!
-//! A finding is waived by a comment on its line or the line above:
-//! `// nondeterminism: allow <rule-id> -- <reason>`. A waiver with an unknown rule or no
-//! reason, or one that waives nothing, is itself a failure.
+//! A finding is waived by a plain line comment, read by the lexer, on its line or the line above:
+//! `// nondeterminism: allow <rule-id> -- <reason>`; the same text in a string or a doc comment is
+//! not a waiver. A waiver with an unknown rule or no reason, or one that waives nothing, is
+//! itself a failure.
 
+mod paths;
 #[cfg(test)]
 mod tests;
-mod tokens;
+pub(crate) mod tokens;
+mod waivers;
 
-use tokens::{is_float, tokens, Located, Token};
+use paths::{imports, paths, resolve};
+use tokens::{is_float, tokens, Token};
+use waivers::apply_waivers;
+pub(crate) use waivers::{waiver_forms, BAN_GROUPS};
 
 /// Every rule ID: Echo's `ban-nondeterminism` vocabulary, then Lumen's own.
 pub(crate) const RULES: [&str; 20] = [
@@ -58,18 +68,32 @@ const NAMES: [(&str, &str); 9] = [
     ("FxHashSet", "unordered-container"),
 ];
 
-/// Banned path prefixes and their rules.
-const PATHS: [(&[&str], &str); 5] = [
+/// Banned path prefixes and their rules. Each is compared segment by segment after the path is
+/// resolved through the file's imports ([`resolve`]); the `sleep` family is listed by name
+/// because `sleep_ms` is not under `sleep`. The Bunny types are its float bridge, whose values
+/// carry floats with no float token (`PlyVertex.x`).
+const PATHS: [(&[&str], &str); 20] = [
     (&["std", "env"], "std-env"),
     (&["std", "fs"], "std-fs"),
     (&["std", "process"], "std-process"),
     (&["std", "net"], "network"),
     (&["std", "thread", "sleep"], "thread-sleep"),
+    (&["std", "thread", "sleep_ms"], "thread-sleep"),
+    (&["std", "thread", "sleep_until"], "thread-sleep"),
+    (&["std", "thread", "park_timeout"], "thread-sleep"),
+    (&["std", "thread", "park_timeout_ms"], "thread-sleep"),
+    (&["bunny_num", "Scalar"], "float-type"),
+    (&["bunny_linalg", "Vec2"], "float-type"),
+    (&["bunny_linalg", "Vec3"], "float-type"),
+    (&["bunny_geom", "Ray3"], "float-type"),
+    (&["bunny_geom", "Aabb3"], "float-type"),
+    (&["bunny_geom", "Sphere3"], "float-type"),
+    (&["bunny_codec", "ObjMesh"], "float-type"),
+    (&["bunny_codec", "ObjVertex"], "float-type"),
+    (&["bunny_codec", "ObjVertices"], "float-type"),
+    (&["bunny_codec", "PlyBinaryMesh"], "float-type"),
+    (&["bunny_codec", "PlyVertex"], "float-type"),
 ];
-
-/// The Clippy lints whose waivers must be `expect` with a rule-ID reason.
-const BAN_LINTS: [&str; 4] =
-    ["disallowed_methods", "disallowed_types", "disallowed_macros", "float_arithmetic"];
 
 /// One finding: the 1-based line, the rule and what was found.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,6 +124,15 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
                 add(*line, if cast { "float-cast" } else { "float-type" }, name);
             }
             Token::Num(number) if is_float(number) => add(*line, "float-literal", number),
+            // A name with the word `f32` or `f64` (`as_secs_f64`, `to_f32`), or ending `_float`
+            // (Bunny's `into_float`): a float passes through it even when no float type or
+            // literal is written. Not `float_arithmetic`, the lint `lib.rs` denies.
+            Token::Ident(name)
+                if name.split('_').any(|w| w == "f32" || w == "f64")
+                    || name.ends_with("_float") =>
+            {
+                add(*line, "float-type", name);
+            }
             Token::Ident(name) => {
                 if let Some((_, rule)) = NAMES.iter().find(|(n, _)| n == name) {
                     add(*line, rule, name);
@@ -114,14 +147,11 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
     }
     let imports = imports(&toks);
     for (line, path) in paths(&toks) {
-        let resolved = imports
-            .iter()
-            .find(|(alias, _)| path.first() == Some(alias))
-            .map_or_else(|| path.clone(), |(_, full)| [&full[..], &path[1..]].concat());
+        let readings = resolve(&path, &imports);
         for (prefix, rule) in PATHS {
             let under =
                 |p: &[String]| p.len() >= prefix.len() && p.iter().zip(prefix).all(|(a, b)| a == b);
-            if under(&path) || under(&resolved) {
+            if readings.iter().any(|p| under(p)) {
                 add(line, rule, &path.join("::"));
             }
         }
@@ -132,166 +162,6 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
             add(n + 1, "hand-hashed-table", "open addressing");
         }
     }
+    found.extend(waivers::macro_attributes(&toks));
     apply_waivers(text, found)
-}
-
-/// Every `::` path in the tokens with its line, `use` trees flattened into full paths.
-fn paths(toks: &[Located]) -> Vec<(usize, Vec<String>)> {
-    let mut out = Vec::new();
-    let mut i = 0;
-    while let Some((line, _)) = toks.get(i) {
-        if let Some((end, leaves)) = use_at(toks, i) {
-            out.extend(leaves.into_iter().map(|(p, _)| (*line, p)));
-            i = end;
-            continue;
-        }
-        let mut path = Vec::new();
-        let mut j = i;
-        while let Some((_, Token::Ident(segment))) = toks.get(j) {
-            path.push(segment.clone());
-            if !matches!(
-                (toks.get(j + 1), toks.get(j + 2)),
-                (Some((_, Token::Punct(':'))), Some((_, Token::Punct(':'))))
-            ) {
-                break;
-            }
-            j += 3;
-        }
-        if path.len() > 1 {
-            out.push((*line, path));
-        }
-        i = j.max(i) + 1;
-    }
-    out
-}
-
-/// The names `use` declarations bring in (the last segment, or the rename) and their paths.
-fn imports(toks: &[Located]) -> Vec<(String, Vec<String>)> {
-    let leaves = (0..toks.len()).filter_map(|i| use_at(toks, i)).flat_map(|(_, leaves)| leaves);
-    leaves
-        .filter_map(|(path, alias)| {
-            let full: Vec<String> = path.into_iter().filter(|s| s != "self").collect();
-            Some((alias.or_else(|| full.last().cloned())?, full))
-        })
-        .collect()
-}
-
-/// If a `use` declaration starts at `i`: the index of its `;` and its leaves ([`use_tree`]).
-fn use_at(toks: &[Located], i: usize) -> Option<(usize, Vec<Leaf>)> {
-    if toks.get(i)?.1 != Token::Ident("use".to_owned()) {
-        return None;
-    }
-    let end =
-        toks[i..].iter().position(|(_, t)| *t == Token::Punct(';')).map_or(toks.len(), |e| i + e);
-    Some((end, use_tree(&toks[i + 1..end])))
-}
-
-/// A leaf of a `use` tree: its full path and its rename, if it has one.
-type Leaf = (Vec<String>, Option<String>);
-
-/// The leaves of a `use` tree.
-fn use_tree(toks: &[Located]) -> Vec<Leaf> {
-    let (mut out, mut stack, mut path) = (Vec::new(), Vec::new(), Vec::<String>::new());
-    let mut alias = None;
-    let mut iter = toks.iter().map(|(_, t)| t);
-    while let Some(token) = iter.next() {
-        match token {
-            Token::Ident(word) if word == "as" => {
-                alias = iter.next().and_then(|t| {
-                    if let Token::Ident(a) = t {
-                        Some(a.clone())
-                    } else {
-                        None
-                    }
-                });
-            }
-            Token::Ident(word) => path.push(word.clone()),
-            Token::Punct('*') => path.push("*".to_owned()),
-            Token::Punct('{') => stack.push(path.len()),
-            Token::Punct(',' | '}') => {
-                if path.len() > stack.last().copied().unwrap_or(0) {
-                    out.push((path.clone(), alias.take()));
-                }
-                let keep =
-                    if *token == Token::Punct('}') { stack.pop() } else { stack.last().copied() };
-                path.truncate(keep.unwrap_or(0));
-            }
-            _ => {}
-        }
-    }
-    if !path.is_empty() {
-        out.push((path, alias));
-    }
-    out
-}
-
-/// Removes the findings a waiver covers and adds a `waiver` finding for each waiver that is
-/// malformed or covers nothing.
-fn apply_waivers(text: &str, mut found: Vec<Finding>) -> Vec<Finding> {
-    const MARK: &str = "// nondeterminism: allow ";
-    let mut failures = Vec::new();
-    for (n, text_line) in text.lines().enumerate() {
-        let Some(at) = text_line.find(MARK) else { continue };
-        let (line, waiver) = (n + 1, &text_line[at + MARK.len()..]);
-        let (rule, reason) = waiver
-            .split_once(" -- ")
-            .map_or((waiver.trim(), ""), |(r, why)| (r.trim(), why.trim()));
-        let bad = |what: &str| Finding { line, rule: "waiver", what: format!("{what}: {waiver}") };
-        if !RULES.contains(&rule) {
-            failures.push(bad("a waiver for an unknown rule"));
-        } else if reason.is_empty() {
-            failures.push(bad("a waiver without a reason"));
-        } else {
-            let before = found.len();
-            found.retain(|f| !(f.rule == rule && (f.line == line || f.line == line + 1)));
-            if found.len() == before {
-                failures.push(bad("a waiver that waives nothing"));
-            }
-        }
-    }
-    found.extend(failures);
-    found
-}
-
-/// The Clippy waivers in any file that are not of the required form: an `allow` of a ban lint,
-/// or an `expect` of one whose reason does not start with rule IDs and a colon.
-pub(crate) fn waiver_forms(text: &str) -> Vec<Finding> {
-    let toks = tokens(text);
-    let mut out = Vec::new();
-    for (i, (line, token)) in toks.iter().enumerate() {
-        let Token::Ident(kind) = token else { continue };
-        let opens = matches!(toks.get(i + 1), Some((_, Token::Punct('('))));
-        if !(opens && (kind == "allow" || kind == "expect")) {
-            continue;
-        }
-        let end = toks[i..]
-            .iter()
-            .position(|(_, t)| *t == Token::Punct(')'))
-            .map_or(toks.len(), |e| i + e);
-        let inside = &toks[i..end];
-        let bans = inside
-            .iter()
-            .any(|(_, t)| matches!(t, Token::Ident(l) if BAN_LINTS.contains(&l.as_str())));
-        let reason =
-            inside
-                .iter()
-                .find_map(|(_, t)| if let Token::Str(s) = t { Some(s.as_str()) } else { None });
-        let ruled = reason
-            .and_then(|r| r.split_once(':'))
-            .is_some_and(|(ids, _)| ids.split(", ").all(|id| RULES.contains(&id)));
-        if bans && kind == "allow" {
-            out.push(Finding {
-                line: *line,
-                rule: "waiver",
-                what: "a ban lint waived with allow: use expect".to_owned(),
-            });
-        } else if bans && !ruled {
-            out.push(Finding {
-                line: *line,
-                rule: "waiver",
-                what: "a ban lint's reason must start with its rule IDs and a colon".to_owned(),
-            });
-        }
-    }
-    out
 }

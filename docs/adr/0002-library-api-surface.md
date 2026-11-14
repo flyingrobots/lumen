@@ -32,6 +32,11 @@ second front end would have had to rebuild that list by hand.
   terminal output or host probe. The caller passes the thread count and the writer. The command
   (`src/bin/lumen/`) owns all of that. The one host resource the library uses is threads, started
   by `render_pixels` at the count the caller gave (ADR 0003).
+- **The scheduler's generics stay private.** The scheduler is generic over what each worker
+  counts besides its pixels' sum (a zero-sized `NoTally`, or `BandTally` for run statistics, ADR
+  0008), but that parameter is not public: `render_pixels` counts nothing and
+  `render_pixels_by_worker` counts bands, and those two functions, with `render_traced` and
+  `render_traced_with_run` above them, are the surface.
 - **`RenderProvenance` is the render's identity.** It holds the scene's content identity and
   optional name (ADR 0005), the size and the settings. With the identities fixed in this build,
   `fields()` returns thirteen named fields in a stable order: `scene`, `integrator`, `shading`,
