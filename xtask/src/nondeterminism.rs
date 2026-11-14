@@ -11,8 +11,13 @@
 //! (`as_secs_f64`, `into_float`); Bunny's float-bridge types (`bunny_linalg::Vec3`, `bunny_codec::PlyVertex`); and
 //! paths into `std::env`, `std::fs`, `std::process`, `std::net` and the `std::thread` sleeps,
 //! written out, raw (`std::r#fs`), through a `use` tree (groups, `self`, renames), through a name
-//! a `use` brought in, or through an `extern crate std as ...` alias, chained. Any line that names open addressing is
-//! `hand-hashed-table`, and an attribute built from a macro metavariable is a `waiver` finding.
+//! a `use` brought in, or through an `extern crate std as ...` alias, chained, the aliases of
+//! every core file included ([`CrateAliases`]: a crate-root `extern crate`, a `pub use std as x`
+//! reached as `crate::m::x`). A glob import of a std module and a std path built from a macro
+//! metavariable (`std::$m::var`, `$root::fs`) are `hidden-path`: the scan cannot follow them.
+//! Any line that names open addressing is `hand-hashed-table`, and an attribute built from a
+//! macro metavariable is a `waiver` finding. None of this depends on `cfg`: code under any
+//! `cfg` is read the same.
 //! In every file it checks each lint-level attribute that could turn a Clippy ban off
 //! ([`waiver_forms`]).
 //!
@@ -21,19 +26,22 @@
 //! not a waiver. A waiver with an unknown rule or no reason, or one that waives nothing, is
 //! itself a failure.
 
+#[cfg(test)]
+mod crate_alias_tests;
 mod paths;
 #[cfg(test)]
 mod tests;
 pub(crate) mod tokens;
 mod waivers;
 
-use paths::{imports, paths, resolve};
+pub(crate) use paths::{crate_aliases, CrateAliases};
+use paths::{imports, macro_paths, paths, resolve};
 use tokens::{is_float, tokens, Token};
 use waivers::apply_waivers;
 pub(crate) use waivers::{waiver_forms, BAN_GROUPS};
 
 /// Every rule ID: Echo's `ban-nondeterminism` vocabulary, then Lumen's own.
-pub(crate) const RULES: [&str; 20] = [
+pub(crate) const RULES: [&str; 21] = [
     "time-system",
     "time-instant",
     "thread-sleep",
@@ -54,7 +62,32 @@ pub(crate) const RULES: [&str; 20] = [
     "float-type",
     "float-literal",
     "float-cast",
+    "hidden-path",
 ];
+
+/// The std modules that hold a banned item: a path a macro builds from a metavariable root
+/// (`$root::fs`) through one of them is refused, since the scan cannot know the root.
+const STD_MODULES: [&str; 16] = [
+    "env",
+    "fs",
+    "process",
+    "net",
+    "os",
+    "io",
+    "thread",
+    "time",
+    "collections",
+    "hash",
+    "arch",
+    "ffi",
+    "panic",
+    "any",
+    "backtrace",
+    "primitive",
+];
+
+/// The roots of the standard library.
+const STD_ROOTS: [&str; 3] = ["std", "core", "alloc"];
 
 /// The float types: `f16` and `f128` are unstable on the pinned toolchain, and named so that
 /// a toolchain that stabilises them cannot bring one into the core unseen.
@@ -116,8 +149,10 @@ pub(crate) struct Finding {
 }
 
 /// The findings in a deterministic-core file, at most one per rule and line, waivers applied:
-/// the result also holds a `waiver` finding for each malformed or unused waiver.
-pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
+/// the result also holds a `waiver` finding for each malformed or unused waiver. `aliases` are
+/// those of every core file ([`crate_aliases`]), so an alias declared in another file is
+/// followed.
+pub(crate) fn core_findings(text: &str, aliases: &CrateAliases) -> Vec<Finding> {
     let toks = tokens(text);
     let mut found = Vec::new();
     let mut add = |line, rule, what: &str| {
@@ -155,8 +190,21 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
         }
     }
     let imports = imports(&toks);
+    let std_root = |p: &Vec<String>| p.first().is_some_and(|r| STD_ROOTS.contains(&r.as_str()));
+    for (line, path) in macro_paths(&toks) {
+        let known: Vec<String> = path.iter().take_while(|s| !s.starts_with('$')).cloned().collect();
+        let from_std = !known.is_empty() && resolve(&known, &imports, aliases).iter().any(std_root);
+        let built_root = path[0].starts_with('$')
+            && path[1..].iter().any(|s| s.starts_with('$') || STD_MODULES.contains(&s.as_str()));
+        if from_std || built_root {
+            add(line, "hidden-path", &format!("{}: a std path a macro builds", path.join("::")));
+        }
+    }
     for (line, path) in paths(&toks) {
-        let readings = resolve(&path, &imports);
+        let readings = resolve(&path, &imports, aliases);
+        if path.last().is_some_and(|s| s == "*") && readings.iter().any(std_root) {
+            add(line, "hidden-path", &format!("{}: a glob of a std module", path.join("::")));
+        }
         for (prefix, rule) in PATHS {
             let under =
                 |p: &[String]| p.len() >= prefix.len() && p.iter().zip(prefix).all(|(a, b)| a == b);

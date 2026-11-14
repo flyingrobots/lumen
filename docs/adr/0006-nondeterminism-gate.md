@@ -314,3 +314,39 @@ arithmetic operator. `c_float` was caught only because its name ends `_float`.
   (`type Real = core::ffi::c_double;`) is a finding at its definition, which names a float type;
   a use of the alias elsewhere is not a second finding, and need not be. std has no other float
   alias, and Bunny's float bridge is listed by name.
+
+## Amendment, 2026-11-14: aliases across files, macro-built paths and `cfg`
+
+flyingrobots/lumen#157 found paths that pass both layers: an alias declared in one file
+(`extern crate std as host;` at the crate root, `pub use std as reexported;` in another module)
+used in another file under a `cfg` the Linux Clippy run does not build (`cfg(windows)`,
+`cfg(target_arch = "wasm32")`), and a path a macro builds from its argument (`std::$m::var_os`).
+Clippy caught the forms it compiled; the scan resolved aliases only within one file.
+
+- **Aliases are followed across the deterministic crates' files.** Before scanning, the gate
+  collects the aliases of every core file (`CrateAliases` in `xtask/src/nondeterminism/paths.rs`):
+  every `extern crate ... as` name, which a crate root puts in every module's scope (all are
+  taken, wherever declared), and every `use` name of every file. A path's first segment resolves
+  through its own file's imports and the `extern crate` names; a path through the crates' own
+  modules (starting `crate`, `self`, `super`, `$crate` or a deterministic crate's name) also
+  resolves through any later segment that is a `use` name of any file, so
+  `crate::probe_b::reexported::fs::metadata` is `std::fs::metadata`, and
+  `super::super::host::fs::read` is `std::fs::read`. Resolution is not by module, so it can only
+  over-report; it is bounded at eight steps and 256 readings a path.
+- **What cannot be followed is refused** (`hidden-path`, a Lumen rule): a glob import of a std
+  module (`use std::*`, `use core::ops::*`, and through an alias, `use host::thread::*`), since
+  it brings names into scope that the scan cannot list; a path of a macro body that starts at
+  `std`, `core` or `alloc` (directly or through an alias) and has a metavariable segment
+  (`std::$m::var_os`, `std::thread::$f`); and a path whose first segment is a metavariable other
+  than `$crate` with a later segment that is a metavariable or a std module holding a banned item
+  (`$root::fs::read`, `$a::$b::$c`). `<$t>::default()`, `$t::new()` and `$x + $x` pass.
+- **`cfg` does not matter to the scan.** It is lexical: code under `cfg(windows)`,
+  `cfg(target_arch = ...)` or inside `cfg_attr` is read like any other, and a
+  `#[cfg(...)] mod x;` (with or without `#[path]`) is followed by the module walk whatever its
+  `cfg`. Tests seed each form above under such a `cfg`.
+- **Clippy on more targets is not worth a CI change.** It would add exact resolution of the
+  core's paths under other targets' `cfg`s. The deterministic core has no code under a target
+  `cfg` today (only tests do), and #155's amendment below makes one a finding, so every leg
+  compiles the same core code the Linux run lints; the scan covers the rest. The cost would be
+  a Clippy step on four more legs, and the fixture's seeded forms would need a per-target
+  variant. Not done.
