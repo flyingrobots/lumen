@@ -15,7 +15,7 @@ fn reported(source: &str) -> Vec<(usize, &'static str)> {
     core_findings(source).iter().map(|f| (f.line, f.rule)).collect()
 }
 
-const REJECTED: [Form; 46] = [
+const REJECTED: [Form; 53] = [
     ("instant: qualified call", "pub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 1),
     ("instant: use then bare call", "use std::time::Instant;\npub fn f() { let _ = Instant::now(); }", "time-instant", 1),
     ("instant: use group", "use std::time::{Duration, Instant};\npub fn f() -> Duration { Instant::now().elapsed() }", "time-instant", 1),
@@ -62,9 +62,16 @@ const REJECTED: [Form; 46] = [
     ("instant: in cfg-gated code", "#[cfg(feature = \"never\")]\npub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 2),
     ("map: in an unused macro_rules", "#[allow(unused_macros)]\nmacro_rules! table { () => { std::collections::HashMap::<u8, u8>::new() } }", "unordered-container", 2),
     ("open addressing: comment", "// open addressing with linear probing\npub struct Table([u32; 8]);", "hand-hashed-table", 1),
+    ("env: env! macro", "pub fn f() -> &'static str { env!(\"HOME\") }", "std-env", 1),
+    ("float: negative exponent literal", "pub const K: u32 = 1e-3 as u32;", "float-literal", 1),
+    ("float: range bound after two dots", "pub fn f() -> core::ops::RangeTo<u32> { ..1.5 as u32 }", "float-literal", 1),
+    ("float: underscore after the exponent sign", "pub const K: u32 = 1e+_3 as u32;", "float-literal", 1),
+    ("float: behind a shebang that opens a comment", "#!/bin/x /*\npub const K: u32 = 1.5 as u32;", "float-literal", 2),
+    ("env: raw path segment", "pub fn f() { let _ = std::r#env::var(\"X\"); }", "std-env", 1),
+    ("float: raw type", "pub fn f(x: u32) -> r#f64 { r#f64::from(x) }", "float-type", 1),
 ];
 
-const ACCEPTED: [(&str, &str); 10] = [
+const ACCEPTED: [(&str, &str); 13] = [
     ("sin and sqrt methods on a fixed-point type", "pub struct Fx(pub i64);\nimpl Fx { pub fn sin(self) -> Self { self } pub fn sqrt(self) -> Self { self } }\npub fn f() -> Fx { Fx(1).sin().sqrt() }"),
     ("HashMap in a comment and a doc comment", "// a HashMap would iterate in a random order\n/// not a std::collections::HashMap\npub fn f() {}"),
     ("HashMap and f64 in strings", "pub fn f() -> (&'static str, &'static str) { (\"std::collections::HashMap\", r#\"f64::NAN 0.5\"#) }"),
@@ -75,6 +82,9 @@ const ACCEPTED: [(&str, &str); 10] = [
     ("core Duration and BTreeMap", "use std::collections::BTreeMap;\npub fn f() -> (core::time::Duration, BTreeMap<u8, u8>) { (core::time::Duration::ZERO, BTreeMap::new()) }"),
     ("an f32 grid in a doc comment", "/// exactly an f32, a value like 0.5\npub fn f() {}"),
     ("char literals", "pub fn f() -> [char; 2] { ['.', '1'] }"),
+    ("a raw identifier r#type", "pub fn f(r#type: u32) -> u32 { r#type }"),
+    ("an integer range and a suffixed sum", "pub fn f() -> usize { (1..2).len() + 1usize+2 }"),
+    ("hex with an e digit before a sign", "pub const H: u32 = 0x1e+3;"),
 ];
 
 #[test]

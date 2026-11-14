@@ -73,6 +73,17 @@ unit tests (`xtask/src/nondeterminism/tests.rs`).
   so it can only over-report. A scan finding is waived by
   `// nondeterminism: allow <rule-id> -- <reason>` on its line or the line above; an unknown
   rule, a missing reason or a waiver that waives nothing fails. It runs as `Gates / nondeterminism`.
+- **Both gates read a file as `rustc` lexes it** (flyingrobots/lumen#120, #119). The scan and
+  the file-length gate share one lexer (`xtask/src/file_length/count.rs`). It skips a leading
+  byte-order mark and a shebang line: a first line starting `#!` whose next token, past
+  whitespace and comments that are not doc comments, is not `[` (the reference's rule; `#![...]`
+  stays an inner attribute). Without that, `#!/bin/x /*` hid the rest of a file from both gates
+  while the compiler built it. Raw identifiers are read without their prefix, so `std::r#env::var`
+  is `std::env::var` and `r#f64` is `f64`. A float literal is what the Rust reference's literal
+  grammar calls one: a decimal literal with a fraction (`1.5`, `2.`, also after a range's `..`),
+  an exponent whose sign may be followed by `_` (`1e-3`, `1e+_3`) or the suffix `f32` or `f64`;
+  not `1..2`, `1.foo()`, `2.f64`, `0x1e+3`, `1usize+2` or a tuple index (`t.0.1`). The literal
+  forms are unit tests (`xtask/src/nondeterminism/tokens/tests.rs`).
 
 ## Scope
 
