@@ -295,7 +295,14 @@ The library computes the counts (`Scene::statistics()`, a `SceneStatistics`) and
 formats them; nothing is counted while a ray is traced, and nothing in the scene changes.
 `Scene::statistics` is described under [Library and command](#library-and-command);
 [ADR 0008](docs/adr/0008-statistics.md) records what is counted and why it cannot change a pixel.
-Ray, run and traversal statistics, and `render --stats`, are decided there and not yet built.
+Run and traversal statistics are decided there and not yet built.
+
+`lumen render ... --stats` prints the report unchanged, then the same scene block (every line of
+`lumen stats` after its first three, which the report already gives), then what the rays found.
+Without `--stats` the output is the report alone, byte for byte as before statistics existed.
+The command first checks the ray statistics against the size and settings (one record per pixel,
+`--samples` samples per pixel, exactly one camera ray per sample, at most four rays per sample)
+and fails with exit code 1 if they disagree, which no render the library produced does.
 
 Each line is a key with no spaces, one space and a value: one token, or a vector of tokens
 separated by single spaces. Keys are stable; new ones are added, never renamed. Fixed-point values
@@ -327,6 +334,20 @@ which also depend on this build's type sizes (the values below are those of 64-b
 | `tree.leaf-triangles-min`, `tree.leaf-triangles-max` | the fewest and most triangles in a leaf |
 | `tree.leaf-sizes` | five counts: leaves of 1, 2, 3 and 4 triangles, and of more (only at the depth cap) |
 | `memory.NAME-bytes` | information only, a fact about this build (the line ends in `(information only: this build's type sizes)`): each buffer's length times its element size, which depends on the target's pointer width: `triangles` (Bunny's `TraceTriangle`), `surfaces` (`Option<TriangleSurface>`), `vertex-normals`, `material-indices`, `materials`, `tree-nodes` (compact nodes), `tree-primitive-indices`, and their `total` |
+
+The ray lines (`render --stats`), each a function of the scene, the size and the settings, the
+same at every thread count and band height:
+
+| Key | Value |
+| --- | --- |
+| `rays.camera`, `rays.camera-hits`, `rays.camera-misses` | camera rays traced, and those that hit a triangle or left the scene: exactly one per sample |
+| `rays.bounce`, `rays.bounce-hits`, `rays.bounce-misses` | bounce rays traced, one at each camera hit unless rejected, and their hits and misses |
+| `rays.bounce-rejected` | bounces Bunny's smooth shading rejected as below the surface: no ray traced, so not in `rays.bounce` |
+| `rays.shadow`, `rays.shadow-occluded`, `rays.shadow-unoccluded` | shadow rays traced at camera and bounce hits, and those that met a triangle (the sun blocked) or nothing |
+| `rays.total` | every ray: the `rays` line's total |
+| `rays.pixels`, `rays.samples-per-pixel`, `rays.samples` | pixels rendered, samples asked for per pixel, and samples traced in all |
+| `rays.per-pixel-min`, `rays.per-pixel-max` | the fewest and most rays any one pixel traced |
+| `rays.per-pixel-mean` | `rays.total / rays.pixels`, with two places, rounded to nearest, ties up |
 
 Not counted in `memory.`: the `Scene` value and its vectors' headers, spare capacity, the
 allocator's overhead, the buffers dropped after the build (the boxes and the uncompacted tree of
@@ -848,6 +869,12 @@ builds](docs/measurements/2026-11-13-4k-row-bands.md) repeats it for flyingrobot
 Each states its commit and conditions and applies to that commit only.
 
 ### Readings
+
+Ray statistics cost nothing measurable: the outcomes `render --stats` reports are always
+collected, and the render with them took 7.037 s at one thread and 0.547 s at 18 against 6.994 s
+and 0.544 s on `main` (1280 by 720, 16 samples, medians of three interleaved runs), the same gap
+as between two binaries running identical render code ([ADR 0008](docs/adr/0008-statistics.md)
+has the runs).
 
 Row bands with whole-program release builds (`lto = "fat"`, `codegen-units = 1`) against the
 tile scheduler on `main` before flyingrobots/lumen#28 (0de5fe7, default release profile), in one
