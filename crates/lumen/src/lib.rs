@@ -1,6 +1,7 @@
 //! Lumen: a deterministic ray tracer built on Bunny's integer math.
 //!
-//! Lumen renders a built-in reference scene ([`reference_scene`]) in tiles on all cores
+//! Lumen renders a built-in reference scene ([`reference_scene`]), or the Fixed Point showpiece
+//! ([`fixed_point_scene`]), in tiles on all cores
 //! ([`render_scheduled`], [`Schedule`], [`render_pixels`]) with a power-of-two number of samples
 //! per pixel, each one diffuse path with a shadow-casting directional light, a uniform sky and one
 //! bounce ([`trace_path`], `lumen-diffuse-path/1`), and encodes it as a PNG ([`write_png`]). Every
@@ -12,8 +13,8 @@
 //! `wasm32-wasip1`). [`RenderProvenance`] records those inputs.
 //!
 //! The library is the crate root: every type and function a front end needs is re-exported
-//! here, and only [`mod@reference`] (the reference scene's content) and [`mesh`] (the mesh reader it
-//! uses) are public modules. It reads no arguments, files, clock or environment, prints nothing
+//! here, and only [`mod@reference`] and [`scenes`] (the scenes' content) and [`mesh`] (the mesh
+//! reader they use) are public modules. It reads no arguments, files, clock or environment, prints nothing
 //! and asks the host nothing: the caller passes the thread count and any writer. The `lumen`
 //! command (`src/bin/lumen/`) is one such front end.
 //!
@@ -46,6 +47,7 @@ mod provenance;
 pub mod reference;
 mod render;
 mod scene;
+pub mod scenes;
 mod schedule;
 mod sha256;
 mod vertex_grid;
@@ -68,5 +70,6 @@ pub use render::{
 pub use scene::{
     CameraPlacement, Hit, Lighting, Scene, SceneError, SceneSpec, TraceError, Tracer, FAR,
 };
+pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
 pub use schedule::{Schedule, ScheduleError, TileSize, DEFAULT_TILE, MAX_THREADS};
 pub use workers::{render_pixels, WorkerError};

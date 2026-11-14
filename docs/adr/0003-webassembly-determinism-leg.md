@@ -28,8 +28,9 @@ There are two common ways to run Rust tests on WebAssembly:
   library or a few lines of local code: the standard test harness and a 20-line script on a
   runtime GitHub's runners already carry do the job, so `wasm-bindgen-test`, `wasm-pack` and a
   separate runtime such as `wasmtime` are not needed.
-- **What runs there**: the library's unit tests, `tests/render.rs` (which holds the golden-hash
-  test) and `tests/library.rs`, in the test and the release profile. `tests/threads.rs` and
+- **What runs there**: the library's unit tests, `tests/render.rs` (the reference scene's
+  golden hash), `tests/library.rs` and `tests/fixed_point/` (the Fixed Point scene's golden
+  hash), in the test and the release profile. `tests/threads.rs` and
   `tests/cli.rs` do not: one starts threads and the other starts processes, neither of which
   exists on this target.
 - **One worker.** `render_pixels` starts `workers - 1` threads, so a one-thread schedule starts

@@ -12,15 +12,33 @@ All notable changes to lumen are recorded here. The format follows
   `Determinism / Linux aarch64`, `Determinism / macOS aarch64` and `Determinism / Windows x86-64`
   run the whole test suite in the test and the release profile, each first checking that the
   runner's `rustc` host is the platform the job is named for; `Determinism / WebAssembly
-  (wasm32-wasip1, Node)` runs the library's unit tests, `tests/render.rs` and `tests/library.rs`
-  as `wasm32-wasip1` programs under Node's built-in WASI (`scripts/wasi-run.mjs`) in both
-  profiles, and compiles the library for `wasm32-unknown-unknown`. Every job checks the one
-  golden hash constant.
+  (wasm32-wasip1, Node)` runs the library's unit tests, `tests/render.rs`, `tests/library.rs` and
+  `tests/fixed_point/` as `wasm32-wasip1` programs under Node's built-in WASI (`scripts/wasi-run.mjs`) in both
+  profiles, and compiles the library for `wasm32-unknown-unknown`. Every job checks the same two
+  golden hash constants (the reference scene and the Fixed Point scene).
 - `tests/library.rs`: the golden image rendered on one worker through the library alone (runs on
   every platform, WebAssembly included), and on WebAssembly a two-worker render must be
   `RenderError::Spawn`.
 - `docs/adr/0003-webassembly-determinism-leg.md`: WebAssembly is tested on `wasm32-wasip1` under
   Node's WASI with the standard test harness and no added dependency, on one worker.
+
+- The "Fixed Point" scene, `lumen-fixed-point-scene/1` (part of flyingrobots/lumen#15), as
+  library content in `crates/lumen/src/scenes/fixed_point/`: the Stanford bunny in dark
+  sunglasses at a craps table, with two identical dice showing four pips on every face and the
+  ON puck on the 8. 5 975 triangles: felt, padded rail, layout lines and seven-segment numerals
+  for the boxes 4, 5, 6, 8, 9 and 10; the puck; two chamfered dice, the same mesh under two
+  exact rational turns; the bunny scaled by 32 and turned three-quarters toward the camera; and
+  sunglasses fitted to the bunny's measured nose. `lumen::fixed_point_scene()` builds it and
+  `fixed_point_content()` lists every triangle's part and material.
+- `crates/lumen/examples/fixed_point.rs`, which renders the Fixed Point scene to a PNG without
+  the CLI.
+- `MeshTurn::QuarterAboutY`, a quarter turn of a placed mesh, `(x, y, z)` to `(z, y, -x)`.
+- Tests of the Fixed Point scene: four pips on every face of both dice, counted from the
+  geometry; the dice congruent and related by their stated motion; the numerals against a
+  seven-segment truth table; the puck inside the 8 box; the sunglasses within 0.25 units in
+  front of the face and touching nothing; counts, the trace domain, no degenerate triangle and
+  everything resting on the felt; every traced ray against brute force; a golden hash (96 by 54,
+  4 samples, seed 0). The reference scene's golden hash is unchanged.
 
 - `RenderProvenance` (flyingrobots/lumen#19): the record of what was rendered, built from the
   scene's identity, the image size and the settings. `fields()` lists `scene`, `integrator`,

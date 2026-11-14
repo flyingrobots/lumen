@@ -110,7 +110,7 @@ jobs:
         run: cargo check -p lumen --lib --target wasm32-unknown-unknown --locked
 
       - name: Test on wasm32-wasip1
-        run: cargo test --locked -p lumen --target wasm32-wasip1 --lib --test render --test library -- --nocapture
+        run: cargo test --locked -p lumen --target wasm32-wasip1 --lib --test render --test library --test fixed_point -- --nocapture
 
       - name: Test on wasm32-wasip1 (release profile)
-        run: cargo test --locked -p lumen --target wasm32-wasip1 --release --lib --test render --test library -- --nocapture
+        run: cargo test --locked -p lumen --target wasm32-wasip1 --release --lib --test render --test library --test fixed_point -- --nocapture
