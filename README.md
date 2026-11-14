@@ -702,12 +702,18 @@ its four corners' mean height in bands 1.5 units thick picks material 0, 1, 0, 2
 hull and dark engine blocks built from convex solids (`convex`: corners and faces, each face a
 fan wound away from the solid's centre), drawn nose toward `-Z` in 64ths of 3 units and posed
 by rational rotations (a bank about `+Z`, then a heading about `+Y`, each coordinate floored to
-the grid): the skiff (a hexagonal hull with a pointed nose, straight swept wings and a fin,
+the grid; a `Rational` is built only by `Rational::new`, which refuses a denominator that is not
+positive or numerators off the rule `cos^2 + sin^2 = hyp^2`, and `Pose::place` refuses a point
+whose posed coordinates leave `i64`, both with a `PoseError`): the skiff (a hexagonal hull with a pointed nose, straight swept wings and a fin,
 orange) high at `(-2.5, 7, -10)`, banked by `-atan(7/24)` and turned by `atan(7/24)`; the tug (a
 wedge tapering to a narrow nose between two pontoons joined by a short wing, cream) at
 `(-7.5, 5.5, -15)`, banked and turned by `-atan(7/24)`; and the kite (a flat diamond wing with
 two engine pods, teal) leading low at `(-5.5, 4, -24)`, banked by `atan(7/24)`. `push_craft`
-appends them to a `CanyonContent` in that order, each its hull then its engines.
+appends them to a `CanyonContent` in that order, each its hull then its engines
+(`CanyonError::Craft` if a corner does not pose; a test shows every one does). Tests
+(`crates/lumen/tests/canyon/pose.rs`): the rotations admitted and refused on triples worked by
+hand, every craft's rotation built by `Rational::new`, points turned, floored and moved by hand,
+and a point whose coordinates would leave `i64` refused.
 
 **The planet** (16 128 triangles, `scenes::canyon::planet`): a sphere of radius 22 centred at
 `(-44, 48, -200)`, 128 longitudes by 64 latitude rows, its points from Bunny's table-based
