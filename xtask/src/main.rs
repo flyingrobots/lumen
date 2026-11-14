@@ -7,6 +7,10 @@
 //! `cargo run --locked -p xtask -- nondeterminism` scans the deterministic core ([`is_core`]) for
 //! what Clippy's bans cannot see, and every file for the form of their waivers
 //! ([`nondeterminism`]), and exits 1 on any finding.
+//!
+//! `cargo run --locked -p xtask -- doc-links` checks every relative link of the repository's
+//! Markdown: the file or directory it names exists, and its `#anchor` is a heading of the page
+//! ([`doc_links`]). It exits 1 on any broken link. Links with a scheme are not followed.
 
 #![expect(
     clippy::disallowed_methods,
@@ -14,6 +18,7 @@
     reason = "std-env, std-fs: repository tooling reads its arguments and the source tree"
 )]
 
+mod doc_links;
 mod file_length;
 mod nondeterminism;
 
@@ -29,16 +34,17 @@ const ROOTS: [&str; 2] = ["crates", "xtask"];
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let gate = match args.as_slice() {
-        [command] if command == "file-length" => file_length_gate,
-        [command] if command == "nondeterminism" => nondeterminism_gate,
+    let passed = match args.as_slice() {
+        [command] if command == "file-length" => sources(&root).map(|f| file_length_gate(&f)),
+        [command] if command == "nondeterminism" => sources(&root).map(|f| nondeterminism_gate(&f)),
+        [command] if command == "doc-links" => markdown(&root).map(|f| doc_links_gate(&root, &f)),
         _ => {
-            eprintln!("usage: cargo run --locked -p xtask -- file-length|nondeterminism");
+            eprintln!("usage: cargo run --locked -p xtask -- file-length|nondeterminism|doc-links");
             return ExitCode::from(2);
         }
     };
-    match sources(&root) {
-        Ok(files) if gate(&files) => ExitCode::SUCCESS,
+    match passed {
+        Ok(true) => ExitCode::SUCCESS,
         Ok(_) => ExitCode::FAILURE,
         Err(error) => {
             eprintln!("xtask: {error}");
@@ -101,13 +107,36 @@ fn nondeterminism_gate(files: &[(String, String)]) -> bool {
     failures == 0
 }
 
+/// The link check over the Markdown `pages`; true when no link is broken.
+fn doc_links_gate(root: &Path, pages: &[(String, String)]) -> bool {
+    let broken = doc_links::check(pages, |path| root.join(path).exists());
+    for link in &broken {
+        println!("::error file={},line={}::{}: {}", link.page, link.line, link.link, link.why);
+    }
+    println!("doc-links: {} pages, {} broken links", pages.len(), broken.len());
+    broken.is_empty()
+}
+
 /// Every `.rs` file under [`ROOTS`], relative to `root` with `/` separators, and its text,
 /// sorted by path.
 fn sources(root: &Path) -> io::Result<Vec<(String, String)>> {
     let mut paths = Vec::new();
     for dir in ROOTS {
-        collect(&root.join(dir), &mut paths)?;
+        collect(&root.join(dir), "rs", &mut paths)?;
     }
+    read_relative(root, paths)
+}
+
+/// Every `.md` file of the repository, relative to `root` with `/` separators, and its text,
+/// sorted by path: hidden directories, `target` and `out` (where `make` puts images) skipped.
+fn markdown(root: &Path) -> io::Result<Vec<(String, String)>> {
+    let mut paths = Vec::new();
+    collect(root, "md", &mut paths)?;
+    read_relative(root, paths)
+}
+
+/// `paths` read, each relative to `root` with `/` separators, sorted by path.
+fn read_relative(root: &Path, paths: Vec<PathBuf>) -> io::Result<Vec<(String, String)>> {
     let mut files = Vec::new();
     for path in paths {
         let relative = path.strip_prefix(root).map_err(io::Error::other)?;
@@ -119,15 +148,18 @@ fn sources(root: &Path) -> io::Result<Vec<(String, String)>> {
     Ok(files)
 }
 
-/// Adds every `.rs` file under `dir` to `out`, skipping `target` directories.
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
+/// Adds every file with `extension` under `dir` to `out`, skipping `target`, `out` and hidden
+/// directories.
+fn collect(dir: &Path, extension: &str, out: &mut Vec<PathBuf>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let path = entry?.path();
         if path.is_dir() {
-            if path.file_name().is_some_and(|name| name != "target") {
-                collect(&path, out)?;
+            let name = path.file_name().map(|name| name.to_string_lossy().into_owned());
+            if name.is_some_and(|name| !name.starts_with('.') && name != "target" && name != "out")
+            {
+                collect(&path, extension, out)?;
             }
-        } else if path.extension().is_some_and(|ext| ext == "rs") {
+        } else if path.extension().is_some_and(|ext| ext == extension) {
             out.push(path);
         }
     }

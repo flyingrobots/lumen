@@ -81,6 +81,20 @@ jobs:
       - name: Nondeterminism scan
         run: cargo run --locked -q -p xtask -- nondeterminism
 
+  # Every relative link of the Markdown names a file that exists, and every #anchor a heading
+  # of its page. Offline: links with a scheme are not followed.
+  doc-links:
+    name: Gates / doc links
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Relative links and anchors
+        run: cargo run --locked -q -p xtask -- doc-links
+
   coverage:
     name: Signal / coverage
     runs-on: ubuntu-24.04

@@ -1022,7 +1022,7 @@ Lint posture mirrors Bunny: `unsafe` is forbidden, clippy `all` is denied and
 
 ### Supply-chain, size and coverage checks
 
-`.github/workflows/gates.yml` runs five jobs on every pull request:
+`.github/workflows/gates.yml` runs six jobs on every pull request:
 
 | Job | What it checks | Fails when |
 |---|---|---|
@@ -1030,6 +1030,7 @@ Lint posture mirrors Bunny: `unsafe` is forbidden, clippy `all` is denied and
 | `Gates / cargo-audit` | `cargo audit --deny warnings` on `Cargo.lock` | a RustSec advisory or warning for a locked crate |
 | `Gates / file length` | `cargo run -p xtask -- file-length` | a source file over 300 lines of code without a listed exception, or over 500 at all; a test file (under `tests/` or named `tests.rs`) over 750; a listed file grown past its exception; an exception no longer needed |
 | `Gates / nondeterminism` | `cargo run -p xtask -- nondeterminism` (see "Nondeterminism bans") | a float, a banned name or `std` path in the deterministic core, a malformed or unused scan waiver, or a ban lint waived with `allow` or without rule IDs in its reason |
+| `Gates / doc links` | `cargo run -p xtask -- doc-links` | a relative link in a Markdown file to a file or directory that does not exist or out of the repository, or a `#anchor` that is no heading of its page (GitHub's anchors); links with a scheme are not followed |
 | `Signal / coverage` | `cargo llvm-cov --workspace --summary-only`, in the job summary | never: coverage is reported, not gated |
 
 A line of code is a line with a character outside a comment; doc comments are comments. The
@@ -1041,6 +1042,7 @@ writable `CARGO_HOME`):
 
 ```sh
 python3 $D lumen ~/git/lumen --worktree -- cargo run --locked -q -p xtask -- file-length
+python3 $D lumen ~/git/lumen --worktree -- cargo run --locked -q -p xtask -- doc-links
 python3 $D lumen ~/git/lumen --worktree --network -- \
   bash -c 'mkdir -p /tmp/ch && CARGO_HOME=/tmp/ch cargo deny --locked check'
 ```
