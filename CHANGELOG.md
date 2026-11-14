@@ -34,6 +34,16 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Run statistics (part of flyingrobots/lumen#29; ADR 0008): `render_traced_with_run` returns
+  the render with a `RunStatistics` (the band height, the band count and, per worker, a
+  `WorkerStatistics` of bands, rows, pixels and rays), from `render_pixels_by_worker` (`Rendered`,
+  `WorkerRun`), whose band counts ride in each worker's outcome returned at `join` (rows are
+  its pixels over the width).
+  `render --stats` ends with the `run.` lines; each per-worker line is labelled
+  `(information only: differs from run to run)`. Counts only: no per-worker clock. A render
+  that does not ask pays nothing: the scheduler counts through a private zero-sized tally then,
+  and the plain render measured within noise of the base; `--stats` costs about 2.5 % of render
+  time (ADR 0008 has the numbers and the two rejected versions).
 - A measurement record of Fixed Point version 2 at 4K and 64 samples
   (`docs/measurements/2026-11-14-4k-fixed-point-v2.md`, closes flyingrobots/lumen#39): three
   exclusive runs at 18 CPUs, all with image hash
