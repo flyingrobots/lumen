@@ -17,7 +17,7 @@ fn parts() -> &'static CanyonContent {
     static PARTS: OnceLock<CanyonContent> = OnceLock::new();
     PARTS.get_or_init(|| {
         let mut content = CanyonContent::default();
-        push_craft(&mut content);
+        push_craft(&mut content).expect("every craft poses");
         push_planet(&mut content);
         content
     })
