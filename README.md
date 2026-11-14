@@ -8,8 +8,9 @@ Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
 
 ## What lumen does today
 
-Lumen renders one built-in reference scene, which includes the Stanford bunny, prints its image
-hash and timing, and writes it to a PNG file if asked:
+Lumen renders a built-in reference scene, which includes the Stanford bunny, prints its image
+hash and timing, and writes it to a PNG file if asked. The library also builds a second scene,
+[Fixed Point](#the-fixed-point-scene), which an example program renders. The reference render:
 
 - in tiles on all cores (`--threads`, below), with the same bytes at every thread count;
 - a power-of-two number of samples per pixel (1 to 1024, default 4), placed by Bunny's
@@ -95,12 +96,12 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
 
 - **The library's API is the crate root.** Every type and function a front end, a `Tracer` or a
   test needs is re-exported there: scene building (`Scene`, `SceneSpec`, `CameraPlacement`,
-  `Lighting`, `reference_scene`), rendering (`render`, `render_scheduled`, `render_traced`,
+  `Lighting`, `reference_scene`, `fixed_point_scene`), rendering (`render`, `render_scheduled`, `render_traced`,
   `Schedule`, `TileSize`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
   its `hash`), its provenance (`RenderProvenance`), PNG encoding into any writer (`write_png`,
   `png_len`), and the integrator's parts for custom tracers (`trace_path`, `pixel_radiance`,
-  `Tracer`, `Hit`, `TraceError`). Only `lumen::reference` (the reference scene's content) and
-  `lumen::mesh` (the mesh reader it uses) are public modules. The SHA-256 and PNG checksum code
+  `Tracer`, `Hit`, `TraceError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
+  content, as `reference` is) and `lumen::mesh` (the mesh reader they use) are public modules. The SHA-256 and PNG checksum code
   is internal. [ADR 0002](docs/adr/0002-library-api-surface.md) records the rule.
 - **The library touches nothing outside its arguments.** It parses no arguments, opens no files,
   reads no clock or environment, prints nothing and asks the host nothing: the caller passes the
@@ -239,6 +240,100 @@ The scene's types (`SceneSpec`: triangles, a material index per triangle, diffus
 optional directional light and a sky; `RenderSettings`: a power-of-two sample count and a `u32`
 seed; at most one bounce) follow Geordi's ray-traced scene profile, so that loading an artifact
 (flyingrobots/lumen#6) maps onto them.
+
+## The Fixed Point scene
+
+`lumen-fixed-point-scene/1` (`crates/lumen/src/scenes/fixed_point/`) is a showpiece: the Stanford
+bunny in dark sunglasses at a craps table, with two identical dice and the ON puck on the 8. In
+craps the point is the number the shooter must roll again, and the ON puck marks it. Both dice
+show four pips on every face, so every roll is a hard eight and the point is fixed: a picture of
+determinism, from a ray tracer built on fixed-point arithmetic.
+
+The library builds it with `lumen::fixed_point_scene()`; `fixed_point_content()` returns its
+triangles with the part each belongs to (`PartKind`: felt, rail, numeral 8, left die's pips,
+left lens and so on) and its material. The CLI does not select it yet (its `--scene` option is
+the second part of flyingrobots/lumen#15). Render it with the example:
+
+```sh
+python3 $D lumen ~/git/lumen --worktree --fetch --export fixed-point.png --out "$(mktemp -d)" -- \
+  bash -c 'mkdir -p /scratch/out && cargo run --locked --release -q -p lumen --example fixed_point -- /scratch/out/fixed-point.png 1280 720 64'
+```
+
+Arguments: `OUT [WIDTH HEIGHT [SAMPLES [SEED [THREADS]]]]`, defaulting to 480 by 270, 16
+samples per pixel, seed 0 and the thread count the host reports (the example asks; the library
+does not). The image does not depend on the thread count. It prints the scene identity, the
+triangle count, the settings, the rays traced, the image hash and the render time. The 1280 by
+720 render at 64 samples traces 132 650 051 rays and took 8.1 s with 4 threads (Apple M5 Pro, `rust-dev:1.96.0` container limited to 4 CPUs, run alone with `--exclusive`, release profile; one reading, for information); its image hash, `sha256:e638f32442d90d5fb5bc8212044856433b1f4998a5d17ca549370747313d253c`, is the same at 1 thread (29.9 s).
+
+**What it is made of.** Triangles only, 5 975 of them, every coordinate a whole number of
+`2^-16` grid steps; a die is about half a unit wide. In primitive order:
+
+1. the table: the green felt (`x = -7.5..=7.5`, `z = -12..=3.25`, at `y = 0`, 2 triangles); a
+   padded rail swept round it with mitred corners (0.375 high at the felt, 0.75 at its crown,
+   1.125 wide, 56 triangles); white layout lines 1/16 wide, painted `2^-10` above the felt (the
+   number boxes' outlines and two long lines, 22 triangles); and a row of six number boxes, each
+   1.75 wide and 3 deep, for 4, 5, 6, 8, 9 and 10, each with a seven-segment block numeral
+   (cells 0.6875 wide and 1.375 deep, strokes 0.1875, 10 in two cells) in the box's near half,
+   reading upright from the camera;
+2. the puck in the far half of the 8 box, clear of the 8: a 24-sided disc of radius 0.5 and
+   height 3/16, a white face of radius 0.4 inside a black rim, and "ON" in black block letters
+   (134 triangles);
+3. the two dice, each a chamfered cube about 0.5 wide (32 800 grid steps, chamfer 2 625) with
+   four raised white 12-sided pips on every face (908 triangles each): the same mesh under two
+   rigid motions, the left die turned by `atan(3/4)` (about 36.9 degrees) and the right one by
+   `-atan(7/24)` (about -16.3 degrees) about the vertical. Every coordinate of the die's mesh
+   is a multiple of 25 grid steps, so both turns are exact: nothing is rounded. Raised pips
+   mean each die rests on the four pips of its bottom face;
+4. the Stanford bunny (3 851 triangles, none dropped): turned a quarter so it faces the camera,
+   scaled by 32 (about 4.85 units tall, nearly ten dice), floored to the grid with its lowest
+   vertex exactly on the felt, then turned by `-atan(5/12)` (about 22.6 degrees, toward the
+   camera's right) about its nose, each coordinate floored to the grid, so it stands
+   three-quarters on behind the number boxes with its tall ear and its back in profile;
+5. the sunglasses (22 triangles): two flat wraparound wayfarer lenses, a bridge and two arms in
+   near black. They are fitted by measurement: the nose tip is the vertex farthest along the
+   facing direction in the upper half of the bunny's height, the lenses' centre line is 0.5
+   above it, their inner edges 1/32 in front of it, and each lens slopes back by a quarter of
+   its distance from the centre line; the arms run back along the head, the left one outside
+   the base of the swept-back ear. The glasses are built facing the camera and then turned with
+   the bunny.
+
+Materials (linear albedo in 256ths): felt `(14, 62, 32)`, leather `(45, 22, 14)`, layout paint
+`(225, 225, 215)`, die red `(170, 12, 16)`, pips and puck face `(240, 240, 232)`, puck rim and
+letters `(10, 10, 10)`, the bunny's light warm grey `(205, 200, 192)` and the glasses
+`(6, 6, 8)`. The sun comes from high on the camera's left front, toward `(-0.5, 1.0, 0.875)`
+(about 45 degrees up), irradiance `(1024, 985, 920) / 256`, so it lights the bunny's face and
+the dice and the bunny cast their shadows back and to the right across the felt; the sky is a
+dim `(16, 16, 18) / 256`, a dark room behind the table. The camera stands low over the near rail
+at `(0, 2.125, 4.25)`, looks along `(0, -0.140625, -1)` with up `+Y` and a vertical half-angle
+whose tangent is `15/32`, framed for 16:9: the ear tip near the top, the puck and the 8 in the
+middle, the dice near the bottom.
+
+Lumen renders diffuse surfaces with one sun and a sky, so the lenses are plain black. Mirror
+lenses, a glass of whisky on the rail and a lamp over the table wait for the materials and
+lights they need. Shadowed fur is tinted green: that is the one-bounce light from the felt.
+
+**How it is tested** (`crates/lumen/tests/fixed_point/`, through the public API):
+
+- every face of both dice has exactly four pips, counted from the triangles alone (top
+  triangles at the pip height along each face axis, grouped by the centre vertex of each
+  pip's fan), in the four-pip pattern;
+- the right die is the left die under the motion the two poses state, vertex for vertex in
+  exact integers, and the two are congruent independently of the poses (equal squared distances
+  between corresponding vertices, equal orientations, so neither is a mirror image);
+- each numeral lights exactly the segments of its digits in a seven-segment truth table written
+  out in the test, inside its box; the puck lies inside the 8 box, clear of the 8, on the felt;
+- each lens's centre has the face behind it within 0.25 units along the bunny's facing direction
+  (Bunny's exact ray test), no lens vertex is inside the head, and no edge of the glasses or of
+  the bunny crosses a triangle of the other (an exact integer test written in the test);
+- the triangle counts of every part; every triangle in Bunny's trace domain and none degenerate;
+  the dice, the puck and the bunny resting exactly on the felt (a tolerance of zero grid steps);
+- every camera, shadow and bounce ray of a 32 by 18 image at 2 samples equals a test of every
+  triangle, with hits on the bunny, the dice and the layout;
+- a golden hash: 96 by 54 pixels, 4 samples per pixel, seed 0,
+  `sha256:0688b03cf16be6d0336f17eacbdaf83fe03d62e9c66b8370e8208bb9c879634e`, under the same
+  rules as the reference scene's: it changes only with an identity, the settings or the Bunny
+  commit. Any change to the scene's triangles, their order, materials, lighting or camera is a
+  new scene version and a new hash.
 
 ## The integrator
 
