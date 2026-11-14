@@ -1,8 +1,8 @@
 # ADR 0008: Statistics: what is counted, where, and why it cannot change the image
 
-Status: accepted (flyingrobots/lumen#29). The scene statistics and `lumen stats` are built. The
-ray, run and traversal statistics and `render --stats` are decided here and not yet built; each
-section says which.
+Status: accepted (flyingrobots/lumen#29). The scene statistics, the ray statistics, `lumen stats`
+and `render --stats` are built. The run and traversal statistics are decided here and not yet
+built; each section says which.
 
 ## Context
 
@@ -105,26 +105,38 @@ builder from the same boxes (a different representation and a different algorith
 Bunny's documented bounds: at most `2n - 1` nodes, one more leaf than interior nodes, every
 triangle in one leaf, no leaf deeper than `SAH_MAX_DEPTH`.
 
-### Ray statistics (decided, not yet built)
+### Ray statistics (built)
 
-Per ray kind: camera, bounce and shadow rays traced; for camera and bounce rays, hits and misses;
-for shadow rays, occluded and unoccluded; bounces Bunny's smooth shading rejected (no ray
-traced); samples per pixel requested and delivered; rays per pixel (fewest, most and total; the
-mean is the command's division). The render checks, and the tests check, that camera rays are
-exactly `width * height * samples`, that the total lies between that and four times that, and
-that hits plus misses equal the rays of each kind.
+Per ray kind (`RayOutcomes`, in `PathSample::outcomes`): camera hits and misses, bounce hits and
+misses, bounces Bunny's smooth shading rejected (no ray traced), shadow rays occluded and
+unoccluded. Per render (`RayStatistics`, in `Render::statistics`): those summed, the pixels, the
+samples traced, and the fewest and most rays of any pixel; the mean is the command's division.
+`RayStatistics::check` states, and `render --stats` enforces, that there is one record per pixel,
+`samples_per_pixel` samples per pixel, exactly one camera ray per sample and at most four rays per
+sample. Hits plus misses equal the rays of each kind by construction (the rays of a kind are
+reported as that sum); the tests check each outcome against a tracer that records the answers it
+gave.
 
-`RayCount` keeps its two fields and the report's `rays` line stays byte-identical. The richer
-record is a new type beside it, of which `RayCount` is a projection. The fewest and most rays per
-pixel combine as minima and maxima, which, like sums, do not depend on the order workers finish.
+`RayCount` keeps its two fields and the report's `rays` line is byte-identical; `PathSample::rays`
+and `Render::rays` are now `outcomes.count()`. The fewest and most rays per pixel combine as
+minima and maxima, which, like sums, do not depend on the order workers finish, so every value
+is the same at every thread count and band height.
 
-Whether the record is always collected or only on request is decided by measurement, not
-assumed: it is a few integer adds per path against hundreds of nanoseconds of traversal. If the
-render time with it always on is within the noise of `main` (interleaved, `--exclusive`, three
-runs each at 1 and 18 threads on a mid-size image), it is always collected and `RayCount` is
-derived from it. Otherwise the path is generic over a counter, a zero-sized one that does nothing
-for the uncounted render and the record for `--stats`, so the uncounted render is today's code.
-The numbers go in the pull request and the README either way.
+**Always collected, by measurement.** The outcomes are a few integer stores per path, against
+hundreds of nanoseconds of traversal. Measured (Apple M5 Pro, `rust-dev:1.96.0` container,
+`devrun --exclusive --cpus 18 --memory 12g`, release profile; `lumen-reference-scene/3`, 1280 by
+720, 16 samples, seed 0, 39 479 111 rays; render seconds; base `main` at f6e225c, head 3ae3ea6;
+the three binaries interleaved, three rounds; every run gave the same image hash and ray count):
+
+| Threads | `main` | head | head `--stats` |
+| ---: | --- | --- | --- |
+| 1 | 7.018, 6.994, 6.986 (median 6.994) | 7.008, 7.054, 7.037 (7.037) | 7.029, 7.005, 7.010 (7.010) |
+| 18 | 0.544, 0.543, 0.544 (0.544) | 0.548, 0.542, 0.547 (0.547) | 0.567, 0.543, 0.539 (0.543) |
+
+Head and head `--stats` run the same render code (`--stats` only formats afterwards), and they
+differ by as much as head and `main` (0.4 % at one thread, 0.7 % at 18): the difference is within
+the noise of these runs. So there is no counter type parameter and no second path; the uncounted
+render is gone, and `--stats` costs only the scene walk and the formatting after the clock stops.
 
 ### Run statistics (decided, not yet built)
 
@@ -160,17 +172,18 @@ profile does inside Bunny's harness, but in lumen it would duplicate numerical t
 outside the tests, which lumen does not do: every number that decides a pixel comes from Bunny,
 and a copy drifts when Bunny's search changes.
 
-### Output (`lumen stats` and the format built; `render --stats` not yet)
+### Output (built)
 
 - **`lumen stats [--scene NAME]`** builds the scene, renders nothing, and prints its name,
   content identity and integrator, then the scene block. It needs no render, so it is its own
   command rather than only a part of `render`.
-- **`lumen render --stats`** (with the ray statistics) will print the scene block, then the ray
-  block, after the existing report. With `--stats` off the output is byte-identical to the
-  output before statistics existed, which a test checks for a fixed set of invocations with the
-  timing values masked.
+- **`lumen render --stats`** prints the scene block, then the ray block, after the existing
+  report. With `--stats` off the output is byte-identical to the output before statistics existed:
+  checked against `main` for a fixed set of invocations with the timing values masked (the pull
+  request records it), and in `tests/cli.rs` the plain report is exactly the start of the
+  `--stats` output.
 - **Format: `key value` lines.** A key has no spaces and is dotted by group (`scene.`, `light.`,
-  `camera.`, `tree.`, `memory.`; later `rays.` and `run.`); the value is one token or a vector of
+  `camera.`, `tree.`, `memory.`, `rays.`; later `run.`); the value is one token or a vector of
   tokens separated by single spaces; an information-only line ends in ` (information only)`, as
   the timing lines already do. Keys are stable; new keys are added, never renamed. Fixed-point
   values print in decimal with six places from their exact raw integers (rounded to nearest, ties
@@ -198,6 +211,10 @@ and a copy drifts when Bunny's search changes.
   `TREE_LAYOUT`. The records are `#[non_exhaustive]`, so counts can be added without breaking a
   caller; a caller reads their fields and cannot construct them.
 - The command gains `stats` and a `Failure::Statistics` (exit code 1), which no built-in scene
+  reaches.
+- `PathSample` gains `outcomes` and `Render` gains `statistics`, which breaks a caller that builds
+  either by its fields; the crate root gains `RayOutcomes`, `RayStatistics` and `RayCheckError`.
+  The command gains `render --stats` and `Failure::RayCheck` (exit code 1), which no render
   reaches.
 - Memory byte counts can differ between targets with different type sizes; nothing else in the
   scene statistics can.

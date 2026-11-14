@@ -23,7 +23,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use cli::{Command, USAGE};
+use cli::{Command, Detail, USAGE};
 use failure::Failure;
 use lumen::{
     render_scheduled, BuiltinScene, ImageSize, RenderProvenance, RenderSettings, Schedule,
@@ -48,10 +48,11 @@ fn command(args: impl Iterator<Item = OsString>) -> Result<(), Failure> {
         Command::Help => println!("{USAGE}"),
         Command::Version => println!("lumen {} (bunny {BUNNY_REV})", env!("CARGO_PKG_VERSION")),
         Command::Stats { scene } => describe(scene)?,
-        Command::Render { scene, width, height, settings, threads, band, out } => {
+        Command::Render { scene, width, height, settings, threads, band, out, detail } => {
             let threads = threads.unwrap_or_else(available_threads);
             let schedule = Schedule::new(threads, band).map_err(Failure::Threads)?;
-            run(scene, width, height, settings, schedule, out.as_deref())?;
+            let size = ImageSize::new(width, height).map_err(Failure::Size)?;
+            run(scene, size, settings, schedule, out.as_deref(), detail)?;
         }
     }
     Ok(())
@@ -82,14 +83,13 @@ fn describe(scene: BuiltinScene) -> Result<(), Failure> {
 /// they are printed and never reach the image.
 fn run(
     scene: BuiltinScene,
-    width: u32,
-    height: u32,
+    size: ImageSize,
     settings: RenderSettings,
     schedule: Schedule,
     out: Option<&Path>,
+    detail: Detail,
 ) -> Result<(), Failure> {
     let started = Instant::now();
-    let size = ImageSize::new(width, height).map_err(Failure::Size)?;
     let built_scene = scene.build().map_err(Failure::Scene)?;
     if let Some(path) = out {
         // Refused before any pixel is computed, with nothing left behind.
@@ -127,6 +127,20 @@ fn run(
         png: out.map(Path::to_path_buf).zip(written),
         times,
     };
+    // Read after the clock stops, and only when asked: the statistics take no part in the times.
+    let statistics = match detail {
+        Detail::Report => None,
+        Detail::Statistics => {
+            render.statistics.check(size, settings).map_err(Failure::RayCheck)?;
+            Some(built_scene.statistics().map_err(Failure::Statistics)?)
+        }
+    };
     let mut stdout = io::stdout().lock();
-    report.write(&mut stdout).map_err(Failure::Stdout)
+    report.write(&mut stdout).map_err(Failure::Stdout)?;
+    if let Some(scene_statistics) = statistics {
+        stats::write_scene_block(&mut stdout, &built_scene, &scene_statistics)
+            .and_then(|()| stats::write_rays(&mut stdout, &render.statistics, settings))
+            .map_err(Failure::Stdout)?;
+    }
+    Ok(())
 }

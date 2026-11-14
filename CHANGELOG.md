@@ -34,6 +34,16 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Ray statistics and `lumen render --stats` (part of flyingrobots/lumen#29; ADR 0008):
+  `trace_path` records what each ray found in `PathSample::outcomes` (a `RayOutcomes`: camera hits
+  and misses, bounce hits, misses and rejections, shadow rays occluded and unoccluded), and
+  `Render::statistics` (a `RayStatistics`) adds the pixels, the samples and the fewest and most
+  rays of any pixel; `PathSample::rays` and `Render::rays` are unchanged and now derived from them.
+  `RayStatistics::check` states what every render satisfies (`RayCheckError` otherwise).
+  `render --stats` prints the unchanged report, the scene block of `lumen stats` and the `rays.`
+  lines (README, "Statistics"); without it the output is byte-identical. The outcomes are always
+  collected: measured, they cost nothing within the noise (README, "Performance"; ADR 0008).
+  `PathSample` and `Render` gain a field, which breaks a caller that builds one by its fields.
 - `lumen stats [--scene NAME]` (part of flyingrobots/lumen#29; ADR 0008) builds a scene and
   prints its statistics without rendering: its name, content identity and integrator, then
   `key value` lines for the triangles by material with each albedo, the bounds, the sun, the sky,

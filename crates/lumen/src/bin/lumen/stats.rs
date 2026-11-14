@@ -10,7 +10,9 @@ use std::io::{self, Write};
 
 use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
-use lumen::{Integrator, Scene, SceneStatistics, TREE_BUILDER, TREE_LAYOUT};
+use lumen::{
+    Integrator, RayStatistics, RenderSettings, Scene, SceneStatistics, TREE_BUILDER, TREE_LAYOUT,
+};
 
 /// Writes `lumen stats`: the scene's name, content identity and integrator, then its block.
 pub(crate) fn write_stats(
@@ -113,6 +115,38 @@ fn write_memory(out: &mut impl Write, stats: &SceneStatistics) -> io::Result<()>
         writeln!(out, "memory.{name}-bytes {bytes} {MEMORY_NOTE}")?;
     }
     Ok(())
+}
+
+/// What a render's rays found (`render --stats`), after the scene block: per kind, then per
+/// pixel. Every value is a function of the scene, the size and the settings.
+pub(crate) fn write_rays(
+    out: &mut impl Write,
+    rays: &RayStatistics,
+    settings: RenderSettings,
+) -> io::Result<()> {
+    let found = &rays.outcomes;
+    for (key, value) in [
+        ("camera", found.camera()),
+        ("camera-hits", found.camera_hits),
+        ("camera-misses", found.camera_misses),
+        ("bounce", found.bounce()),
+        ("bounce-hits", found.bounce_hits),
+        ("bounce-misses", found.bounce_misses),
+        ("bounce-rejected", found.rejected_bounces),
+        ("shadow", found.shadow()),
+        ("shadow-occluded", found.shadow_occluded),
+        ("shadow-unoccluded", found.shadow_unoccluded),
+        ("total", rays.count().total()),
+        ("pixels", rays.pixels),
+        ("samples-per-pixel", u64::from(settings.samples_per_pixel())),
+        ("samples", rays.samples),
+        ("per-pixel-min", if rays.pixels == 0 { 0 } else { rays.min_pixel_rays }),
+        ("per-pixel-max", rays.max_pixel_rays),
+    ] {
+        writeln!(out, "rays.{key} {value}")?;
+    }
+    let mean = Ratio(u128::from(rays.count().total()), u128::from(rays.pixels));
+    writeln!(out, "rays.per-pixel-mean {mean}")
 }
 
 /// A count, widened for arithmetic: lossless, as no target's `usize` is wider than 128 bits.

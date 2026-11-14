@@ -674,3 +674,44 @@ fn stats_prints_the_scenes_statistics_without_rendering() {
         assert!(dir.is_empty());
     }
 }
+
+/// Oracle: the report without `--stats`, from the same command line, and the library. With
+/// `--stats` the output is the plain report (timing values aside), then the scene block that
+/// `lumen stats` prints, then the ray lines, whose counts are the library's.
+#[test]
+fn render_stats_appends_the_statistics_after_the_unchanged_report() {
+    let dir = Scratch::new("render-stats");
+    let args = ["render", "--width", "12", "--height", "6", "--samples", "2", "--threads", "2"];
+    let plain = text(&dir.lumen(&args).stdout);
+    let output = dir.lumen(&[&args[..], &["--stats"]].concat());
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let with = text(&output.stdout);
+    // A timing line keeps its key; its value is a wall-clock reading.
+    let untimed = |report: &str| -> Vec<String> {
+        let mask = |line: &str| match line.split_once(' ') {
+            Some((key, rest))
+                if key.ends_with("seconds")
+                    || key.contains("per-") && rest.contains("information only") =>
+            {
+                key.to_owned()
+            }
+            _ => line.to_owned(),
+        };
+        report.lines().map(mask).collect()
+    };
+    let (plain, with) = (untimed(&plain), untimed(&with));
+    assert_eq!(with[..plain.len()], plain[..], "the report itself is unchanged");
+    let stats = text(&dir.lumen(&["stats"]).stdout);
+    let scene_block: Vec<&str> = stats.lines().skip(3).collect();
+    let after = &with[plain.len()..];
+    assert_eq!(after[..scene_block.len()], scene_block[..]);
+    let rays = after[scene_block.len()..].join("\n");
+    assert!(rays.starts_with("rays.camera 144\n"), "{rays}");
+    let scene = lumen::reference_scene().expect("builds");
+    let settings = RenderSettings::new(2, 0).expect("settings");
+    let size = lumen::ImageSize::new(12, 6).expect("size");
+    let render = lumen::render(&scene, size, settings).expect("renders");
+    assert!(rays.contains(&format!("\nrays.total {}\n", render.rays.total())), "{rays}");
+    let max = format!("\nrays.per-pixel-max {}\n", render.statistics.max_pixel_rays);
+    assert!(rays.contains(&max), "{rays}");
+}

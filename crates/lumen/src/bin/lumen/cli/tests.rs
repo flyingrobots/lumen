@@ -23,7 +23,8 @@ fn render_with_defaults_and_options() {
             settings: settings(4, 0),
             threads: None,
             band: DEFAULT_BAND_ROWS,
-            out: Some("a.png".into())
+            out: Some("a.png".into()),
+            detail: Detail::Report
         })
     );
     assert_eq!(
@@ -35,7 +36,8 @@ fn render_with_defaults_and_options() {
             settings: settings(16, 7),
             threads: None,
             band: DEFAULT_BAND_ROWS,
-            out: Some("b.png".into())
+            out: Some("b.png".into()),
+            detail: Detail::Report
         })
     );
     assert_eq!(
@@ -47,7 +49,8 @@ fn render_with_defaults_and_options() {
             settings: settings(1024, u32::MAX),
             threads: None,
             band: DEFAULT_BAND_ROWS,
-            out: Some("c".into())
+            out: Some("c".into()),
+            detail: Detail::Report
         })
     );
     assert_eq!(
@@ -59,7 +62,8 @@ fn render_with_defaults_and_options() {
             settings: settings(4, 0),
             threads: Some(7),
             band: BandRows::new(8).expect("valid"),
-            out: None
+            out: None,
+            detail: Detail::Report
         })
     );
     assert_eq!(
@@ -71,7 +75,8 @@ fn render_with_defaults_and_options() {
             settings: settings(4, 0),
             threads: Some(256),
             band: BandRows::new(64).expect("valid"),
-            out: None
+            out: None,
+            detail: Detail::Report
         })
     );
     assert_eq!(parse_str("--help"), Ok(Command::Help));
@@ -270,4 +275,22 @@ fn stats_takes_a_scene_and_nothing_else() {
     assert_eq!(parse_str("stats --scenes"), Err(UsageError::UnknownOption("--scenes".into())));
     assert_eq!(parse_str("stats --scene"), Err(UsageError::MissingValue("--scene")));
     assert!(matches!(parse_str("stats --scene nope"), Err(UsageError::Scene(_))));
+}
+
+/// Oracle: the grammar of `--stats`, written out: a flag with no value, anywhere among the
+/// render options, at most once.
+#[test]
+fn stats_is_a_flag_of_render() {
+    let detail = |line: &str| match parse_str(line) {
+        Ok(Command::Render { detail, .. }) => Ok(detail),
+        other => Err(other),
+    };
+    assert_eq!(detail("render"), Ok(Detail::Report));
+    assert_eq!(detail("render --stats"), Ok(Detail::Statistics));
+    assert_eq!(detail("render --width 8 --stats --height 4"), Ok(Detail::Statistics));
+    assert_eq!(parse_str("render --stats --stats"), Err(UsageError::Repeated("--stats")));
+    assert_eq!(
+        parse_str("render --stats=json"),
+        Err(UsageError::UnknownOption("--stats=json".into()))
+    );
 }
