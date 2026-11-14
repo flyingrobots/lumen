@@ -37,3 +37,7 @@ jobs:
 
       - name: Test
         run: cargo test --locked --workspace
+
+      # The golden image hash must not depend on the optimization level.
+      - name: Test (release profile)
+        run: cargo test --locked --workspace --release

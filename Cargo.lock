@@ -3,5 +3,66 @@
 version = 4
 
 [[package]]
+name = "bunny-broadphase"
+version = "0.7.0"
+source = "git+https://github.com/flyingrobots/bunny?rev=7fdd2e4926041b0a226567e0a6e1ec51e522304f#7fdd2e4926041b0a226567e0a6e1ec51e522304f"
+dependencies = [
+ "bunny-geom",
+ "bunny-linalg",
+ "bunny-num",
+ "bunny-query",
+]
+
+[[package]]
+name = "bunny-geom"
+version = "0.7.0"
+source = "git+https://github.com/flyingrobots/bunny?rev=7fdd2e4926041b0a226567e0a6e1ec51e522304f#7fdd2e4926041b0a226567e0a6e1ec51e522304f"
+dependencies = [
+ "bunny-linalg",
+ "bunny-num",
+]
+
+[[package]]
+name = "bunny-linalg"
+version = "0.7.0"
+source = "git+https://github.com/flyingrobots/bunny?rev=7fdd2e4926041b0a226567e0a6e1ec51e522304f#7fdd2e4926041b0a226567e0a6e1ec51e522304f"
+dependencies = [
+ "bunny-num",
+]
+
+[[package]]
+name = "bunny-num"
+version = "0.7.0"
+source = "git+https://github.com/flyingrobots/bunny?rev=7fdd2e4926041b0a226567e0a6e1ec51e522304f#7fdd2e4926041b0a226567e0a6e1ec51e522304f"
+
+[[package]]
+name = "bunny-optics"
+version = "0.7.0"
+source = "git+https://github.com/flyingrobots/bunny?rev=7fdd2e4926041b0a226567e0a6e1ec51e522304f#7fdd2e4926041b0a226567e0a6e1ec51e522304f"
+dependencies = [
+ "bunny-linalg",
+ "bunny-num",
+ "bunny-query",
+]
+
+[[package]]
+name = "bunny-query"
+version = "0.7.0"
+source = "git+https://github.com/flyingrobots/bunny?rev=7fdd2e4926041b0a226567e0a6e1ec51e522304f#7fdd2e4926041b0a226567e0a6e1ec51e522304f"
+dependencies = [
+ "bunny-geom",
+ "bunny-linalg",
+ "bunny-num",
+]
+
+[[package]]
 name = "lumen"
 version = "0.1.0"
+dependencies = [
+ "bunny-broadphase",
+ "bunny-geom",
+ "bunny-linalg",
+ "bunny-num",
+ "bunny-optics",
+ "bunny-query",
+]

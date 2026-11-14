@@ -11,5 +11,13 @@ keywords = ["ray-tracing", "deterministic"]
 categories = ["rendering"]
 publish = false
 
+[dependencies]
+bunny-broadphase.workspace = true
+bunny-geom.workspace = true
+bunny-linalg.workspace = true
+bunny-num.workspace = true
+bunny-optics.workspace = true
+bunny-query.workspace = true
+
 [lints]
 workspace = true

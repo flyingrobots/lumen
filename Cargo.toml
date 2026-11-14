@@ -10,6 +10,16 @@ repository = "https://github.com/flyingrobots/lumen"
 rust-version = "1.96"
 version = "0.1.0"
 
+# Bunny 0.7.0 is tagged but not yet on crates.io, so its crates come in as git dependencies
+# pinned to one full commit. They move to the registry once 0.7.0 is published there.
+[workspace.dependencies]
+bunny-broadphase = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
+bunny-geom = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
+bunny-linalg = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
+bunny-num = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
+bunny-optics = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
+bunny-query = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"
@@ -24,3 +34,9 @@ pedantic = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
 missing_panics_doc = "deny"
 missing_errors_doc = "deny"
+
+# Bunny's integer kernels run optimized even in debug builds and tests, so the brute-force
+# oracle tests and a default-size render take seconds, not minutes. Lumen's own code keeps the
+# debug profile. Optimization level does not change a pixel: the arithmetic is integer-only.
+[profile.dev.package."*"]
+opt-level = 2
