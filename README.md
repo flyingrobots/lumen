@@ -120,6 +120,16 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   output file and the wall-clock times do not change a pixel, so they are not provenance. The
   command prints them from its own report (`crates/lumen/src/bin/lumen/report.rs`), after the
   provenance, the ray count and the image hash.
+- **A scene has a content identity.** `Scene::content_id()` is a `SceneContentId`, the
+  SHA-256 of a canonical byte encoding (`lumen-scene-content/1`) of the `SceneSpec` it was built
+  from: the triangles in primitive order, each one's material index, the albedos, the light
+  (present or absent), the sky and the camera placement. It is computed once in `Scene::new`,
+  before the tree is built, and does not depend on the tree, the threads, the band height or the
+  platform; the image size, samples and seed are separate provenance fields, and a scene's name
+  is a label beside it, not part of it. It identifies the input, not the picture: moving a
+  triangle no ray reaches changes the identity and no pixel. The encoding is specified byte by
+  byte in [ADR 0005](docs/adr/0005-scene-content-identity.md), and a test rebuilds it by hand
+  from that table. `RenderProvenance` does not carry it yet (flyingrobots/lumen#38).
 - **The command owns everything at the edge**: argument parsing and the usage text (`cli.rs`,
   `cli/usage_error.rs`, with its tests in `cli/tests.rs`), the default thread count from
   `available_parallelism`, the clock, the output file and the terminal (`main.rs`, `report.rs`).
