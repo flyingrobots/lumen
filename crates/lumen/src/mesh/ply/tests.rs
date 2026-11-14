@@ -220,5 +220,8 @@ fn generated_corrupt_files_are_refused_without_panicking() {
         }
     }
     // Both outcomes occur in volume (19 429 refused and 571 accepted when this was written).
-    assert!(refused_count > 15_000 && accepted > 200, "{refused_count} refused, {accepted} accepted");
+    assert!(
+        refused_count > 15_000 && accepted > 200,
+        "{refused_count} refused, {accepted} accepted"
+    );
 }
