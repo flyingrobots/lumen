@@ -17,8 +17,8 @@ All notable changes to lumen are recorded here. The format follows
   over how it asks its queries: `render_traced` and everything built on it use the uncounted
   queries and a zero-sized record, so a render that does not ask pays nothing for counting.
   `tests/traversal_statistics.rs` checks the image, ray counts and statistics against the plain
-  render and the golden hashes at 1, 2, 4 and 18 threads and band heights 1 and 3 for both
-  scenes, the counts against a tracer that records every query itself and tells camera from
+  render and the golden hashes at 1, 2, 4 and 18 threads and band heights 1 and 3 for the
+  three built-in scenes, the counts against a tracer that records every query itself and tells camera from
   bounce rays by their origin, a scene where every camera ray's work is one box test, and that a
   failing tracer gives the same error.
 
@@ -30,7 +30,7 @@ All notable changes to lumen are recorded here. The format follows
   queries still call the uncounted searches. `tests/traversal_counts.rs` checks the counts
   derived by hand for a one-triangle tree (a hit, a ray through the box beside the triangle and a
   ray that misses the box, for both searches) and for a two-leaf tree where a nearer hit skips
-  the farther leaf, and compares every camera ray of a 32 by 18 image of each built-in scene with
+  the farther leaf, and compares every camera ray of a 32 by 18 image of each built-in scene (the canyon included) with
   Bunny's counted searches called directly on a tree rebuilt in the test.
 
 ### Changed

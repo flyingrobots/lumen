@@ -20,7 +20,7 @@ use lumen::{
 };
 
 mod golden;
-use golden::{GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP};
+use golden::{GOLDEN_96X54_4SPP, GOLDEN_CANYON_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP};
 
 const ONE: i64 = 1 << 32;
 
@@ -46,7 +46,7 @@ fn fields(c: TraversalCounts) -> [u64; 7] {
 }
 
 /// Oracle: the plain render (`render_scheduled`, no counting) and the golden image hashes. For
-/// both built-in scenes at 96 by 54, 4 samples, at 1, 2, 4 and 18 threads and band heights 1 and
+/// the three built-in scenes at 96 by 54, 4 samples, at 1, 2, 4 and 18 threads and band heights 1 and
 /// 3, the counting render gives the golden image and the same render (image, ray counts and ray
 /// statistics) as the plain one, and the same traversal statistics at every schedule: they are
 /// sums and maxima over rays. Witness: every kind did work in both scenes.
@@ -57,6 +57,7 @@ fn counting_changes_no_pixel_and_counts_the_same_at_every_schedule() {
     for (builtin, golden) in [
         (BuiltinScene::Reference, GOLDEN_96X54_4SPP),
         (BuiltinScene::FixedPoint, GOLDEN_FIXED_POINT_96X54_4SPP),
+        (BuiltinScene::Canyon, GOLDEN_CANYON_96X54_4SPP),
     ] {
         let scene = builtin.build().expect("builds");
         let mut first: Option<TraversalStatistics> = None;
@@ -157,7 +158,7 @@ impl CountingTracer for Recording<'_> {
 
 /// Oracle: a tracer that records every query's counts by itself, telling the kinds apart by the
 /// ray's origin rather than by the path's step. At 1 and 4 threads (so several workers' sums are
-/// joined), on both built-in scenes, the render's statistics equal what it recorded, kind by kind,
+/// joined), on every built-in scene, the render's statistics equal what it recorded, kind by kind,
 /// totals and maxima.
 #[test]
 fn the_render_reports_what_a_recording_tracer_saw() {
