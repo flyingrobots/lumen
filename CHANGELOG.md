@@ -8,6 +8,16 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- The full-resolution Stanford bunny (part of flyingrobots/lumen#39):
+  `assets/stanford-bunny/bun_zipper.ply` (35 947 vertices, 69 451 faces), the archive's file byte
+  for byte (SHA-256 `b1acc63b...66fe`, 3 033 195 bytes, trailing spaces kept), with its
+  provenance in `assets/stanford-bunny/README.md`. It is embedded as
+  `scenes::fixed_point::full_bunny::FULL_BUNNY_PLY`, which no scene uses yet. Tests pin its
+  hash and length, Stanford's counts, its extreme decimals as bounds, and its topology as
+  Bunny's reader reads it: no duplicate vertex or face, 1 113 unused vertices, manifold and
+  consistently wound, and 223 boundary edges in five holes. Unused, it adds no byte to the
+  command; an experimental build that renders it is 3.08 MB larger.
+
 - Nondeterminism bans, the compiler layer (part of flyingrobots/lumen#17; ADR 0006): `clippy.toml`
   bans the clock, sleeping, the core count, thread spawning, hash maps and sets, arguments, the
   environment, files, processes, sockets and the float types, each reason starting with an Echo
