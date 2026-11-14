@@ -175,7 +175,8 @@ fn a_build_script_or_a_procedural_macro_in_a_deterministic_crate_fails() {
 #[test]
 fn only_workspace_members_are_read_and_no_library_package_fails() {
     let outsider = r#"{"name":"serde","id":"registry+x#serde@1.0.0","manifest_path":"/r/serde/Cargo.toml","targets":[],"dependencies":[]}"#;
-    let text = metadata(&tooling()).replace(r#""packages":["#, &format!(r#""packages":[{outsider},"#));
+    let text =
+        metadata(&tooling()).replace(r#""packages":["#, &format!(r#""packages":[{outsider},"#));
     let read = packages(&text).expect("reads");
     assert_eq!(read.len(), 2);
     assert_eq!(read[1].dir, "xtask/clippy-fixture");
