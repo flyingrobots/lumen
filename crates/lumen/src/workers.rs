@@ -7,7 +7,9 @@
 //! pixel straight into it, at the place fixed by the pixel's coordinates: if the pixel function
 //! is a pure function of `(x, y)`, the image is the same bytes for every thread count, band
 //! height and hand-out order. Each worker returns its own sum and its own earliest failure; the
-//! caller combines them after `join`. A worker that panics halts the others at their next row.
+//! caller combines them after `join`. A failure in row `y`, a refused spawn or a panic lowers one
+//! shared atomic, `end`; a worker that has observed it begins no row and takes no band from
+//! `end` down. When a worker observes it depends on the scheduler, so this is not a time bound.
 //! See `docs/adr/0003-row-bands.md`.
 
 use core::iter::{StepBy, Zip};
@@ -134,8 +136,9 @@ impl<'a> Shared<'a> {
 
     /// `end` with relaxed ordering: it is only a hint to stop early. Every value it takes is a
     /// failing row or 0 (a halt), never below the raster-first failing row, so a late view of it
-    /// costs extra work at most, never a different result. The workers' results reach the
-    /// caller through `join`, which orders them.
+    /// costs extra work at most, never a different result. A worker that has read a lowered
+    /// value never reads a higher one later (one modification order per atomic, and `end` only
+    /// decreases). The workers' results reach the caller through `join`, which orders them.
     fn wanted_end(&self) -> u32 {
         self.end.load(Ordering::Relaxed)
     }
@@ -181,16 +184,16 @@ impl<'a> Shared<'a> {
         self.end.fetch_min(y, Ordering::Relaxed);
     }
 
-    /// Stops every worker at the next row it begins: a worker thread could not be started, or a
-    /// worker panicked.
+    /// Sets `end` to 0: a worker that has observed it begins no further row and takes no band. A
+    /// worker thread could not be started, or a worker panicked.
     fn halt(&self) {
         self.end.store(0, Ordering::Relaxed);
     }
 }
 
-/// Halts every worker when it is dropped while its thread unwinds from a panic: a worker that
-/// panics in the pixel function stops the others at the next row each begins, instead of
-/// leaving them to render the rest of the image before the panic reaches the caller.
+/// Halts every worker when it is dropped while its thread unwinds from a panic: once a worker
+/// panics in the pixel function, each other worker begins no row after it has observed the halt,
+/// instead of rendering the rest of the image before the panic reaches the caller.
 struct HaltOnUnwind<'s, 'a>(&'s Shared<'a>);
 
 impl Drop for HaltOnUnwind<'_, '_> {
@@ -271,8 +274,8 @@ where
 }
 
 /// Starts helpers 1 to `workers - 1` with `start`, in order, and returns what it gave for each.
-/// If `start` refuses one, halts the workers already started (they stop at their next row) and
-/// returns [`WorkerError::Spawn`] for it with the refusal.
+/// If `start` refuses one, halts the workers already started (each begins no row after it has
+/// observed the halt) and returns [`WorkerError::Spawn`] for it with the refusal.
 fn start_helpers<H, E>(
     shared: &Shared<'_>,
     workers: u32,
@@ -317,10 +320,11 @@ fn start_helpers<H, E>(
 ///
 /// [`WorkerError::Pixel`] for the first failing pixel in raster order (top row first, left to
 /// right), the same at every thread count, band height and hand-out order. After a failure in
-/// row `y`, workers begin no row from `y` down. [`WorkerError::OutOfMemory`] if the image or the
-/// worker handles cannot be reserved, [`WorkerError::Spawn`] with the worker's number and the
-/// operating system's error if a worker thread cannot be started; the workers already started
-/// stop at their next row.
+/// row `y`, a worker that has observed it begins no row and takes no band from `y` down; when it
+/// observes it depends on the scheduler, so the work done after a failure is not bounded.
+/// [`WorkerError::OutOfMemory`] if the image or the worker handles cannot be reserved,
+/// [`WorkerError::Spawn`] with the worker's number and the operating system's error if a worker
+/// thread cannot be started; the workers already started are halted as after a panic.
 pub fn render_pixels<T, E, F>(
     size: ImageSize,
     schedule: Schedule,

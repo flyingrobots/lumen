@@ -189,7 +189,10 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   a scene without a name) gives every field that decides the image's bytes, and `fields()` lists
   them by name in a fixed order: `scene` (the name), `integrator`, `shading`, `sampler`, `tone`,
   `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed`, `bounces`, `scene-content` (the
-  scene's content identity, below). New fields are added at the end. Equal provenance means equal bytes. The thread count, the band height, the
+  scene's content identity, below). New fields are added at the end. Two scheduled renders
+  (`render`, `render_scheduled`, or `render_traced` with the scene as its own tracer) with equal
+  provenance have equal bytes; a caller-supplied `Tracer` is not described by the provenance, so a
+  render through one is outside that promise. The thread count, the band height, the
   output file and the wall-clock times do not change a pixel, so they are not provenance. The
   command prints them from its own report (`crates/lumen/src/bin/lumen/report.rs`), after the
   provenance, the ray count and the image hash.
@@ -277,8 +280,11 @@ through the public API and checks its values and its chain.
   computes and checks it once, at most `2^29`.
 - **Arithmetic** on sizes, sample counts, band heights and ray counts is checked or
   saturating, each with the bound that keeps it exact stated beside it, and values reach wider
-  types through `From` or `try_from`, not `as`; the one `as` left on such a value is `widen`
-  (`u32` to `usize`, lossless under a compile-time assertion, behind a scoped lint exception).
+  types through `From` or `try_from`, not `as`. In the library the one `as` left on such a value
+  is `widen` (`u32` to `usize`, lossless under a compile-time assertion, behind a scoped lint
+  exception); the command converts the ray count to `f64` with `as` for the information-only
+  `rays-per-second` and `ns-per-ray`, also behind a scoped exception, and `png.rs` builds its
+  CRC table with one `as` on an index below 256.
 - `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
   `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `BuiltinSceneError` and
   `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
@@ -797,9 +803,18 @@ one mutex, one atomic); there is no `unsafe` and no thread-pool dependency.
 - **Errors**: if a pixel fails (a traversal error, a ray outside Bunny's domain), the render
   returns `RenderError::Pixel` with the coordinates and the `PathError` of the first failing
   pixel in raster order, top row first: the error a
-  one-pixel-at-a-time render in raster order meets, at every thread count and band height. When
-  a pixel in row `y` fails, no worker begins a row from `y` down: every pixel before it is in an
-  earlier row, or earlier in row `y`, which only the failing worker renders. No worker waits on
+  one-pixel-at-a-time render in raster order meets, at every thread count and band height
+  (`every_hand_out_order_reports_the_raster_first_failure` in the simulation,
+  `the_first_failing_pixel_in_raster_order_is_reported_at_every_schedule` and
+  `a_traversal_failure_is_the_same_typed_error_at_every_schedule` on threads). When a pixel in
+  row `y` fails, the failing worker lowers one shared atomic to `y`, and a worker that has
+  observed it begins no row and takes no band from `y` down
+  (`after_a_failure_no_pixel_from_its_row_down_is_rendered`,
+  `after_a_failure_no_band_from_its_row_down_is_handed_out`): every pixel before the failing one
+  is in an earlier row, or earlier in row `y`, which only the failing worker renders. When
+  another worker observes it depends on the scheduler, so this is not a time bound: on several
+  threads the work done after a failure is not bounded by any test; on one thread it is exact
+  (`workers_stop_after_a_failure`). No worker waits on
   another. A panic in the pixel function halts the other workers: each begins no row after it has
   seen the halt (a row already begun finishes; when it sees the halt depends on the scheduler, so
   this is not a time bound), and the panic reaches the caller once every worker has stopped, with

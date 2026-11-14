@@ -1,7 +1,8 @@
 # ADR 0007: Smooth shading: the integrator's identity and the vertex normals
 
 Status: accepted (flyingrobots/lumen#39); the `shading` field's rule amended before it landed
-(see [The `shading` field follows the scene too](#the-shading-field-follows-the-scene-too)).
+(see [The `shading` field follows the scene too](#the-shading-field-follows-the-scene-too)); the
+provenance promise's scope stated (see [Clarification, 2026-11-14](#clarification-2026-11-14-equal-provenance-and-a-tracer)).
 
 ## Context
 
@@ -107,3 +108,10 @@ versioned name), not of the render's shading.
 - **Sending flat triangles through `SmoothHit` with no normals**: it falls back to the geometric
   frame, but costs a smooth hit (about 171 ns against 67 flat, Bunny's measurement) and makes the
   flat path depend on that fallback rather than being the flat code itself.
+
+## Clarification, 2026-11-14: equal provenance and a tracer
+
+Added for flyingrobots/lumen#57. "Equal provenance still means equal bytes" (under Consequences)
+holds for a scene rendered as its own tracer; a caller-supplied `Tracer` is not part of the
+provenance ([ADR 0002, clarification of
+2026-11-14](0002-library-api-surface.md#clarification-2026-11-14-what-equal-provenance-promises)).
