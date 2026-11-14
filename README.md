@@ -10,7 +10,7 @@ Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
 ## What lumen does today
 
 Lumen renders a built-in scene, prints its image hash and timing, and writes it to a PNG file
-if asked. `--scene reference` (the default) is the reference scene, which includes the Stanford
+if asked; `lumen stats` prints what a scene holds ([Statistics](#statistics)). `--scene reference` (the default) is the reference scene, which includes the Stanford
 bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece. The
 reference render:
 
@@ -282,6 +282,70 @@ through the public API and checks its values and its chain.
 - `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
   `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `BuiltinSceneError` and
   `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
+
+## Statistics
+
+`lumen stats [--scene NAME]` builds a scene and prints what it holds, without rendering:
+
+```sh
+python3 $D lumen ~/git/lumen --worktree -- cargo run --locked -q -p lumen -- stats --scene reference
+```
+
+The library computes the counts (`Scene::statistics()`, a `SceneStatistics`) and the command
+formats them; nothing is counted while a ray is traced, and nothing in the scene changes.
+`Scene::statistics` is described under [Library and command](#library-and-command);
+[ADR 0008](docs/adr/0008-statistics.md) records what is counted and why it cannot change a pixel.
+Ray, run and traversal statistics, and `render --stats`, are decided there and not yet built.
+
+Each line is a key with no spaces, one space and a value: one token, or a vector of tokens
+separated by single spaces. Keys are stable; new ones are added, never renamed. Fixed-point values
+are printed in decimal with six places from their exact raw integers, rounded to nearest with ties
+away from zero. Every value is a function of the scene alone, except the `memory.` byte counts,
+which also depend on this build's type sizes (the values below are those of 64-bit targets).
+
+| Key | Value |
+| --- | --- |
+| `scene`, `scene-content`, `integrator` | the scene's name, its content identity and its integrator, as in the render report |
+| `scene.triangles` | every triangle, zero-area ones included |
+| `scene.vertices` | three per triangle: lumen's triangles hold their own vertices and share none |
+| `scene.triangles-smooth` | triangles with at least one vertex normal, which `lumen-smooth-diffuse-path/1` shades smooth |
+| `scene.triangles-zero-area` | triangles of zero area: kept, never hit |
+| `scene.materials` | the albedos in the material table, used or not |
+| `scene.material.N.triangles` | the triangles naming material `N`; they sum to `scene.triangles` |
+| `scene.material.N.albedo` | material `N`'s red, green and blue reflectance |
+| `scene.bounds-min`, `scene.bounds-max` | the corners of the box around every triangle (the tree's root box) |
+| `light.sun` | `present` or `none`; when present, `light.sun-toward` (the direction to the sun) and `light.sun-irradiance` (per channel) follow |
+| `light.sky` | the sky's radiance per channel |
+| `camera.position`, `camera.look`, `camera.up`, `camera.tan-half-fov` | the camera placement as given |
+| `tree.builder`, `tree.layout` | `bunny_broadphase::build_bvh_sah` and `bunny_broadphase::compact_bvh`, at the Bunny commit of `lumen --version` |
+| `tree.nodes` | every node of Bunny's tree, interior and leaf: `2 * leaves - 1`, at most `2 * triangles - 1` |
+| `tree.interior-nodes`, `tree.leaves` | the two kinds; the compact layout stores one node per interior node and keeps leaves in their parent |
+| `tree.leaf-depth-max` | the deepest leaf, the root being at depth 0; at most 60 (Bunny's `SAH_MAX_DEPTH`) |
+| `tree.leaf-depth-total` | the sum of every leaf's depth |
+| `tree.leaf-depth-mean` | `leaf-depth-total / leaves`, with two places, rounded to nearest, ties up |
+| `tree.leaf-triangles` | the triangles of every leaf, summed: each triangle is in one leaf, so this is `scene.triangles` |
+| `tree.leaf-triangles-min`, `tree.leaf-triangles-max` | the fewest and most triangles in a leaf |
+| `tree.leaf-sizes` | five counts: leaves of 1, 2, 3 and 4 triangles, and of more (only at the depth cap) |
+| `memory.NAME-bytes` | information only, a fact about this build (the line ends in `(information only: this build's type sizes)`): each buffer's length times its element size, which depends on the target's pointer width: `triangles` (Bunny's `TraceTriangle`), `surfaces` (`Option<TriangleSurface>`), `vertex-normals`, `material-indices`, `materials`, `tree-nodes` (compact nodes), `tree-primitive-indices`, and their `total` |
+
+Not counted in `memory.`: the `Scene` value and its vectors' headers, spare capacity, the
+allocator's overhead, the buffers dropped after the build (the boxes and the uncompacted tree of
+`2 * triangles` nodes) and what a render allocates. The output is machine-readable as it is
+(`awk '$1 == "tree.nodes" { print $2 }'`); there is no JSON form. For the reference scene:
+
+```text
+scene.triangles 31511
+scene.material.3.triangles 27648
+scene.material.4.triangles 3851
+scene.bounds-min -16.000000 -1.125000 -16.000000
+scene.bounds-max 16.000000 2.000000 16.000000
+tree.nodes 33095
+tree.leaves 16548
+tree.leaf-depth-max 20
+tree.leaf-depth-mean 16.36
+tree.leaf-sizes 2778 12708 931 131 0
+memory.total-bytes 11432728 (information only: this build's type sizes)
+```
 
 ## The reference scene
 

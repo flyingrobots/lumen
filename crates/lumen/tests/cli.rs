@@ -644,3 +644,33 @@ fn help_lists_the_scenes() {
         assert!(help.contains(scene.name()), "{}", scene.name());
     }
 }
+
+/// Oracle: `lumen stats` against the library. The header is the scene's name and golden content
+/// identity; every other line is `key value...` with a key used once; the counts are those of
+/// `Scene::statistics`; the command writes no file.
+#[test]
+fn stats_prints_the_scenes_statistics_without_rendering() {
+    let dir = Scratch::new("stats");
+    for scene in BuiltinScene::ALL {
+        let output = dir.lumen(&["stats", "--scene", scene.name()]);
+        assert!(output.status.success(), "{}", text(&output.stderr));
+        let stdout = text(&output.stdout);
+        let content = match scene {
+            BuiltinScene::Reference => GOLDEN_REFERENCE_CONTENT,
+            BuiltinScene::FixedPoint => GOLDEN_FIXED_POINT_CONTENT,
+        };
+        let header = format!("scene {}\nscene-content {content}\nintegrator ", scene.id());
+        assert!(stdout.starts_with(&header), "{stdout}");
+        let keys: Vec<&str> =
+            stdout.lines().map(|line| line.split_once(' ').expect("key value").0).collect();
+        let unique: std::collections::BTreeSet<&str> = keys.iter().copied().collect();
+        assert_eq!(unique.len(), keys.len(), "a key repeats in {stdout}");
+        let stats = scene.build().expect("builds").statistics().expect("counts");
+        assert_eq!(field(&stdout, "scene.triangles"), stats.triangles.to_string());
+        assert_eq!(field(&stdout, "tree.nodes"), stats.tree.nodes.to_string());
+        let total = format!("{} (information only: this build's type sizes)", stats.memory.total());
+        assert_eq!(field(&stdout, "memory.total-bytes"), total);
+        assert!(!stdout.contains("image ") && !stdout.contains("seconds"), "{stdout}");
+        assert!(dir.is_empty());
+    }
+}

@@ -252,3 +252,22 @@ fn leading_zeros_are_decimal_for_every_numeric_option() {
         parse_str("render --width 96 --height 54 --samples 4 --seed 0 --threads 2 --band-rows 7")
     );
 }
+
+/// Oracle: the grammar of `stats`, written out: an optional `--scene NAME` or `--scene=NAME`,
+/// the reference scene by default, and no render option.
+#[test]
+fn stats_takes_a_scene_and_nothing_else() {
+    let stats = |scene| Ok(Command::Stats { scene });
+    assert_eq!(parse_str("stats"), stats(BuiltinScene::Reference));
+    assert_eq!(parse_str("stats --scene fixed-point"), stats(BuiltinScene::FixedPoint));
+    assert_eq!(parse_str("stats --scene=fixed-point"), stats(BuiltinScene::FixedPoint));
+    assert_eq!(parse_str("stats --help"), Ok(Command::Help));
+    assert_eq!(
+        parse_str("stats --scene reference --scene=reference"),
+        Err(UsageError::Repeated("--scene"))
+    );
+    assert_eq!(parse_str("stats --width 9"), Err(UsageError::UnknownOption("--width".into())));
+    assert_eq!(parse_str("stats --scenes"), Err(UsageError::UnknownOption("--scenes".into())));
+    assert_eq!(parse_str("stats --scene"), Err(UsageError::MissingValue("--scene")));
+    assert!(matches!(parse_str("stats --scene nope"), Err(UsageError::Scene(_))));
+}
