@@ -20,6 +20,14 @@ All notable changes to lumen are recorded here. The format follows
   `crates/lumen/src/scene.rs` (327, flyingrobots/lumen#20) and `crates/lumen/src/png.rs` (328,
   flyingrobots/lumen#34).
 
+- `lumen render --scene reference|fixed-point` (flyingrobots/lumen#15): the command renders the
+  Fixed Point scene. The default is `reference`, whose output and golden hash are unchanged. An
+  unknown name is a usage error (exit code 2) listing the valid names, and `--help` lists them.
+- `lumen::BuiltinScene` (`ALL`, `name()`, `id()`, `build()`, `FromStr`) with `ParseSceneError`
+  and `BuiltinSceneError`: the registry of named scenes, in the library so another front end
+  gets the same list. The scene identity in `RenderProvenance` now comes from the chosen scene.
+  The `fixed_point` example uses it, and the Fixed Point golden hash moved to the shared
+  `tests/golden/mod.rs` so the command's test and the library's use one constant.
 - The "Fixed Point" scene, `lumen-fixed-point-scene/1` (part of flyingrobots/lumen#15), as
   library content in `crates/lumen/src/scenes/fixed_point/`: the Stanford bunny in dark
   sunglasses at a craps table, with two identical dice showing four pips on every face and the

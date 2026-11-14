@@ -4,6 +4,8 @@
 
 mod dice;
 mod glasses;
+#[path = "../golden/mod.rs"]
+mod golden;
 mod integrity;
 mod rendering;
 mod support;
