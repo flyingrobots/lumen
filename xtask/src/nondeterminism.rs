@@ -29,6 +29,7 @@
 #[cfg(test)]
 mod crate_alias_tests;
 mod paths;
+mod rules;
 #[cfg(test)]
 mod tests;
 pub(crate) mod tokens;
@@ -36,106 +37,11 @@ mod waivers;
 
 pub(crate) use paths::{crate_aliases, CrateAliases};
 use paths::{imports, macro_paths, paths, resolve};
+pub(crate) use rules::RULES;
+use rules::{FLOAT_TYPES, NAMES, PATHS, STD_MODULES, STD_ROOTS};
 use tokens::{is_float, tokens, Token};
 use waivers::apply_waivers;
 pub(crate) use waivers::{waiver_forms, BAN_GROUPS};
-
-/// Every rule ID: Echo's `ban-nondeterminism` vocabulary, then Lumen's own.
-pub(crate) const RULES: [&str; 21] = [
-    "time-system",
-    "time-instant",
-    "thread-sleep",
-    "host-parallelism",
-    "random",
-    "host-callback",
-    "network",
-    "unordered-container",
-    "hand-hashed-table",
-    "json-serialization",
-    "wasm-serde",
-    "float-sentinel",
-    "float-op",
-    "std-env",
-    "std-fs",
-    "std-process",
-    "thread-spawn",
-    "float-type",
-    "float-literal",
-    "float-cast",
-    "hidden-path",
-];
-
-/// The std modules that hold a banned item: a path a macro builds from a metavariable root
-/// (`$root::fs`) through one of them is refused, since the scan cannot know the root.
-const STD_MODULES: [&str; 16] = [
-    "env",
-    "fs",
-    "process",
-    "net",
-    "os",
-    "io",
-    "thread",
-    "time",
-    "collections",
-    "hash",
-    "arch",
-    "ffi",
-    "panic",
-    "any",
-    "backtrace",
-    "primitive",
-];
-
-/// The roots of the standard library.
-const STD_ROOTS: [&str; 3] = ["std", "core", "alloc"];
-
-/// The float types: `f16` and `f128` are unstable on the pinned toolchain, and named so that
-/// a toolchain that stabilises them cannot bring one into the core unseen.
-const FLOAT_TYPES: [&str; 4] = ["f16", "f32", "f64", "f128"];
-
-/// Names banned wherever they are spelled, and their rules. `c_double` and `c_float` are std's
-/// aliases of `f64` and `f32` (`core::ffi`, `std::ffi`, `std::os::raw`): a float type with no
-/// float token.
-const NAMES: [(&str, &str); 11] = [
-    ("Instant", "time-instant"),
-    ("SystemTime", "time-system"),
-    ("UNIX_EPOCH", "time-system"),
-    ("available_parallelism", "host-parallelism"),
-    ("HashMap", "unordered-container"),
-    ("HashSet", "unordered-container"),
-    ("RandomState", "unordered-container"),
-    ("FxHashMap", "unordered-container"),
-    ("FxHashSet", "unordered-container"),
-    ("c_double", "float-type"),
-    ("c_float", "float-type"),
-];
-
-/// Banned path prefixes and their rules. Each is compared segment by segment after the path is
-/// resolved through the file's imports ([`resolve`]); the `sleep` family is listed by name
-/// because `sleep_ms` is not under `sleep`. The Bunny types are its float bridge, whose values
-/// carry floats with no float token (`PlyVertex.x`).
-const PATHS: [(&[&str], &str); 20] = [
-    (&["std", "env"], "std-env"),
-    (&["std", "fs"], "std-fs"),
-    (&["std", "process"], "std-process"),
-    (&["std", "net"], "network"),
-    (&["std", "thread", "sleep"], "thread-sleep"),
-    (&["std", "thread", "sleep_ms"], "thread-sleep"),
-    (&["std", "thread", "sleep_until"], "thread-sleep"),
-    (&["std", "thread", "park_timeout"], "thread-sleep"),
-    (&["std", "thread", "park_timeout_ms"], "thread-sleep"),
-    (&["bunny_num", "Scalar"], "float-type"),
-    (&["bunny_linalg", "Vec2"], "float-type"),
-    (&["bunny_linalg", "Vec3"], "float-type"),
-    (&["bunny_geom", "Ray3"], "float-type"),
-    (&["bunny_geom", "Aabb3"], "float-type"),
-    (&["bunny_geom", "Sphere3"], "float-type"),
-    (&["bunny_codec", "ObjMesh"], "float-type"),
-    (&["bunny_codec", "ObjVertex"], "float-type"),
-    (&["bunny_codec", "ObjVertices"], "float-type"),
-    (&["bunny_codec", "PlyBinaryMesh"], "float-type"),
-    (&["bunny_codec", "PlyVertex"], "float-type"),
-];
 
 /// One finding: the 1-based line, the rule and what was found.
 #[derive(Clone, Debug, PartialEq, Eq)]
