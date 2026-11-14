@@ -84,7 +84,7 @@ pixels 230400
 samples 64
 seed 0
 bounces 1
-scene-content sha256:84541be146ebac194b43dfc91f9205356818d517c71f52d947a3ca417178d356
+scene-content sha256:c1e109477c09328421d76efefd923bd625d842fe3afb93dfadb21ae905bd0f66
 threads <workers used>
 threads-asked <--threads, or what the system reports available>
 band-rows 1
@@ -178,9 +178,10 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   command prints them from its own report (`crates/lumen/src/bin/lumen/report.rs`), after the
   provenance, the ray count and the image hash.
 - **A scene has a content identity.** `Scene::content_id()` is a `SceneContentId`, the
-  SHA-256 of a canonical byte encoding (`lumen-scene-content/1`) of the `SceneSpec` it was built
+  SHA-256 of a canonical byte encoding (`lumen-scene-content/2`) of the `SceneSpec` it was built
   from: the triangles in primitive order, each one's material index, the albedos, the light
-  (present or absent), the sky and the camera placement. It is computed once in `Scene::new`,
+  (present or absent), the sky, the camera placement and the vertex normals (none, or one entry
+  per triangle, each vertex's normal present or absent). It is computed once in `Scene::new`,
   before the tree is built, and does not depend on the tree, the threads, the band height or the
   platform; the image size, samples and seed are separate provenance fields, and a scene's name
   is a label beside it, not part of it. It identifies the input, not the picture: moving a
@@ -380,7 +381,10 @@ costs in binary and repository size.
 The scene's types (`SceneSpec`: triangles, a material index per triangle, diffuse albedos, an
 optional directional light and a sky; `RenderSettings`: a power-of-two sample count and a `u32`
 seed; at most one bounce) follow Geordi's ray-traced scene profile, so that loading an artifact
-(flyingrobots/lumen#6) maps onto them.
+(flyingrobots/lumen#6) maps onto them. `SceneSpec` also carries optional vertex normals
+(`normals`: empty, or three `Option<FixedUnitVec3>` per triangle, the input of Bunny's
+`SmoothHit::new`), which `Scene::new` checks for count (`SceneError::NormalCount`) and keeps
+(`Scene::vertex_normals`); they enter the content identity. No integrator reads them yet.
 
 ## The Fixed Point scene
 

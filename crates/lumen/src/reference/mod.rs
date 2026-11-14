@@ -99,6 +99,7 @@ pub fn reference_scene() -> Result<Scene, SceneError> {
         triangles: &triangles,
         material_of: &material_of,
         materials: &materials,
+        normals: &[],
         lighting: reference_lighting().map_err(SceneError::Constant)?,
         camera: reference_camera(),
     })
