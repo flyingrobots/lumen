@@ -63,6 +63,35 @@ pub(crate) fn tokens(text: &str) -> Vec<Located> {
     out.out
 }
 
+/// The line comments of `text`, each with its line and its text after the `//` (a doc comment's
+/// text starts with `/` or `!`): not block comments, and nothing inside a string literal.
+pub(crate) fn line_comments(text: &str) -> Vec<(usize, String)> {
+    let chars: Vec<char> = text.chars().collect();
+    let (mut state, mut at, mut line) = (State::Code, code_start(&chars), 1);
+    let (mut out, mut start) = (Vec::new(), None);
+    while let Some(&c) = chars.get(at) {
+        if c == '\n' {
+            if let Some(from) = start.take() {
+                out.push((line, chars[from..at].iter().collect::<String>()));
+            }
+            if state == State::LineComment {
+                state = State::Code;
+            }
+            (line, at) = (line + 1, at + 1);
+            continue;
+        }
+        let (next, taken, _) = step(state, &chars[at..]);
+        if state == State::Code && next == State::LineComment {
+            start = Some(at + 2);
+        }
+        (state, at) = (next, at + taken);
+    }
+    if let Some(from) = start {
+        out.push((line, chars[from..].iter().collect()));
+    }
+    out
+}
+
 /// The tokens so far and the identifier or number being read.
 struct Lexer {
     out: Vec<Located>,

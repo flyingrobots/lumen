@@ -1110,9 +1110,12 @@ does, not by file name (ADR 0006); the command (the only clock and the only `ava
 scheduler's threads (`render_pixels`, ADR 0003) and two unit tests carry their own. A waiver is
 `#[expect(<clippy lints>, reason = "<rule-ids>: <why it cannot reach a pixel>")]` on the
 smallest item that needs it: `expect`, so one that stops matching fails the build; the scan
-fails an `allow` of a ban lint or a reason that does not start with rule IDs. A scan finding is
-waived by `// nondeterminism: allow <rule-id> -- <reason>` on its line or the line above; the scan
-fails one with an unknown rule, without a reason, or that waives nothing. There is none today.
+fails an `allow` or `warn` of a ban lint, a ban lint's old name, any lowering of a lint group that
+holds one (`clippy::all`, `clippy::style`, `clippy::restriction`, `warnings`), a lint list built
+by a macro, and a reason that does not start with rule IDs. A scan finding is waived by the
+comment `// nondeterminism: allow <rule-id> -- <reason>` on its line or the line above (the same
+text in a string or a doc comment is not a waiver); the scan fails one with an unknown rule,
+without a reason, or that waives nothing. There is none today.
 Not covered: a `usize`-dependent value reaching the hash, which the WebAssembly leg (32-bit
 `usize`) tests.
 

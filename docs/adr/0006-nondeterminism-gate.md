@@ -73,6 +73,23 @@ unit tests (`xtask/src/nondeterminism/tests.rs`).
   so it can only over-report. A scan finding is waived by
   `// nondeterminism: allow <rule-id> -- <reason>` on its line or the line above; an unknown
   rule, a missing reason or a waiver that waives nothing fails. It runs as `Gates / nondeterminism`.
+- **A waiver is a comment, and nothing else turns a ban off** (flyingrobots/lumen#119). The scan
+  takes its waivers from the lexer's line comments, so the same text in a string literal or a
+  doc comment waives nothing. Clippy's bans are lints, and a lint-level attribute can silence
+  one; each was tried against Clippy 0.1.96 with Lumen's lint levels. The scan checks every
+  lint-level attribute in every file, as tokens, so also inside `cfg_attr` and macro bodies, and
+  fails any of these: an `allow` or `warn` of a ban lint (`disallowed_methods`,
+  `disallowed_types`, `disallowed_macros`, `float_arithmetic`); their renamed names
+  `disallowed_method` and `disallowed_type`, which `rustc` still applies; an `allow`, `expect` or
+  `warn` of a group that holds one (`clippy::all` and `clippy::style` hold the `disallowed_*`
+  lints, `clippy::restriction` holds `float_arithmetic`, per `cargo clippy -- -W help`; and
+  `warnings`, which silences a ban lowered to `warn`); a lint list containing a macro
+  metavariable (`#[allow(clippy::$lint)]`); and an `expect` of a ban lint whose reason does not
+  start with rule IDs. In the core, any attribute that holds a metavariable (`#[$kind(...)]`,
+  `#[$meta]`) fails too, since a macro could build a lint attribute from its arguments.
+  `allow(warnings)` alone does not silence a ban (they are denied, not warned) and `deny` and
+  `forbid` only raise levels; neither is flagged. The group list is the pinned toolchain's; when
+  the toolchain moves, re-read `cargo clippy -- -W help` for the groups holding these lints.
 - **Both gates read a file as `rustc` lexes it** (flyingrobots/lumen#120, #119). The scan and
   the file-length gate share one lexer (`xtask/src/file_length/count.rs`). It skips a leading
   byte-order mark and a shebang line: a first line starting `#!` whose next token, past

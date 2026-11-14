@@ -574,6 +574,15 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- Nothing but a reasoned `expect` turns a nondeterminism ban off (part of
+  flyingrobots/lumen#119). Scan waivers are taken from comments only, so
+  `// nondeterminism: allow ...` inside a string literal no longer waives a finding on its line.
+  The scan now fails, in every file: `#[allow(clippy::all)]`, `#[allow(clippy::style)]` and
+  `#[allow(clippy::restriction)]` (each silenced a ban in Clippy 0.1.96), and any other lowering
+  of those groups or of `warnings`; `warn` of a ban lint (silenced under `allow(warnings)`); the
+  renamed `disallowed_method` and `disallowed_type`; a lint list built by a macro
+  (`#[allow(clippy::$lint)]`); and, in the core, any attribute built from a macro metavariable.
+  Main has none of these.
 - The gates decide which files are test files, and which are the deterministic core, by the
   module tree, not by file names (closes flyingrobots/lumen#120, part of flyingrobots/lumen#119):
   `xtask/src/layout.rs` follows each crate's `mod` declarations as `rustc` resolves them. A
