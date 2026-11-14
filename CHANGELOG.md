@@ -8,6 +8,21 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- Statistics and scan tests that could not fail now compare against something computed
+  independently (flyingrobots/lumen#162). The memory test asserts all seven buffers, vertex
+  normals included, and the total as their sum on a scene with no normals (reference), one with
+  normals on every triangle (Fixed Point) and a three-triangle scene worked by hand; before, it
+  summed six terms on the reference scene alone, so dropping `vertex_normals` from
+  `SceneMemory::total` passed. The ray ceiling is tested at exactly four rays per sample (passes)
+  and one past (refused), which a `>=` fails. The scan's seeded forms include `FxHashMap` and
+  `FxHashSet`. The ray-count assertion `rays == statistics.count()`, which compared a value with
+  itself, compares both with the queries the observing tracer saw. The statistics test that
+  compared two calls checks every value of each call (before and after a render, and on a second
+  build) against values worked by hand and a tree walked by the test. The tree oracle starts from
+  a record of the test's own rather than from the value under test. A triangle with one or two
+  vertex normals is tested to render the flat bytes (ADR 0007 clarification): shading smooth only
+  when all three are present is equivalent.
+
 - Documentation no longer claims more than the code does (flyingrobots/lumen#57, the
   documentation half). "Equal provenance means equal bytes" is scoped to a render of the scene as
   its own tracer: `RenderProvenance`, `render_traced`, the README and ADRs 0002, 0005 and 0007
