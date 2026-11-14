@@ -3,7 +3,7 @@
 //! Each line is a key with no spaces, one space, and its value: one token, or several separated
 //! by single spaces (a vector's three components). Fixed-point values are printed in decimal
 //! with six places, rounded to nearest with ties away from zero, from their exact raw integers.
-//! README, "Statistics", documents every key.
+//! docs/reference/cli.md, "Statistics", documents every key.
 
 use core::fmt;
 use std::io::{self, Write};
