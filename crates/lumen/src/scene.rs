@@ -5,7 +5,7 @@
 //! material (a Bunny [`Albedo`]) for each, the [`Lighting`] and the placement of a pinhole camera.
 //! Building it prepares everything a ray needs, so tracing allocates nothing: Bunny's
 //! `TraceTriangle` and `TriangleSurface` per triangle, and the bounding volume hierarchy (see
-//! [`Scene::new`]). [`reference_scene`] builds lumen's built-in reference scene, entirely in code.
+//! [`Scene::new`]). The built-in reference scene is in [`crate::reference`].
 
 use core::fmt;
 
@@ -15,20 +15,13 @@ use bunny_broadphase::{
 };
 use bunny_geom::FixedAabb3;
 use bunny_linalg::FixedVec3;
-use bunny_num::fixed_q32_32::ONE_RAW;
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
     Albedo, CameraError, CameraSpec, DirectionalLight, PinholeCamera, SkyLight, TriangleSurface,
 };
 use bunny_query::{TraceRay, TraceTriangle, TriangleHit};
 
-/// The stable name and version of [`reference_scene`].
-///
-/// Any change to the reference scene's triangles, their order, their materials, its lighting or
-/// its camera placement is a new version, and changes every image hash of it. Version 1
-/// (`lumen-reference-scene/1`, geometry and camera only, shaded by normal) is retired: version 2
-/// keeps its triangles, their order and its camera, and adds materials, a light and a sky.
-pub const REFERENCE_SCENE_ID: &str = "lumen-reference-scene/2";
+use crate::mesh::PlaceError;
 
 /// The farthest distance a camera or bounce ray searches: no limit, raw `i64::MAX`.
 pub const FAR: FixedQ32_32 = FixedQ32_32::from_raw(i64::MAX);
@@ -116,6 +109,8 @@ pub enum SceneError {
     BvhBuild,
     /// Memory for the scene's buffers could not be reserved.
     OutOfMemory,
+    /// A mesh of the scene could not be read or placed.
+    Mesh(PlaceError),
 }
 
 impl fmt::Display for SceneError {
@@ -132,6 +127,7 @@ impl fmt::Display for SceneError {
             }
             Self::BvhBuild => f.write_str("the bounding volume hierarchy could not be built"),
             Self::OutOfMemory => f.write_str("not enough memory for the scene"),
+            Self::Mesh(error) => write!(f, "a mesh could not be placed: {error}"),
         }
     }
 }
@@ -387,227 +383,11 @@ fn reserved<T>(count: usize) -> Result<Vec<T>, SceneError> {
     Ok(items)
 }
 
-/// Quads along each edge of each cube face of the sphere: 6 * 48 * 48 * 2 = 27 648 triangles.
-const SPHERE_GRID: i64 = 48;
-
-/// One raw unit of the vertex grid: `2^-16`. See [`snap`].
-const GRID_RAW: i64 = 1 << 16;
-
-/// A value of `units / 2^16` units: every scene constant is a whole number of grid steps.
-const fn grid(units_times_2_16: i64) -> FixedQ32_32 {
-    FixedQ32_32::from_raw(units_times_2_16 * GRID_RAW)
-}
-
-/// A point from three coordinates in grid steps of `2^-16` units.
-const fn at(x: i64, y: i64, z: i64) -> FixedVec3 {
-    FixedVec3::new(grid(x), grid(y), grid(z))
-}
-
-/// Whole units in grid steps.
-const U: i64 = 1 << 16;
-
-/// The ground's height: -1.125 units, just below the sphere's lowest point (-1.0).
-const GROUND_Y: i64 = -U * 9 / 8;
-/// Half the ground's side: it spans `-16..=16` on X and Z.
-const GROUND_HALF: i64 = 16 * U;
-/// The back wall's plane, `z = -4`, its half width (3 units) and its top (`y = 2`).
-const WALL_Z: i64 = -4 * U;
-const WALL_HALF: i64 = 3 * U;
-const WALL_TOP: i64 = 2 * U;
-/// The octahedron's centre (right of the sphere, its lowest vertex on the ground) and
-/// its radius (1 unit).
-const OCTAHEDRON_CENTRE: (i64, i64, i64) = (U * 9 / 4, GROUND_Y + U, U / 2);
-
-/// Floors a raw coordinate to a multiple of `2^16` raw units (`2^-16` units).
-///
-/// Every coordinate of the reference scene is below 256 units in magnitude and a multiple
-/// of `2^-16`, so it has at most 24 significant bits and is exactly an `f32`. A mesh in the
-/// `bunny-ply-binary-le-f32/1` layout (Geordi's scene profile) can therefore carry the
-/// scene's vertices without changing a bit.
-const fn snap(value: FixedQ32_32) -> FixedQ32_32 {
-    FixedQ32_32::from_raw(value.raw() & !(GRID_RAW - 1))
-}
-
-/// A point on the bumpy sphere above cube-face coordinates `(a, b)` in `0..=SPHERE_GRID`,
-/// adapted from Bunny's scene benchmark (`crates/bunny-perf/src/scene.rs`): a cube point
-/// normalized with `FixedVec3::normalize`, pushed out by up to 4 % from a hash of the cube
-/// point (so shared corners agree), then snapped to the `2^-16` grid.
-fn sphere_point(face: usize, a: i64, b: i64) -> FixedVec3 {
-    let along = |i: i64| FixedQ32_32::from_raw(2 * ONE_RAW * i / SPHERE_GRID - ONE_RAW);
-    let one = FixedQ32_32::ONE;
-    let (a, b) = (along(a), along(b));
-    let cube = match face {
-        0 => FixedVec3::new(one, a, b),
-        1 => FixedVec3::new(-one, b, a),
-        2 => FixedVec3::new(b, one, a),
-        3 => FixedVec3::new(a, -one, b),
-        4 => FixedVec3::new(a, b, one),
-        _ => FixedVec3::new(b, a, -one),
-    };
-    let unit = cube.normalize().unwrap_or(cube);
-    let hash = (cube.x.raw() ^ cube.y.raw().rotate_left(21) ^ cube.z.raw().rotate_left(42))
-        .wrapping_mul(0x9E37_79B9_7F4A_7C15_u64.cast_signed());
-    let radius = FixedQ32_32::from_raw(ONE_RAW + (hash >> 40).rem_euclid(ONE_RAW / 25));
-    let point = unit * radius;
-    FixedVec3::new(snap(point.x), snap(point.y), snap(point.z))
-}
-
-/// The reference scene's triangles, in primitive order:
-///
-/// 1. the ground, two triangles at `y = -1.125` spanning `-16..=16` on X and Z, normal `+Y`;
-/// 2. a back wall, two triangles at `z = -4` spanning `x = -3..=3` and `y = -1.125..=2`,
-///    normal `+Z` (toward the camera);
-/// 3. an octahedron of radius 1 centred at `(2.25, -0.125, 0.5)`, its lowest vertex on the
-///    ground, eight faces with normals `(+-1, +-1, +-1) / sqrt(3)`;
-/// 4. the bumpy sphere: a cube subdivided 48 by 48 per face and pushed out to a radius of
-///    1.0 to 1.04 around the origin, 27 648 triangles.
-///
-/// Every triangle winds counter-clockwise seen from outside its object (from above for the
-/// ground, from the camera's side for the wall), so its normal points outward.
-#[must_use]
-pub fn reference_triangles() -> Vec<[FixedVec3; 3]> {
-    let mut triangles = Vec::with_capacity(REFERENCE_TRIANGLE_COUNT);
-    let ground = |x, z| at(x, GROUND_Y, z);
-    let (g, w) = (GROUND_HALF, WALL_HALF);
-    triangles.push([ground(-g, g), ground(g, g), ground(g, -g)]);
-    triangles.push([ground(-g, g), ground(g, -g), ground(-g, -g)]);
-    let wall = |x, y| at(x, y, WALL_Z);
-    triangles.push([wall(-w, GROUND_Y), wall(w, GROUND_Y), wall(w, WALL_TOP)]);
-    triangles.push([wall(-w, GROUND_Y), wall(w, WALL_TOP), wall(-w, WALL_TOP)]);
-    let (cx, cy, cz) = OCTAHEDRON_CENTRE;
-    for sx in [1, -1] {
-        for sy in [1, -1] {
-            for sz in [1, -1] {
-                let (px, py, pz) =
-                    (at(cx + sx * U, cy, cz), at(cx, cy + sy * U, cz), at(cx, cy, cz + sz * U));
-                // cross(py - px, pz - px) = (sy * sz, sx * sz, sx * sy), which is the outward
-                // direction (sx, sy, sz) exactly when sx * sy * sz = 1.
-                if sx * sy * sz == 1 {
-                    triangles.push([px, py, pz]);
-                } else {
-                    triangles.push([px, pz, py]);
-                }
-            }
-        }
-    }
-    for face in 0..6 {
-        for a in 0..SPHERE_GRID {
-            for b in 0..SPHERE_GRID {
-                let corner = |da, db| sphere_point(face, a + da, b + db);
-                let (p00, p10, p11, p01) = (corner(0, 0), corner(1, 0), corner(1, 1), corner(0, 1));
-                triangles.push([p00, p10, p11]);
-                triangles.push([p00, p11, p01]);
-            }
-        }
-    }
-    triangles
-}
-
-/// The reference camera: at `(0, 1, 5)`, looking along `(0, -0.25, -1)` (down toward the
-/// sphere), up `+Y`, with a vertical field of view whose half-angle has tangent 0.5 (about
-/// 53 degrees in all). Unchanged from version 1.
-#[must_use]
-pub const fn reference_camera() -> CameraPlacement {
-    CameraPlacement {
-        position: at(0, U, 5 * U),
-        look: at(0, -U / 4, -U),
-        up: at(0, U, 0),
-        tan_half_fov: grid(U / 2),
-    }
-}
-
-/// A Q32.32 value of `n / 256`.
-const fn per_256(n: i64) -> FixedQ32_32 {
-    FixedQ32_32::from_raw(n * (ONE_RAW / 256))
-}
-
-/// The reference materials, as `[red, green, blue]` linear albedo in 256ths, indexed by
-/// [`REFERENCE_MATERIAL_OF`]: a light warm grey ground, a pale stone wall, a blue octahedron
-/// and a red sphere.
-pub const REFERENCE_ALBEDO_256: [[i64; 3]; 4] =
-    [[150, 145, 135], [175, 165, 145], [50, 95, 200], [205, 60, 45]];
-
-/// The material index of each object of [`reference_triangles`]: ground 0, wall 1, octahedron
-/// 2, sphere 3.
-pub const REFERENCE_MATERIAL_OF: [u32; 4] = [0, 1, 2, 3];
-
-/// The direction toward the reference sun, in sixteenths: `(0.5, 0.3125, 1.0)`. It comes from
-/// the right, from in front of the scene (the camera's side) and from about 15 degrees above
-/// the horizon, so the sphere and the octahedron cast long shadows back across the ground and
-/// onto the wall. Its largest component is exactly 1.0, as Bunny's `DirectionalLight` requires.
-pub const REFERENCE_TOWARD_SUN_16: [i64; 3] = [8, 5, 16];
-
-/// The reference sun's irradiance per channel, in 256ths: about `(4.0, 3.8, 3.5)`, slightly warm.
-pub const REFERENCE_SUN_256: [i64; 3] = [1024, 970, 900];
-
-/// The reference sky's radiance per channel, in 256ths: about `(0.25, 0.33, 0.47)`, a pale blue.
-pub const REFERENCE_SKY_256: [i64; 3] = [64, 85, 120];
-
-/// The reference lighting: [`REFERENCE_TOWARD_SUN_16`] at [`REFERENCE_SUN_256`] and a
-/// [`REFERENCE_SKY_256`] sky.
-///
-/// # Panics
-///
-/// Never: the constants are inside Bunny's accepted ranges (a test checks it), so the Bunny
-/// constructors accept them.
-#[must_use]
-pub fn reference_lighting() -> Lighting {
-    let [x, y, z] = REFERENCE_TOWARD_SUN_16.map(|c| FixedQ32_32::from_raw(c * (ONE_RAW / 16)));
-    let sun = DirectionalLight::new(FixedVec3::new(x, y, z), REFERENCE_SUN_256.map(per_256))
-        .expect("the reference sun is a valid Bunny light");
-    let sky = SkyLight::new(REFERENCE_SKY_256.map(per_256)).expect("the reference sky is valid");
-    Lighting { sun: Some(sun), sky }
-}
-
-/// The reference materials, [`REFERENCE_ALBEDO_256`] as Bunny albedos.
-///
-/// # Panics
-///
-/// Never: every channel is in `0..=256`, inside Bunny's `0..=1.0`.
-#[must_use]
-pub fn reference_materials() -> [Albedo; 4] {
-    REFERENCE_ALBEDO_256
-        .map(|channels| Albedo::new(channels.map(per_256)).expect("albedo channels are in 0..=1"))
-}
-
-/// The material index of each reference triangle, in primitive order.
-#[must_use]
-pub fn reference_material_of() -> Vec<u32> {
-    let [ground, wall, octahedron, sphere] = REFERENCE_MATERIAL_OF;
-    let mut material_of = Vec::with_capacity(REFERENCE_TRIANGLE_COUNT);
-    material_of.extend([ground; 2]);
-    material_of.extend([wall; 2]);
-    material_of.extend([octahedron; 8]);
-    material_of.resize(REFERENCE_TRIANGLE_COUNT, sphere);
-    material_of
-}
-
-/// The number of triangles of the reference scene: 2 + 2 + 8 + 27 648.
-pub const REFERENCE_TRIANGLE_COUNT: usize = 4 + 8 + 6 * 48 * 48 * 2;
-
-/// The built-in reference scene, [`REFERENCE_SCENE_ID`]: [`reference_triangles`] with
-/// [`reference_materials`] and [`reference_lighting`], seen by [`reference_camera`].
-///
-/// # Errors
-///
-/// [`SceneError::OutOfMemory`] when its buffers cannot be reserved. The other errors of
-/// [`Scene::new`] do not occur for this scene; a test checks it builds.
-pub fn reference_scene() -> Result<Scene, SceneError> {
-    let triangles = reference_triangles();
-    let material_of = reference_material_of();
-    let materials = reference_materials();
-    Scene::new(&SceneSpec {
-        triangles: &triangles,
-        material_of: &material_of,
-        materials: &materials,
-        lighting: reference_lighting(),
-        camera: reference_camera(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reference::{per_256, reference_camera, reference_scene, REFERENCE_TRIANGLE_COUNT};
+    use crate::vertex_grid::{at, grid, U};
 
     fn grey() -> Albedo {
         Albedo::new([per_256(128); 3]).expect("valid")
@@ -617,81 +397,11 @@ mod tests {
         Lighting { sun: None, sky: SkyLight::new([FixedQ32_32::ZERO; 3]).expect("valid") }
     }
 
+    /// A tree over n primitives has at most n - 1 interior nodes.
     #[test]
-    fn the_reference_scene_has_the_stated_triangles_and_materials() {
-        assert_eq!(reference_triangles().len(), REFERENCE_TRIANGLE_COUNT);
-        assert_eq!(REFERENCE_TRIANGLE_COUNT, 27_660);
+    fn the_reference_tree_has_fewer_interior_nodes_than_triangles() {
         let scene = reference_scene().expect("the reference scene builds");
-        assert_eq!(scene.triangles().len(), 27_660);
-        // A tree over n primitives has at most n - 1 interior nodes.
-        assert!(scene.tree.nodes.len() < 27_660);
-        let materials = reference_materials();
-        for (primitive, want) in [(0, 0), (1, 0), (2, 1), (3, 1), (4, 2), (11, 2), (12, 3)] {
-            assert_eq!(scene.albedo(primitive), Some(&materials[want]), "primitive {primitive}");
-        }
-        assert_eq!(scene.albedo(27_659), Some(&materials[3]));
-        assert_eq!(scene.albedo(27_660), None);
-        let lighting = reference_lighting();
-        assert_eq!(scene.lighting(), lighting);
-        let sun = lighting.sun.expect("a sun");
-        assert_eq!(sun.toward_light().z, FixedQ32_32::ONE);
-    }
-
-    #[test]
-    fn every_coordinate_is_on_the_f32_exact_grid_inside_the_trace_domain() {
-        for triangle in reference_triangles() {
-            for vertex in triangle {
-                for c in [vertex.x, vertex.y, vertex.z] {
-                    assert_eq!(c.raw() % GRID_RAW, 0, "{c:?} is off the 2^-16 grid");
-                    assert!(c.raw().abs() < 256 * ONE_RAW);
-                    // Exactly an f32 (a boundary conversion only: no float reaches a pixel).
-                    let narrowed = FixedQ32_32::try_from_f32(c.to_f32()).expect("finite");
-                    assert_eq!(narrowed, c);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn every_surface_normal_points_out_of_its_object() {
-        let scene = reference_scene().expect("the reference scene builds");
-        let (cx, cy, cz) = OCTAHEDRON_CENTRE;
-        let centre_of = |primitive: usize| match primitive {
-            0..=3 => None,
-            4..=11 => Some(at(cx, cy, cz)),
-            _ => Some(at(0, 0, 0)),
-        };
-        for (primitive, triangle) in scene.triangles().iter().enumerate() {
-            let index = u32::try_from(primitive).expect("fits");
-            let surface = scene.surface(index).expect("no reference triangle is degenerate");
-            let normal = surface.frame().normal();
-            let expected_axis = match primitive {
-                0 | 1 => Some(at(0, U, 0)),
-                2 | 3 => Some(at(0, 0, U)),
-                _ => None,
-            };
-            if let Some(axis) = expected_axis {
-                assert_eq!(normal, axis, "triangle {primitive}");
-            }
-            if let Some(centre) = centre_of(primitive) {
-                let [a, b, c] = triangle.vertices();
-                let outward = a + b + c - centre - centre - centre;
-                assert!(normal.dot(outward) > FixedQ32_32::ZERO, "triangle {primitive} faces in");
-            }
-        }
-    }
-
-    #[test]
-    fn octahedron_normals_are_the_diagonals() {
-        let scene = reference_scene().expect("the reference scene builds");
-        // 1 / sqrt(3) = 0.57735026918962576..., times 2^32 = 2479700524.8...
-        let third = 2_479_700_525_i64;
-        for primitive in 4..12 {
-            let normal = scene.surface(primitive).expect("surface").frame().normal();
-            for c in [normal.x, normal.y, normal.z] {
-                assert!((c.raw().abs() - third).abs() <= 2, "{c:?}");
-            }
-        }
+        assert!(scene.tree.nodes.len() < REFERENCE_TRIANGLE_COUNT);
     }
 
     #[test]

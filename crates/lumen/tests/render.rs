@@ -12,8 +12,9 @@ use bunny_optics::{
     PixelSampler, SkyLight, SurfaceHit, FRAC_1_PI, SHADOW_T_MAX,
 };
 use bunny_query::{TraceRay, TraceTriangle};
+use lumen::reference::{reference_camera, BUNNY_FIRST_PRIMITIVE, REFERENCE_TRIANGLE_COUNT};
 use lumen::render::{pixel_radiance, render, trace_path, RenderSettings, TONE_CURVE};
-use lumen::scene::{reference_camera, CameraPlacement, Hit, Lighting, SceneSpec, TraceError, FAR};
+use lumen::scene::{CameraPlacement, Hit, Lighting, SceneSpec, TraceError, FAR};
 use lumen::{reference_scene, render_reference, ImageSize, Rgba8Image, Scene, Tracer, BUNNY_REV};
 use std::cell::Cell;
 
@@ -148,6 +149,12 @@ fn brute_closest(scene: &Scene, ray: &TraceRay) -> Option<Hit> {
     best
 }
 
+/// Whether a reference primitive belongs to the bunny.
+fn is_bunny(primitive: u32) -> bool {
+    usize::try_from(primitive)
+        .is_ok_and(|p| (BUNNY_FIRST_PRIMITIVE..REFERENCE_TRIANGLE_COUNT).contains(&p))
+}
+
 /// Whether any triangle is hit within `0..=t_max`.
 fn brute_occluded(scene: &Scene, ray: &TraceRay, t_max: FixedQ32_32) -> bool {
     scene.triangles().iter().any(|t| ray.hit_triangle(t, FixedQ32_32::ZERO, t_max).is_some())
@@ -158,6 +165,7 @@ fn brute_occluded(scene: &Scene, ray: &TraceRay, t_max: FixedQ32_32) -> bool {
 #[derive(Default)]
 struct Counts {
     closest_hits: Cell<u32>,
+    bunny_hits: Cell<u32>,
     closest_misses: Cell<u32>,
     occluded: Cell<u32>,
     visible: Cell<u32>,
@@ -178,6 +186,9 @@ impl Tracer for Checked<'_> {
         let found = self.scene.closest(ray)?;
         assert_eq!(found, brute_closest(self.scene, ray), "closest hit of {ray:?}");
         bump(if found.is_some() { &self.counts.closest_hits } else { &self.counts.closest_misses });
+        if found.is_some_and(|hit| is_bunny(hit.primitive)) {
+            bump(&self.counts.bunny_hits);
+        }
         Ok(found)
     }
 
@@ -552,10 +563,12 @@ fn every_traced_ray_equals_a_test_of_every_triangle() {
     let c = &checked.counts;
     let (hits, misses, occluded, visible) =
         (c.closest_hits.get(), c.closest_misses.get(), c.occluded.get(), c.visible.get());
-    // The comparison means something only if every kind of answer occurred.
+    let bunny = c.bunny_hits.get();
+    // The comparison means something only if every kind of answer occurred, including hits on
+    // the bunny's triangles.
     assert!(
-        hits > 800 && misses > 50 && occluded > 30 && visible > 500,
-        "{hits} {misses} {occluded} {visible}"
+        hits > 800 && misses > 50 && occluded > 30 && visible > 500 && bunny > 20,
+        "{hits} {misses} {occluded} {visible} {bunny}"
     );
     assert_eq!(c.shadow_limits_wrong.get(), 0, "every shadow ray uses SHADOW_T_MAX");
 }
@@ -752,11 +765,11 @@ fn an_image_does_not_depend_on_the_order_of_its_pixels() {
 // ---------------------------------------------------------------------------------------------
 // Convergence sanity: a regression guard with a stated threshold, not a proof.
 
-/// For four pixels of the reference scene at 32 by 18 (a lit part of the sphere, the ground in
-/// the sphere's shadow, which only the bounce and the sky light, the wall and the octahedron),
-/// the mean over 1 024 samples differs from the mean over 256 by less than 0.0195 per channel
-/// (5 / 256, about 2 % of a fully lit white surface). The largest difference measured when this
-/// was written was 0.0038.
+/// For six pixels of the reference scene at 32 by 18 (a lit part of the sphere, the ground in
+/// the sphere's shadow, which only the bounce and the sky light, the wall, the octahedron, the
+/// bunny and the ground in the bunny's shadow), the mean over 1 024 samples differs from the
+/// mean over 256 by less than 0.0195 per channel (5 / 256, about 2 % of a fully lit white
+/// surface). The largest difference measured when this was written was 0.0116.
 #[test]
 fn means_over_256_and_1024_samples_agree() {
     let scene = reference_scene().expect("builds");
@@ -764,11 +777,13 @@ fn means_over_256_and_1024_samples_agree() {
     let sun = scene.lighting().sun.expect("a sun");
     let threshold = frac(5, 256).raw();
     // (pixel, the primitives it may see, whether its first sample is in shadow)
-    let cases: [((u32, u32), core::ops::RangeInclusive<u32>, bool); 4] = [
-        ((16, 9), 12..=27_659, false),
-        ((11, 9), 0..=1, true),
-        ((10, 7), 2..=3, false),
-        ((25, 9), 4..=11, false),
+    let cases: [((u32, u32), core::ops::RangeInclusive<u32>, bool); 6] = [
+        ((17, 10), 12..=27_659, false),
+        ((10, 9), 0..=1, true),
+        ((12, 4), 2..=3, false),
+        ((24, 9), 4..=11, false),
+        ((8, 12), 27_660..=31_510, false),
+        ((5, 11), 0..=1, true),
     ];
     for ((x, y), primitives, in_shadow) in cases {
         let ray = cam.ray(settings(1, 0).sampler(x, y).camera_sample(0)).expect("ray");
@@ -792,6 +807,78 @@ fn means_over_256_and_1024_samples_agree() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The bunny in the reference scene.
+
+/// The camera ray through the centre of a pixel of a 32 by 18 image.
+fn centre_ray(scene: &Scene, x: u32, y: u32) -> TraceRay {
+    camera(scene, 32, 18).ray(PixelSample::centre(x, y)).expect("ray")
+}
+
+/// The bunny stands left of the sphere, low in the picture: at 32 by 18 the centre of pixel
+/// `(8, 12)`, its neighbours left, right and below, and `(9, 13)` see bunny triangles (the
+/// pixel above sees the ground between the ears and the back). (A planning projection of the body's
+/// centre, about `(-2.24, -0.65, 0.51)`, lands near `(8.5, 12.9)` in that image.) Pixels two to
+/// the left and two below see the ground, and the sphere's centre pixel sees the sphere.
+#[test]
+fn the_camera_sees_the_bunny_where_it_was_placed() {
+    let scene = reference_scene().expect("builds");
+    for (x, y) in [(8, 12), (7, 12), (9, 12), (8, 13), (9, 13)] {
+        let hit = scene.closest(&centre_ray(&scene, x, y)).expect("traces").expect("a hit");
+        assert!(is_bunny(hit.primitive), "pixel ({x}, {y}) sees {}", hit.primitive);
+    }
+    for (x, y) in [(5, 12), (8, 15)] {
+        let hit = scene.closest(&centre_ray(&scene, x, y)).expect("traces").expect("a hit");
+        assert!(hit.primitive <= 1, "pixel ({x}, {y}) sees {}", hit.primitive);
+    }
+    let hit = scene.closest(&centre_ray(&scene, 15, 9)).expect("traces").expect("a hit");
+    assert!((12..27_660).contains(&hit.primitive), "the sphere's pixel sees {}", hit.primitive);
+}
+
+/// Whether the reference sun reaches the ground at `(x, z)`, and the primitive its shadow ray
+/// meets first, if any. The ground point is reached by a ray straight down from one unit above
+/// it, so the shadow ray starts at Bunny's start point as in a render.
+fn sun_at_ground(scene: &Scene, x: FixedQ32_32, z: FixedQ32_32) -> (bool, Option<u32>) {
+    let ground_y = raw(-9 * (ONE_RAW / 8));
+    let down = TraceRay::new(vec3(x, ground_y + units(1), z), point(0, -1, 0)).expect("ray");
+    let hit = scene.closest(&down).expect("traces").expect("the ground");
+    assert!(hit.primitive <= 1, "the downward ray at ({x:?}, {z:?}) met {}", hit.primitive);
+    let h = SurfaceHit::new(scene.surface(hit.primitive).expect("surface"), &down, &hit.hit)
+        .expect("start point");
+    // Bunny's start point is on the ground or up to two raw units above it.
+    let above = h.point().y.raw() - ground_y.raw();
+    assert!((0..=2).contains(&above), "starts on the ground: {above}");
+    let sun = scene.lighting().sun.expect("a sun");
+    let shadow = h.light_sample(&sun).shadow_ray().copied().expect("the sun is above the ground");
+    let blocked = scene.occluded(&shadow, SHADOW_T_MAX).expect("traces");
+    let first = scene.closest(&shadow).expect("traces").map(|h| h.primitive);
+    (!blocked, first)
+}
+
+/// The bunny casts its shadow where the light direction puts it.
+///
+/// The point `P = (-2.25, -0.5, 0.5)` is inside the bunny's body: in the file's coordinates it is
+/// `(-0.0156, 0.111, 0.0)`, and an exact count of crossings with the placed mesh along nine
+/// directions from it (the six axes, the sun's direction both ways and two diagonals) is odd
+/// every time. The sun is toward `d = (0.5, 0.3125, 1.0)`, so the ground point
+/// `G = P - 2 d = (-3.25, -1.125, -1.5)` (`-0.5 - 2 * 0.3125 = -1.125`, the ground's height)
+/// sees the sun only through `P`, and the bunny's surface lies between them: `G` is in the
+/// bunny's shadow, and the first triangle its shadow ray meets is a bunny triangle.
+///
+/// The ground point `(-3.25, -1.125, 1.0)`, 2.5 units nearer the camera, is lit: its shadow ray
+/// goes toward `+Z` from `z = 1.0`, and the only objects with any point at `z >= 1.0` are the
+/// sphere (`z <= 1.04`, `x >= -1.04`, which the ray reaches at `x <= -3.23`) and the octahedron
+/// (`x >= 1.25`), so it meets nothing.
+#[test]
+fn the_bunny_shadows_the_ground_behind_it_and_not_beside_it() {
+    let scene = reference_scene().expect("builds");
+    let (lit, first) = sun_at_ground(&scene, frac(-13, 4), frac(-3, 2));
+    assert!(!lit, "the ground behind the bunny is in its shadow");
+    assert!(first.is_some_and(is_bunny), "the shadow ray first meets {first:?}");
+    let (lit, first) = sun_at_ground(&scene, frac(-13, 4), units(1));
+    assert!(lit && first.is_none(), "the ground in front is lit: {first:?}");
+}
+
+// ---------------------------------------------------------------------------------------------
 // Determinism and the golden hash.
 
 #[test]
@@ -810,7 +897,7 @@ fn rendering_twice_in_one_process_gives_the_same_bytes() {
 
 /// The golden image hash of the reference scene.
 ///
-/// Recorded for `lumen-reference-scene/2`, `lumen-diffuse-path/1` (Bunny's
+/// Recorded for `lumen-reference-scene/3`, `lumen-diffuse-path/1` (Bunny's
 /// `bunny-sobol-owen/1` and `bunny-diffuse-shading/1`), `bunny-tone-srgb/1` and
 /// `bunny-rgba8-opaque/1`, at 96 by 54 pixels, 4 samples per pixel, seed 0, built against Bunny
 /// dcd6bd37613738de93f7084e7c8aa0283de964ea. First recorded on aarch64 Linux (the
@@ -821,12 +908,17 @@ fn rendering_twice_in_one_process_gives_the_same_bytes() {
 /// pinned Bunny commit (`BUNNY_REV`) changes, and the change of hash is the intended effect of
 /// that change. Any other change of this hash is a determinism bug: do not update it to make
 /// the test pass.
+///
+/// Record of updates: recorded for `lumen-reference-scene/2` as
+/// `sha256:3e90dbd46172423c9c9e1e60c0c6b15e35c6ceeefa0647ba53833b8d89e6bfa7`; updated when the
+/// scene identity changed to `lumen-reference-scene/3` (flyingrobots/lumen#14: the Stanford bunny
+/// added, the camera moved), every other identity, the settings and the Bunny commit unchanged.
 const GOLDEN_96X54_4SPP: &str =
-    "sha256:3e90dbd46172423c9c9e1e60c0c6b15e35c6ceeefa0647ba53833b8d89e6bfa7";
+    "sha256:4f9d5436dde802b5956d1ad6b83fe9671021ae5838f54bc697ae18690ebb9a46";
 
 #[test]
 fn the_reference_image_has_its_golden_hash() {
-    assert_eq!(lumen::REFERENCE_SCENE_ID, "lumen-reference-scene/2");
+    assert_eq!(lumen::REFERENCE_SCENE_ID, "lumen-reference-scene/3");
     assert_eq!(lumen::INTEGRATOR_ID, "lumen-diffuse-path/1");
     assert_eq!(bunny_optics::SAMPLER_ID, "bunny-sobol-owen/1");
     assert_eq!(bunny_optics::SHADING_ID, "bunny-diffuse-shading/1");
