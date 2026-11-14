@@ -13,15 +13,23 @@ All notable changes to lumen are recorded here. The format follows
   run the whole test suite in the test and the release profile, each first checking that the
   runner's `rustc` host is the platform the job is named for; `Determinism / WebAssembly
   (wasm32-wasip1, Node)` runs the library's unit tests, `tests/render.rs`, `tests/library.rs` and
-  `tests/fixed_point/` as `wasm32-wasip1` programs under Node's built-in WASI (`scripts/wasi-run.mjs`) in both
-  profiles, and compiles the library for `wasm32-unknown-unknown`. Every job checks the same two
-  golden hash constants (the reference scene and the Fixed Point scene).
+  `tests/fixed_point/` as `wasm32-wasip1` programs under Node's built-in WASI
+  (`scripts/wasi-run.mjs`) in both profiles, and compiles the library for
+  `wasm32-unknown-unknown`. Every job checks the same two golden hash constants (the reference
+  scene and the Fixed Point scene, `tests/golden/mod.rs`).
 - `tests/library.rs`: the golden image rendered on one worker through the library alone (runs on
   every platform, WebAssembly included), and on WebAssembly a two-worker render must be
   `RenderError::Spawn`.
 - `docs/adr/0003-webassembly-determinism-leg.md`: WebAssembly is tested on `wasm32-wasip1` under
   Node's WASI with the standard test harness and no added dependency, on one worker.
-
+- `lumen render --scene reference|fixed-point` (flyingrobots/lumen#15): the command renders the
+  Fixed Point scene. The default is `reference`, whose output and golden hash are unchanged. An
+  unknown name is a usage error (exit code 2) listing the valid names, and `--help` lists them.
+- `lumen::BuiltinScene` (`ALL`, `name()`, `id()`, `build()`, `FromStr`) with `ParseSceneError`
+  and `BuiltinSceneError`: the registry of named scenes, in the library so another front end
+  gets the same list. The scene identity in `RenderProvenance` now comes from the chosen scene.
+  The `fixed_point` example uses it, and the Fixed Point golden hash moved to the shared
+  `tests/golden/mod.rs` so the command's test and the library's use one constant.
 - The "Fixed Point" scene, `lumen-fixed-point-scene/1` (part of flyingrobots/lumen#15), as
   library content in `crates/lumen/src/scenes/fixed_point/`: the Stanford bunny in dark
   sunglasses at a craps table, with two identical dice showing four pips on every face and the

@@ -4,8 +4,9 @@
 //! the library (flyingrobots/lumen#19).
 
 use lumen::{
-    png_len, reference_scene, render, render_scheduled, write_png, ImageSize, ProvenanceValue,
-    RenderProvenance, RenderSettings, Schedule, TileSize, BUNNY_REV, REFERENCE_SCENE_ID,
+    png_len, reference_scene, render, render_scheduled, write_png, BuiltinScene, ImageSize,
+    ProvenanceValue, RenderProvenance, RenderSettings, Schedule, TileSize, BUNNY_REV,
+    REFERENCE_SCENE_ID,
 };
 
 mod golden;
@@ -105,4 +106,25 @@ fn a_png_written_to_memory_has_the_bytes_the_command_wrote() {
     write_png(&mut png, &image).expect("writes to memory");
     assert_eq!(png, from_hex(&TINY_PNG_HEX));
     assert_eq!(u64::try_from(png.len()).expect("fits"), png_len(&image));
+}
+
+#[test]
+fn every_builtin_scene_builds_renders_and_has_its_own_identity() {
+    let size = ImageSize::new(8, 4).expect("valid size");
+    let settings = RenderSettings::new(1, 0).expect("valid settings");
+    let mut ids = std::collections::BTreeSet::new();
+    let mut names = std::collections::BTreeSet::new();
+    let mut hashes = std::collections::BTreeSet::new();
+    for scene in BuiltinScene::ALL {
+        let built = scene.build().expect("the scene builds");
+        let schedule = Schedule::new(1, TileSize::new(8, 4).expect("valid tile")).expect("valid");
+        let rendered = render_scheduled(&built, size, settings, schedule).expect("renders");
+        assert_eq!(scene.name().parse(), Ok(scene), "the name round-trips");
+        assert_eq!(RenderProvenance::new(scene.id(), size, settings).scene(), scene.id());
+        ids.insert(scene.id());
+        names.insert(scene.name());
+        hashes.insert(rendered.image.hash());
+    }
+    let count = BuiltinScene::ALL.len();
+    assert_eq!((ids.len(), names.len(), hashes.len()), (count, count, count));
 }
