@@ -15,8 +15,8 @@ use bunny_query::{TraceRay, TraceTriangle};
 use lumen::reference::{reference_camera, BUNNY_FIRST_PRIMITIVE, REFERENCE_TRIANGLE_COUNT};
 use lumen::{
     pixel_radiance, reference_scene, render, render_reference, trace_path, CameraPlacement, Hit,
-    ImageSize, Lighting, RenderSettings, Rgba8Image, Scene, SceneSpec, TraceError, Tracer,
-    BUNNY_REV, FAR, TONE_CURVE,
+    ImageSize, Lighting, PrimitiveIndex, RenderSettings, Rgba8Image, Scene, SceneSpec, TraceError,
+    Tracer, BUNNY_REV, FAR, TONE_CURVE,
 };
 use std::cell::Cell;
 
@@ -147,7 +147,8 @@ fn brute_closest(scene: &Scene, ray: &TraceRay) -> Option<Hit> {
     for (index, triangle) in scene.triangles().iter().enumerate() {
         if let Some(hit) = ray.hit_triangle(triangle, FixedQ32_32::ZERO, FAR) {
             if best.is_none_or(|b| hit.distance < b.hit.distance) {
-                best = Some(Hit { primitive: u32::try_from(index).expect("fits"), hit });
+                let primitive = PrimitiveIndex::new(u32::try_from(index).expect("fits"));
+                best = Some(Hit { primitive, hit });
             }
         }
     }
@@ -155,9 +156,10 @@ fn brute_closest(scene: &Scene, ray: &TraceRay) -> Option<Hit> {
 }
 
 /// Whether a reference primitive belongs to the bunny.
-fn is_bunny(primitive: u32) -> bool {
-    usize::try_from(primitive)
-        .is_ok_and(|p| (BUNNY_FIRST_PRIMITIVE..REFERENCE_TRIANGLE_COUNT).contains(&p))
+fn is_bunny(primitive: PrimitiveIndex) -> bool {
+    primitive
+        .to_usize()
+        .is_some_and(|p| (BUNNY_FIRST_PRIMITIVE..REFERENCE_TRIANGLE_COUNT).contains(&p))
 }
 
 /// Whether any triangle is hit within `0..=t_max`.
@@ -418,7 +420,7 @@ fn a_ceiling_closer_than_any_epsilon_still_casts_its_shadow() {
                 // Every camera ray reaches the ground, inside the gap, units away.
                 let ray = cam.ray(sampler.camera_sample(sample)).expect("ray");
                 let hit = brute_closest(&with_ceiling, &ray).expect("hits the ground");
-                assert_eq!(hit.primitive, 0);
+                assert_eq!(hit.primitive, PrimitiveIndex::new(0));
                 assert!(hit.hit.distance > units(1), "{hit:?}");
             }
         }
@@ -509,11 +511,11 @@ fn shadows_fall_exactly_inside_the_occluders_projection() {
             let found = scene.closest(&ray).expect("traces").expect("hits");
             let value = trace_path(&scene, &scene, &cam, sampler, 0).expect("traces").radiance;
             if predicted_hit_occluder {
-                assert_eq!(found.primitive, 1, "pixel ({x}, {y})");
+                assert_eq!(found.primitive, PrimitiveIndex::new(1), "pixel ({x}, {y})");
                 on_occluder += 1;
                 continue;
             }
-            assert_eq!(found.primitive, 0, "pixel ({x}, {y})");
+            assert_eq!(found.primitive, PrimitiveIndex::new(0), "pixel ({x}, {y})");
             if predicted_shadow {
                 assert_eq!(value, ZERO3, "pixel ({x}, {y}) should be in shadow");
                 shadowed += 1;
@@ -675,7 +677,7 @@ fn the_chosen_traversal_matches_closest_hit_on_the_plain_tree() {
                 let chosen = scene.closest(&ray).expect("traces");
                 assert_eq!(
                     chosen.map(|h| (h.primitive, h.hit.distance)),
-                    plain.map(|h| (h.primitive, h.distance)),
+                    plain.map(|h| (PrimitiveIndex::new(h.primitive), h.distance)),
                     "pixel ({x}, {y}) sample {sample}"
                 );
                 hits += usize::from(chosen.is_some());
@@ -793,7 +795,7 @@ fn means_over_256_and_1024_samples_agree() {
     for ((x, y), primitives, in_shadow) in cases {
         let ray = cam.ray(settings(1, 0).sampler(x, y).camera_sample(0)).expect("ray");
         let hit = scene.closest(&ray).expect("traces").expect("sees a surface");
-        assert!(primitives.contains(&hit.primitive), "pixel ({x}, {y}): {hit:?}");
+        assert!(primitives.contains(&hit.primitive.get()), "pixel ({x}, {y}): {hit:?}");
         let h = SurfaceHit::new(scene.surface(hit.primitive).expect("surface"), &ray, &hit.hit)
             .expect("start point");
         let shadow = h.light_sample(&sun);
@@ -833,20 +835,28 @@ fn the_camera_sees_the_bunny_where_it_was_placed() {
     }
     for (x, y) in [(5, 12), (8, 15)] {
         let hit = scene.closest(&centre_ray(&scene, x, y)).expect("traces").expect("a hit");
-        assert!(hit.primitive <= 1, "pixel ({x}, {y}) sees {}", hit.primitive);
+        assert!(hit.primitive <= PrimitiveIndex::new(1), "pixel ({x}, {y}) sees {}", hit.primitive);
     }
     let hit = scene.closest(&centre_ray(&scene, 15, 9)).expect("traces").expect("a hit");
-    assert!((12..27_660).contains(&hit.primitive), "the sphere's pixel sees {}", hit.primitive);
+    assert!(
+        (12..27_660).contains(&hit.primitive.get()),
+        "the sphere's pixel sees {}",
+        hit.primitive
+    );
 }
 
 /// Whether the reference sun reaches the ground at `(x, z)`, and the primitive its shadow ray
 /// meets first, if any. The ground point is reached by a ray straight down from one unit above
 /// it, so the shadow ray starts at Bunny's start point as in a render.
-fn sun_at_ground(scene: &Scene, x: FixedQ32_32, z: FixedQ32_32) -> (bool, Option<u32>) {
+fn sun_at_ground(scene: &Scene, x: FixedQ32_32, z: FixedQ32_32) -> (bool, Option<PrimitiveIndex>) {
     let ground_y = raw(-9 * (ONE_RAW / 8));
     let down = TraceRay::new(vec3(x, ground_y + units(1), z), point(0, -1, 0)).expect("ray");
     let hit = scene.closest(&down).expect("traces").expect("the ground");
-    assert!(hit.primitive <= 1, "the downward ray at ({x:?}, {z:?}) met {}", hit.primitive);
+    assert!(
+        hit.primitive <= PrimitiveIndex::new(1),
+        "the downward ray at ({x:?}, {z:?}) met {}",
+        hit.primitive
+    );
     let h = SurfaceHit::new(scene.surface(hit.primitive).expect("surface"), &down, &hit.hit)
         .expect("start point");
     // Bunny's start point is on the ground or up to two raw units above it.

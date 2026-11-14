@@ -36,9 +36,16 @@ fn scene_construction_refuses_bad_input() {
     let fine = at(0, 0, 0);
     let good = [fine, at(U, 0, 0), at(0, U, 0)];
     let triangles = [good, [fine, far, at(0, U, 0)]];
-    assert_eq!(spec(&triangles, &[0, 0]), Some(SceneError::OutsideTraceDomain { primitive: 1 }));
+    let second = PrimitiveIndex::new(1);
+    assert_eq!(
+        spec(&triangles, &[0, 0]),
+        Some(SceneError::OutsideTraceDomain { primitive: second })
+    );
     assert_eq!(spec(&[good], &[]), Some(SceneError::MaterialCount));
-    assert_eq!(spec(&[good, good], &[0, 1]), Some(SceneError::UnknownMaterial { primitive: 1 }));
+    assert_eq!(
+        spec(&[good, good], &[0, 1]),
+        Some(SceneError::UnknownMaterial { primitive: second })
+    );
     // A zero-area triangle is accepted and has no surface.
     let flat = [fine, fine, at(U, 0, 0)];
     let built = Scene::new(&SceneSpec {
@@ -50,7 +57,9 @@ fn scene_construction_refuses_bad_input() {
     })
     .expect("builds");
     // `good` winds counter-clockwise seen from +Z, so its unit normal is exactly +Z.
-    let normal = |primitive| built.surface(primitive).map(|surface| surface.frame().normal());
+    let normal = |primitive| {
+        built.surface(PrimitiveIndex::new(primitive)).map(|surface| surface.frame().normal())
+    };
     assert_eq!(normal(0), Some(at(0, 0, U)));
     assert_eq!(normal(1), None);
     assert_eq!(normal(2), None);
@@ -125,10 +134,40 @@ fn a_one_triangle_scene_traces() {
     assert!(scene.tree.nodes.is_empty());
     let toward = TraceRay::new(at(0, 0, 4 * U), at(0, 0, -U)).expect("ray");
     let hit = scene.closest(&toward).expect("traces").expect("hits");
-    assert_eq!((hit.primitive, hit.hit.distance, hit.hit.front_face), (0, grid(4 * U), true));
+    let first = PrimitiveIndex::new(0);
+    assert_eq!((hit.primitive, hit.hit.distance, hit.hit.front_face), (first, grid(4 * U), true));
     assert!(scene.occluded(&toward, FAR).expect("traces"));
     assert!(!scene.occluded(&toward, grid(4 * U - 1)).expect("traces"));
     let away = TraceRay::new(at(0, 0, 4 * U), at(0, 0, U)).expect("ray");
     assert_eq!(scene.closest(&away).expect("traces"), None);
     assert!(!scene.occluded(&away, FAR).expect("traces"));
+}
+
+/// Of two triangles hit at the same distance the lower primitive index wins, so the order of
+/// `SceneSpec::triangles` is part of what a scene is: the same two coincident triangles, each
+/// with its own material, listed in the other order give the hit the other triangle's albedo.
+/// The oracle is the `Tracer::closest` contract and the materials as given.
+#[test]
+fn coincident_triangles_resolve_to_the_lowest_index_so_order_matters() {
+    let red = Albedo::new([per_256(200), per_256(0), per_256(0)]).expect("valid");
+    let blue = Albedo::new([per_256(0), per_256(0), per_256(200)]).expect("valid");
+    let big = [at(-U, -U, 0), at(U, -U, 0), at(0, U, 0)];
+    let small = [at(-U / 2, -U / 2, 0), at(U / 2, -U / 2, 0), at(0, U / 2, 0)];
+    let toward = TraceRay::new(at(0, 0, 4 * U), at(0, 0, -U)).expect("ray");
+    let first_hit = |triangles: &[[FixedVec3; 3]], material_of: &[u32]| {
+        let scene = Scene::new(&SceneSpec {
+            triangles,
+            material_of,
+            materials: &[red, blue],
+            lighting: dark(),
+            camera: reference_camera(),
+        })
+        .expect("builds");
+        let hit = scene.closest(&toward).expect("traces").expect("hits");
+        (hit.primitive, hit.hit.distance, scene.albedo(hit.primitive).copied())
+    };
+    let first = PrimitiveIndex::new(0);
+    // Big is red, small is blue, in either order.
+    assert_eq!(first_hit(&[big, small], &[0, 1]), (first, grid(4 * U), Some(red)));
+    assert_eq!(first_hit(&[small, big], &[1, 0]), (first, grid(4 * U), Some(blue)));
 }

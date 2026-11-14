@@ -21,7 +21,10 @@ use bunny_geom::FixedAabb3;
 use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
 use bunny_query::{TraceRay, TraceTriangle};
-use lumen::{reference_scene, trace_path, Hit, RenderSettings, Scene, TraceError, Tracer, FAR};
+use lumen::{
+    reference_scene, trace_path, Hit, PrimitiveIndex, RenderSettings, Scene, TraceError, Tracer,
+    FAR,
+};
 
 type Builder = fn(&mut [BvhNode], &mut [u32], &[FixedAabb3]) -> Option<usize>;
 
@@ -72,7 +75,8 @@ fn closest_from(
     let Some(found) = found.map_err(TraceError::Traversal)? else { return Ok(None) };
     let triangle = &triangles[found.primitive as usize];
     let hit = ray.hit_triangle(triangle, found.distance, found.distance);
-    Ok(Some(Hit { primitive: found.primitive, hit: hit.ok_or(TraceError::InconsistentHit)? }))
+    let primitive = PrimitiveIndex::new(found.primitive);
+    Ok(Some(Hit { primitive, hit: hit.ok_or(TraceError::InconsistentHit)? }))
 }
 
 impl Tracer for Plain<'_> {

@@ -7,6 +7,8 @@ use bunny_broadphase::TraversalError;
 use bunny_num::FixedQ32_32;
 use bunny_query::{TraceRay, TriangleHit};
 
+use super::PrimitiveIndex;
+
 /// The farthest distance a camera or bounce ray searches: no limit, raw `i64::MAX`.
 pub const FAR: FixedQ32_32 = FixedQ32_32::from_raw(i64::MAX);
 
@@ -14,7 +16,7 @@ pub const FAR: FixedQ32_32 = FixedQ32_32::from_raw(i64::MAX);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Hit {
     /// The primitive index of the triangle.
-    pub primitive: u32,
+    pub primitive: PrimitiveIndex,
     /// Bunny's `TriangleHit` for that triangle: the distance (a multiple of the ray's
     /// direction, floored) and the facing.
     pub hit: TriangleHit,

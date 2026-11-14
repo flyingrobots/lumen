@@ -20,12 +20,14 @@ use bunny_query::TraceTriangle;
 
 use crate::mesh::PlaceError;
 
+mod primitive_index;
 mod tracer;
 mod tree;
 
 #[cfg(test)]
 mod tests;
 
+pub use primitive_index::PrimitiveIndex;
 pub use tracer::{Hit, TraceError, Tracer, FAR};
 use tree::{build_tree, Tree};
 
@@ -112,14 +114,14 @@ pub enum SceneError {
     /// (`abs(raw) >= 2^40`, 256 units).
     OutsideTraceDomain {
         /// The primitive index of the triangle.
-        primitive: usize,
+        primitive: PrimitiveIndex,
     },
     /// `material_of` does not have one entry per triangle.
     MaterialCount,
     /// The triangle at this primitive index names a material that does not exist.
     UnknownMaterial {
         /// The primitive index of the triangle.
-        primitive: usize,
+        primitive: PrimitiveIndex,
     },
     /// The bounding volume hierarchy could not be built or converted.
     BvhBuild,
@@ -236,8 +238,11 @@ impl Scene {
         let mut triangles = reserved(count)?;
         let mut surfaces = reserved(count)?;
         let mut boxes: Vec<FixedAabb3> = reserved(count)?;
-        for (primitive, (&[v0, v1, v2], &material)) in
-            spec.triangles.iter().zip(spec.material_of).enumerate()
+        // `count <= u32::MAX`, so every triangle gets its index; the inclusive range cannot
+        // overflow while it is zipped.
+        let indices = (0..=u32::MAX).map(PrimitiveIndex::new);
+        for ((&[v0, v1, v2], &material), primitive) in
+            spec.triangles.iter().zip(spec.material_of).zip(indices)
         {
             let triangle = TraceTriangle::new(v0, v1, v2)
                 .ok_or(SceneError::OutsideTraceDomain { primitive })?;
@@ -274,14 +279,14 @@ impl Scene {
     /// The prepared surface of the triangle at `primitive`, or `None` for an index out of range
     /// or a zero-area triangle.
     #[must_use]
-    pub fn surface(&self, primitive: u32) -> Option<&TriangleSurface> {
-        self.surfaces.get(usize::try_from(primitive).ok()?)?.as_ref()
+    pub fn surface(&self, primitive: PrimitiveIndex) -> Option<&TriangleSurface> {
+        self.surfaces.get(primitive.to_usize()?)?.as_ref()
     }
 
     /// The albedo of the triangle at `primitive`, or `None` for an index out of range.
     #[must_use]
-    pub fn albedo(&self, primitive: u32) -> Option<&Albedo> {
-        let material = *self.material_of.get(usize::try_from(primitive).ok()?)?;
+    pub fn albedo(&self, primitive: PrimitiveIndex) -> Option<&Albedo> {
+        let material = *self.material_of.get(primitive.to_usize()?)?;
         self.materials.get(usize::try_from(material).ok()?)
     }
 

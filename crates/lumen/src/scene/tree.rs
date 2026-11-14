@@ -10,7 +10,7 @@ use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
 use bunny_query::{TraceRay, TraceTriangle};
 
-use super::{reserved, Hit, Scene, SceneError, TraceError, Tracer, FAR};
+use super::{reserved, Hit, PrimitiveIndex, Scene, SceneError, TraceError, Tracer, FAR};
 
 /// A compact BVH: its root, its nodes and the primitive-index buffer its leaves refer to.
 #[derive(Clone, Debug)]
@@ -29,8 +29,9 @@ impl Scene {
         }
     }
 
+    /// The triangle Bunny's traversal names by its raw `u32` primitive index.
     fn triangle(&self, primitive: u32) -> Option<&TraceTriangle> {
-        self.triangles.get(usize::try_from(primitive).ok()?)
+        self.triangles.get(PrimitiveIndex::new(primitive).to_usize()?)
     }
 }
 
@@ -49,7 +50,7 @@ impl Tracer for Scene {
         let hit = ray
             .hit_triangle(triangle, found.distance, found.distance)
             .ok_or(TraceError::InconsistentHit)?;
-        Ok(Some(Hit { primitive: found.primitive, hit }))
+        Ok(Some(Hit { primitive: PrimitiveIndex::new(found.primitive), hit }))
     }
 
     /// Bunny's `compact_any_hit` over the scene's tree with `TraceRay::hit_triangle` (`t_min`
