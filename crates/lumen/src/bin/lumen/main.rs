@@ -26,8 +26,8 @@ use std::time::Instant;
 use cli::{Command, Detail, USAGE};
 use failure::Failure;
 use lumen::{
-    render_scheduled, render_traced_with_traversal, BuiltinScene, ImageSize, RenderProvenance,
-    RenderSettings, Schedule, BUNNY_REV, MAX_THREADS,
+    render_traced_with_traversal, render_view, BuiltinScene, ImageSize, RenderProvenance,
+    RenderSettings, Schedule, View, BUNNY_REV, MAX_THREADS,
 };
 use publish::Disk;
 use report::{Report, Times};
@@ -48,11 +48,11 @@ fn command(args: impl Iterator<Item = OsString>) -> Result<(), Failure> {
         Command::Help => println!("{USAGE}"),
         Command::Version => println!("lumen {} (bunny {BUNNY_REV})", env!("CARGO_PKG_VERSION")),
         Command::Stats { scene } => describe(scene)?,
-        Command::Render { scene, width, height, settings, threads, band, out, detail } => {
+        Command::Render { scene, width, height, settings, threads, band, out, detail, view } => {
             let threads = threads.unwrap_or_else(available_threads);
             let schedule = Schedule::new(threads, band).map_err(Failure::Threads)?;
             let size = ImageSize::new(width, height).map_err(Failure::Size)?;
-            run(scene, size, settings, schedule, out.as_deref(), detail)?;
+            run(Job { scene, view, size, settings, schedule }, out.as_deref(), detail)?;
         }
     }
     Ok(())
@@ -75,20 +75,23 @@ fn describe(scene: BuiltinScene) -> Result<(), Failure> {
     stats::write_stats(&mut stdout, scene.id(), &built, &statistics).map_err(Failure::Stdout)
 }
 
+/// What to render: the scene, the view, the size, the settings and the schedule.
+struct Job {
+    scene: BuiltinScene,
+    view: View,
+    size: ImageSize,
+    settings: RenderSettings,
+    schedule: Schedule,
+}
+
 /// Builds the chosen scene, checks that the PNG can be written if asked, renders it, hashes the
 /// image, publishes the PNG, and prints
 /// what was made and how long each part took.
 ///
 /// The times are wall-clock readings of a monotonic clock (`Instant`), taken around each part;
 /// they are printed and never reach the image.
-fn run(
-    scene: BuiltinScene,
-    size: ImageSize,
-    settings: RenderSettings,
-    schedule: Schedule,
-    out: Option<&Path>,
-    detail: Detail,
-) -> Result<(), Failure> {
+fn run(job: Job, out: Option<&Path>, detail: Detail) -> Result<(), Failure> {
+    let Job { scene, view, size, settings, schedule } = job;
     let started = Instant::now();
     let built_scene = scene.build().map_err(Failure::Scene)?;
     if let Some(path) = out {
@@ -101,7 +104,7 @@ fn run(
     // nothing for run or traversal statistics (ADR 0008).
     let (render, counted) = match detail {
         Detail::Report => (
-            render_scheduled(&built_scene, size, settings, schedule).map_err(Failure::Render)?,
+            render_view(&built_scene, view, size, settings, schedule).map_err(Failure::Render)?,
             None,
         ),
         Detail::Statistics => {
@@ -131,7 +134,8 @@ fn run(
         total,
     };
     let report = Report {
-        provenance: RenderProvenance::named(scene.id(), &built_scene, size, settings),
+        provenance: RenderProvenance::named(scene.id(), &built_scene, size, settings)
+            .with_view(view),
         schedule,
         workers: schedule.workers(size),
         rays: render.rays,

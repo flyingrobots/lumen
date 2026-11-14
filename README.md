@@ -405,6 +405,31 @@ tree.leaf-sizes 2778 12708 931 131 0
 memory.total-bytes 11432728 (information only: this build's type sizes)
 ```
 
+## Debug views
+
+`lumen render --view NAME` draws a debug view of the scene instead of the lit image, through the
+same threads and bands, so a view is the same bytes at every thread count and band height:
+
+```sh
+python3 $D lumen ~/git/lumen --worktree -- cargo run --locked --release -q -p lumen -- \
+  render --scene fixed-point --view shading-normals --width 640 --height 360 --out /scratch/out/n.png
+```
+
+| View | Identity | Pixel |
+| --- | --- | --- |
+| `lit` (default) | the scene's integrator | the lit image, exactly as without `--view` |
+| `normals` | `lumen-view-normals/1` | the first hit's geometric normal `(x, y, z)` as `128 + round(127 * (x, y, z))` on a front face and `128 + round(63 * (x, y, z))` on a back face (dimmer and greyer); black where the ray hits nothing |
+| `shading-normals` | `lumen-view-shading-normals/1` | the same map of the interpolated vertex normal (Bunny's `smooth_normal`) on a triangle with all three vertex normals, and of the geometric normal elsewhere; magenta where the vertex normals cancel |
+
+A debug view traces one ray through each pixel's centre, so it takes `--samples 1` only (its
+default) and does not depend on `--seed`. `--stats` describes the lit image's paths and is refused
+with a debug view. The report's `integrator` line is the view's identity, `shading` the Bunny
+contracts it uses (`none` for `normals`), and `samples 1` and `bounces 0`. Every other line is
+as for the lit image. `make views` renders both views of every built-in scene into `out/`. The
+library function is `render_view`, and `RenderProvenance::with_view` gives the provenance.
+[ADR 0009](docs/adr/0009-debug-views.md) records the design and the views not built yet
+(`depth`, the IDs, `wireframe`, `bvh-cost`, `gray-box` and the lighting terms).
+
 ## The reference scene
 
 `lumen-reference-scene/3` is built in `crates/lumen/src/reference/`, entirely in Q32.32 integers

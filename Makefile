@@ -10,6 +10,7 @@
 #   make 4k              the reference scene at 3840x2160, 16 samples
 #   make 4k-fixed-point  the Fixed Point scene at 3840x2160, 64 samples
 #   make 4k-canyon       the canyon scene at 3840x2160, 16 samples
+#   make views           the debug views (normals, shading-normals) of every built-in scene
 #   make test            the test suite, debug and release
 #   make nondeterminism  the nondeterminism scan (ADR 0006)
 #   make clippy-bans     the check that every clippy.toml ban resolves and fires (ADR 0006)
@@ -31,7 +32,9 @@ OPEN    ?= 1
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 RUN   = python3 $(DEVRUN) lumen $(ROOT) --worktree --fetch --cpus $(CPUS) --memory $(MEMORY)
 
-.PHONY: help demo reference fixed-point canyon 4k 4k-fixed-point 4k-canyon test nondeterminism clippy-bans check-devrun
+VIEWS  ?= normals shading-normals
+
+.PHONY: views help demo reference fixed-point canyon 4k 4k-fixed-point 4k-canyon test nondeterminism clippy-bans check-devrun
 
 help:
 	@sed -n '1,/^$$/p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
@@ -70,6 +73,18 @@ demo: reference fixed-point canyon
 
 4k-canyon: check-devrun
 	$(call render,canyon,canyon-3840x2160-16spp,3840,2160,16)
+
+# Every debug view of every built-in scene, in one container run: out/views/<scene>-<view>.png.
+views: check-devrun
+	@mkdir -p $(OUT)/views
+	@tmp=$$(mktemp -d) && \
+	$(RUN) --export views --out $$tmp -- bash -c 'mkdir -p /scratch/out/views && \
+	  cargo build --locked --release -q -p lumen && \
+	  for s in reference fixed-point canyon; do for v in $(VIEWS); do \
+	    /target/release/lumen render --scene $$s --view $$v --width $(WIDTH) --height $(HEIGHT) \
+	      --out /scratch/out/views/$$s-$$v.png > /dev/null || exit 1; done; done' && \
+	mv $$tmp/views/*.png $(OUT)/views/ && rm -rf $$tmp; \
+	echo "wrote $(OUT)/views"
 
 test: check-devrun
 	$(RUN) -- bash -c 'cargo test --locked --workspace && cargo test --locked --workspace --release'

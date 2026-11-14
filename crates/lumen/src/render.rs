@@ -440,7 +440,7 @@ fn run_statistics<V: Copy>(
 
 /// A worker's failure as the render's: the pixel and its path error, or the reservation or
 /// spawn that failed.
-fn render_error(error: WorkerError<PathError>) -> RenderError {
+pub(crate) fn render_error(error: WorkerError<PathError>) -> RenderError {
     match error {
         WorkerError::Pixel { x, y, error } => RenderError::Pixel { x, y, error },
         WorkerError::OutOfMemory { reserving, error } => {

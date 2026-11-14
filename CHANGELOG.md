@@ -8,6 +8,18 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Debug views (part of flyingrobots/lumen#16, ADR 0009): `lumen render --view NAME` and the
+  library's `render_view` draw `normals` (`lumen-view-normals/1`, the first hit's geometric normal
+  as colour, back faces at half amplitude) or `shading-normals` (`lumen-view-shading-normals/1`,
+  Bunny's `smooth_normal` of a triangle's vertex normals at the hit) through the same scheduler
+  as the lit image. A view is one ray through each pixel's centre: the command takes `--samples
+  1` only with one and refuses `--stats`. `RenderProvenance::with_view` records a view as the
+  `integrator`, with its contracts as `shading`, `samples 1` and `bounces 0`. `lit`, the default,
+  is `render_scheduled` itself: its bytes, its provenance and every golden hash are unchanged.
+  Each view has a golden hash for each built-in scene at 96 by 54, checked at 1, 2, 4 and 18
+  threads and two band heights, and hand-derived pixels on a constructed triangle (front, back,
+  miss, an interpolated normal and the fallback). `make views` renders them.
+
 - `lumen render --stats` prints the traversal work of each kind of ray (closes
   flyingrobots/lumen#29, ADR 0008): after the ray lines and before the run lines, for camera,
   bounce and shadow rays, `traversal.KIND.COUNTER` (the total), `-mean` (per ray of that kind, two

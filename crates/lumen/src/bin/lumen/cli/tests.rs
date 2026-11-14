@@ -24,7 +24,8 @@ fn render_with_defaults_and_options() {
             threads: None,
             band: DEFAULT_BAND_ROWS,
             out: Some("a.png".into()),
-            detail: Detail::Report
+            detail: Detail::Report,
+            view: View::Lit,
         })
     );
     assert_eq!(
@@ -37,7 +38,8 @@ fn render_with_defaults_and_options() {
             threads: None,
             band: DEFAULT_BAND_ROWS,
             out: Some("b.png".into()),
-            detail: Detail::Report
+            detail: Detail::Report,
+            view: View::Lit,
         })
     );
     assert_eq!(
@@ -50,7 +52,8 @@ fn render_with_defaults_and_options() {
             threads: None,
             band: DEFAULT_BAND_ROWS,
             out: Some("c".into()),
-            detail: Detail::Report
+            detail: Detail::Report,
+            view: View::Lit,
         })
     );
     assert_eq!(
@@ -63,7 +66,8 @@ fn render_with_defaults_and_options() {
             threads: Some(7),
             band: BandRows::new(8).expect("valid"),
             out: None,
-            detail: Detail::Report
+            detail: Detail::Report,
+            view: View::Lit,
         })
     );
     assert_eq!(
@@ -76,7 +80,8 @@ fn render_with_defaults_and_options() {
             threads: Some(256),
             band: BandRows::new(64).expect("valid"),
             out: None,
-            detail: Detail::Report
+            detail: Detail::Report,
+            view: View::Lit,
         })
     );
     assert_eq!(parse_str("--help"), Ok(Command::Help));
@@ -295,5 +300,35 @@ fn stats_is_a_flag_of_render() {
     assert_eq!(
         parse_str("render --stats=json"),
         Err(UsageError::UnknownOption("--stats=json".into()))
+    );
+}
+
+/// Oracle: the view names as `View::name` gives them, and the single-sample rule of ADR 0009: a
+/// debug view defaults to one sample and refuses any other, and refuses `--stats`; `lit` keeps
+/// the lit defaults.
+#[test]
+fn view_selects_a_debug_view_of_one_sample() {
+    let parsed = |line: &str| match parse_str(line) {
+        Ok(Command::Render { view, settings, .. }) => Ok((view, settings.samples_per_pixel())),
+        Ok(other) => panic!("{other:?}"),
+        Err(error) => Err(error),
+    };
+    assert_eq!(parsed("render"), Ok((View::Lit, 4)));
+    assert_eq!(parsed("render --view lit --samples 16"), Ok((View::Lit, 16)));
+    assert_eq!(parsed("render --view normals"), Ok((View::Normals, 1)));
+    assert_eq!(parsed("render --view=shading-normals --samples 1"), Ok((View::ShadingNormals, 1)));
+    assert_eq!(
+        parsed("render --view normals --samples 4"),
+        Err(UsageError::ViewSamples { view: View::Normals, samples: 4 })
+    );
+    assert_eq!(
+        parsed("render --view normals --stats"),
+        Err(UsageError::ViewStatistics(View::Normals))
+    );
+    assert_eq!(parsed("render --view normals --view lit"), Err(UsageError::Repeated("--view")));
+    let unknown = parsed("render --view Normals").expect_err("refused");
+    assert_eq!(
+        unknown.to_string(),
+        "--view: unknown view \"Normals\"; the views are lit, normals, shading-normals"
     );
 }
