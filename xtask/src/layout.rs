@@ -4,8 +4,8 @@
 //! A file is a test file when every declaration that reaches it is under `#[cfg(test)]` (on the
 //! `mod` item, on an enclosing inline module, or as the file's own `#![cfg(test)]`), or, when no
 //! root reaches it, when it is under the crate's `tests/` directory; its name does not matter.
-//! The deterministic core is every file the `lumen` library compiles outside tests, and every
-//! other source file under its `src/` but outside `src/bin/`.
+//! The deterministic core is every file the deterministic crates' libraries ([`crate::workspace`])
+//! compile outside tests, and every other source file under their `src/` but outside `src/bin/`.
 //!
 //! The gates read only `.rs` files under the roots, so the forms that make the compiler read
 //! anything else fail ([`Layout::failures`]): `include!`, a `#[path]` naming a file the gates do
@@ -17,10 +17,8 @@ mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::workspace::Library;
 use parse::parse;
-
-/// The `lumen` library's crate root, whose non-test modules are the deterministic core.
-pub(crate) const LIBRARY: &str = "crates/lumen/src/lib.rs";
 
 /// What a file is compiled as. `Source` outranks `Test`: a file reached both ways is source.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -47,6 +45,8 @@ pub(crate) struct Failure {
 pub(crate) struct Layout {
     roles: BTreeMap<String, Role>,
     library: BTreeSet<String>,
+    /// The directories of the deterministic crates.
+    library_dirs: Vec<String>,
     /// Each a form that pulls in a file the gates do not read.
     pub(crate) failures: BTreeSet<Failure>,
 }
@@ -83,8 +83,12 @@ struct Parsed {
 impl Layout {
     /// The layout of `files` (path and text, paths relative to the repository root with `/`):
     /// every `.rs` file the gates read, and nothing else. Its crates are the directories
-    /// `crates` (each holding a `Cargo.toml`).
-    pub(crate) fn new(files: &[(String, String)], crates: &[String]) -> Self {
+    /// `crates` (each holding a `Cargo.toml`); `libraries` are the deterministic crates.
+    pub(crate) fn new(
+        files: &[(String, String)],
+        crates: &[String],
+        libraries: &[Library],
+    ) -> Self {
         let text: BTreeMap<&str, &str> =
             files.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
         let mut walk = Walk {
@@ -93,7 +97,9 @@ impl Layout {
             seen: BTreeMap::new(),
             failures: BTreeSet::new(),
         };
-        walk.visit(LIBRARY, Role::Source, true);
+        for library in libraries {
+            walk.visit(&library.root, Role::Source, true);
+        }
         let library = walk.roles.iter().filter(|(_, r)| **r == Role::Source);
         let library: BTreeSet<String> = library.map(|(p, _)| p.clone()).collect();
         for (path, _) in files {
@@ -109,7 +115,8 @@ impl Layout {
             let mod_rs = path.ends_with("/mod.rs");
             walk.visit(path, if in_tests { Role::Test } else { Role::Source }, mod_rs);
         }
-        Layout { roles: walk.roles, library, failures: walk.failures }
+        let library_dirs = libraries.iter().map(|l| l.dir.clone()).collect();
+        Layout { roles: walk.roles, library, library_dirs, failures: walk.failures }
     }
 
     /// The role of `path`.
@@ -119,8 +126,10 @@ impl Layout {
 
     /// Whether `path` is in the deterministic core.
     pub(crate) fn is_core(&self, path: &str) -> bool {
-        let in_library =
-            path.starts_with("crates/lumen/src/") && !path.starts_with("crates/lumen/src/bin/");
+        let in_library = self.library_dirs.iter().any(|dir| {
+            path.starts_with(&format!("{dir}/src/"))
+                && !path.starts_with(&format!("{dir}/src/bin/"))
+        });
         self.library.contains(path) || (in_library && self.role(path) == Role::Source)
     }
 }

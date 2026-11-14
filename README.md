@@ -131,12 +131,18 @@ directory is missing or not writable, it is a directory or a link to one, it is 
 it has no file name) is refused with status 1 and a message that names the path, without computing a
 pixel and without leaving anything behind.
 
-The PNG is then written to a temporary file in the destination's directory, `.NAME.lumen-PID-N.tmp`
-(created exclusively, so it never replaces another file and two runs never share one), flushed,
+The PNG is then written to a temporary file in the destination's directory,
+`.PREFIX.lumen-PID-N.tmp` (created exclusively, so it never replaces another file and two runs
+never share one), flushed,
 `sync_all`ed and renamed over the destination. If any step fails the temporary file is removed and
 the destination is exactly as it was: a failed write (a full disk, a size limit) no longer leaves a
 truncated file or destroys the one that was there. A temporary file that cannot be removed is
-named in the error.
+named in the error. `PREFIX` is the destination's file name cut to at most 32 bytes at a
+character boundary, so the temporary name is at most 57 bytes whatever the destination's length:
+any destination name the file system accepts, up to the 255 bytes of ext4, APFS and NTFS, can be
+published. What remains is the whole path's limit: when the destination's name is shorter than
+the temporary one, a path within that difference of the system's limit (4 096 bytes on Linux) is
+refused before rendering, though the destination itself could be created.
 
 - Durability: on Unix the directory is synced after the rename, so the new name survives a crash;
   if that sync fails the error says the file was written but its directory could not be synced (the
@@ -195,7 +201,10 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   a scene without a name) gives every field that decides the image's bytes, and `fields()` lists
   them by name in a fixed order: `scene` (the name), `integrator`, `shading`, `sampler`, `tone`,
   `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed`, `bounces`, `scene-content` (the
-  scene's content identity, below). New fields are added at the end. Equal provenance means equal bytes. The thread count, the band height, the
+  scene's content identity, below). New fields are added at the end. Two scheduled renders
+  (`render`, `render_scheduled`, or `render_traced` with the scene as its own tracer) with equal
+  provenance have equal bytes; a caller-supplied `Tracer` is not described by the provenance, so a
+  render through one is outside that promise. The thread count, the band height, the
   output file and the wall-clock times do not change a pixel, so they are not provenance. The
   command prints them from its own report (`crates/lumen/src/bin/lumen/report.rs`), after the
   provenance, the ray count and the image hash.
@@ -284,8 +293,12 @@ through the public API and checks its values and its chain.
   computes and checks it once, at most `2^29`.
 - **Arithmetic** on sizes, sample counts, band heights and ray counts is checked or
   saturating, each with the bound that keeps it exact stated beside it, and values reach wider
-  types through `From` or `try_from`, not `as`; the one `as` left on such a value is `widen`
-  (`u32` to `usize`, lossless under a compile-time assertion, behind a scoped lint exception).
+  types through `From` or `try_from`, not `as`. In the library the one `as` left on such a value
+  is `widen` (`u32` to `usize`, lossless under a compile-time assertion, behind a scoped lint
+  exception); the command converts the ray count to `f64` with `as` for the information-only
+  `rays-per-second` and `ns-per-ray`, also behind a scoped exception. Two constant expressions
+  use `as` on a small literal: `png.rs` builds its CRC table on an index below 256, and the
+  canyon's planet sizes an array by `PLANET_BANDS as usize` (8).
 - `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
   `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `CanyonError`,
   `HeightfieldError`, `BuiltinSceneError` and `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
@@ -712,12 +725,18 @@ its four corners' mean height in bands 1.5 units thick picks material 0, 1, 0, 2
 hull and dark engine blocks built from convex solids (`convex`: corners and faces, each face a
 fan wound away from the solid's centre), drawn nose toward `-Z` in 64ths of 3 units and posed
 by rational rotations (a bank about `+Z`, then a heading about `+Y`, each coordinate floored to
-the grid): the skiff (a hexagonal hull with a pointed nose, straight swept wings and a fin,
+the grid; a `Rational` is built only by `Rational::new`, which refuses a denominator that is not
+positive or numerators off the rule `cos^2 + sin^2 = hyp^2`, and `Pose::place` refuses a point
+whose posed coordinates leave `i64`, both with a `PoseError`): the skiff (a hexagonal hull with a pointed nose, straight swept wings and a fin,
 orange) high at `(-2.5, 7, -10)`, banked by `-atan(7/24)` and turned by `atan(7/24)`; the tug (a
 wedge tapering to a narrow nose between two pontoons joined by a short wing, cream) at
 `(-7.5, 5.5, -15)`, banked and turned by `-atan(7/24)`; and the kite (a flat diamond wing with
 two engine pods, teal) leading low at `(-5.5, 4, -24)`, banked by `atan(7/24)`. `push_craft`
-appends them to a `CanyonContent` in that order, each its hull then its engines.
+appends them to a `CanyonContent` in that order, each its hull then its engines
+(`CanyonError::Craft` if a corner does not pose; a test shows every one does). Tests
+(`crates/lumen/tests/canyon/pose.rs`): the rotations admitted and refused on triples worked by
+hand, every craft's rotation built by `Rational::new`, points turned, floored and moved by hand,
+and a point whose coordinates would leave `i64` refused.
 
 **The planet** (16 128 triangles, `scenes::canyon::planet`): a sphere of radius 22 centred at
 `(-44, 48, -200)`, 128 longitudes by 64 latitude rows, its points from Bunny's table-based
@@ -815,9 +834,10 @@ reimplemented, is:
 6. **Shelves**: each `Shelf` cuts the rock in its rectangle down to its height, leaving a level
    ledge whose edges stay rough where the rock was already lower.
 
-`HeightfieldSpec::bounds` states the range every height lies in; `generate` refuses a spec
-outside its stated ranges (`HeightfieldError`, naming the parameter) before computing anything,
-and those ranges keep every product inside `i64`. Any change to the steps, their constants or
+`HeightfieldSpec::bounds` states the range every height lies in and `HeightfieldSpec::centre_256`
+the centre line of a row; `generate` refuses a spec outside its stated ranges
+(`HeightfieldError`, naming the parameter) before computing anything, and so do `bounds` and
+`centre_256`, with the same error. Those ranges keep every product inside `i64`. Any change to the steps, their constants or
 their order is a new version of the generator.
 
 Tests (`crates/lumen/tests/canyon/heightfield.rs`): exact values on tiny grids, from SplitMix64's
@@ -825,9 +845,15 @@ published first output and from an independent Python model of the documented al
 3 grid, a hand-worked profile, and the sum, weighted sum, extremes and two vertices of a 64 by 96
 canyon with every step in use); determinism; every height within the stated bounds; the channel
 (the floor at the centre line below every plateau vertex of its row by a stated margin); a wall
-smooth to within its slope where the centre line bends; the shelf's rule; and each refusal.
-Seeded mutations of the noise blend, the carve's floor width, the centre line's fraction and the
-shelf's rule each fail at least one of them.
+smooth to within its slope where the centre line bends; the shelf's rule; the bounds worked by
+hand where the plateau's weight is the largest and where the spread is not a whole step; no
+height past the grid's edge. `crates/lumen/tests/canyon/limits.rs`: each refusal, every
+`HeightfieldError` variant but `OutOfMemory` (which needs the allocator to fail), reached by a
+constructed spec and given alike by `generate`, `bounds` and `centre_256`; a spec exactly at
+each limit accepted; and the bounds worked by hand at the largest spec the ranges allow. Seeded
+mutations of the noise blend, the carve's floor width, the centre line's fraction, the shelf's
+rule, the bounds' weight and floor, the grid's column check and the helpers' range check each
+fail at least one of them.
 
 ## The integrator
 
@@ -980,9 +1006,18 @@ one mutex, one atomic); there is no `unsafe` and no thread-pool dependency.
 - **Errors**: if a pixel fails (a traversal error, a ray outside Bunny's domain), the render
   returns `RenderError::Pixel` with the coordinates and the `PathError` of the first failing
   pixel in raster order, top row first: the error a
-  one-pixel-at-a-time render in raster order meets, at every thread count and band height. When
-  a pixel in row `y` fails, no worker begins a row from `y` down: every pixel before it is in an
-  earlier row, or earlier in row `y`, which only the failing worker renders. No worker waits on
+  one-pixel-at-a-time render in raster order meets, at every thread count and band height
+  (`every_hand_out_order_reports_the_raster_first_failure` in the simulation,
+  `the_first_failing_pixel_in_raster_order_is_reported_at_every_schedule` and
+  `a_traversal_failure_is_the_same_typed_error_at_every_schedule` on threads). When a pixel in
+  row `y` fails, the failing worker lowers one shared atomic to `y`, and a worker that has
+  observed it begins no row and takes no band from `y` down
+  (`after_a_failure_no_pixel_from_its_row_down_is_rendered`,
+  `after_a_failure_no_band_from_its_row_down_is_handed_out`): every pixel before the failing one
+  is in an earlier row, or earlier in row `y`, which only the failing worker renders. When
+  another worker observes it depends on the scheduler, so this is not a time bound: on several
+  threads the work done after a failure is not bounded by any test; on one thread it is exact
+  (`workers_stop_after_a_failure`). No worker waits on
   another. A panic in the pixel function halts the other workers: each begins no row after it has
   seen the halt (a row already begun finishes; when it sees the halt depends on the scheduler, so
   this is not a time bound), and the panic reaches the caller once every worker has stopped, with

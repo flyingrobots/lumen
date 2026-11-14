@@ -1,6 +1,8 @@
 # ADR 0003: Row bands, results through `join`, and whole-program release builds
 
-Status: accepted (flyingrobots/lumen#28). Supersedes [ADR 0001](0001-tile-scheduling.md).
+Status: accepted (flyingrobots/lumen#28). Supersedes [ADR 0001](0001-tile-scheduling.md). The stop
+rule restated as what is guaranteed (see
+[Clarification, 2026-11-14](#clarification-2026-11-14-what-the-stop-rule-guarantees)).
 
 ## Context
 
@@ -246,3 +248,34 @@ same value before any pixel of it, so it costs one step and computes nothing.
   explains the gap without false sharing, so padding was not tried.
 - **A thread-pool crate** (rayon): as in ADR 0001, a build and supply-chain cost for a mutex and a
   scope.
+
+## Clarification, 2026-11-14: what the stop rule guarantees
+
+Added for flyingrobots/lumen#57; the design is unchanged. "Why work past the failure stops"
+says that once the failure in row `y` is recorded, no worker begins a row from `y` down and none
+takes another band below it. As a statement about time that is too strong: `end` is read with
+relaxed ordering, so a worker on another thread can load the old value just before the failing
+worker lowers it, and begin one more row or take one more band. What the code guarantees, and
+the tests check, is:
+
+- **The reported error is the raster-first failure**, at every thread count, band height and
+  hand-out order (the proof above, which does not depend on when `end` is seen):
+  `every_hand_out_order_reports_the_raster_first_failure` in `crates/lumen/src/workers/tests.rs`
+  under every simulated order, and `the_first_failing_pixel_in_raster_order_is_reported_at_every_schedule`
+  and `a_traversal_failure_is_the_same_typed_error_at_every_schedule` in
+  `crates/lumen/tests/threads.rs` on real threads.
+- **A worker that has observed the failure begins no row at or below it, and takes no band
+  starting there.** Every read of `end` after a worker has seen a lowered value gives that value
+  or a lower one: a relaxed atomic still has one modification order, and `end` only decreases.
+  In the simulation a worker observes the failure at its next step, so the rule is exact there:
+  `after_a_failure_no_pixel_from_its_row_down_is_rendered`. On threads, when a worker observes
+  it depends on the scheduler; no test bounds the work done after a failure on several threads,
+  and on one thread `workers_stop_after_a_failure` counts it exactly.
+
+The band half of the rule is an optimisation with no effect on the image, the ray count or the
+error: a worker that took a band past `end` would leave it at its first row without computing a
+pixel. The evidence section above calls ignoring `end` in `take` an equivalent mutant for that
+reason, and so the pixel-counting tests could not see it. A unit test now checks the hand-out
+itself: after a failure in row `y`, `take` hands out exactly the bands that start above `y`, and
+after a halt none (`after_a_failure_no_band_from_its_row_down_is_handed_out`). That mutant now
+fails it.

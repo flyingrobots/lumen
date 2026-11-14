@@ -68,7 +68,83 @@ All notable changes to lumen are recorded here. The format follows
   constant, `GOLDEN_BUNNY_REV` in `tests/golden/mod.rs`, the commit the golden values were last
   checked at, instead of each its own literal, so a pin move is acknowledged in one place.
 
+- The nondeterminism gate checks the workspace boundary (flyingrobots/lumen#158, ADR 0006's
+  amendment of 2026-11-14): `xtask nondeterminism` reads `cargo metadata` and fails on a workspace
+  member that is neither reached by `lumen`'s normal and build dependencies nor classified as
+  tooling, on a path dependency outside the workspace, on a dependency from anywhere but Bunny's
+  repository at a full commit, and on a build script or procedural macro in a deterministic
+  crate. Before, a second workspace crate with floats, or a `build.rs` setting a `cfg`, decided
+  library behaviour with no finding.
+- The scan reads every deterministic crate's library as core, not only `crates/lumen/src`, and
+  fails a deterministic crate whose root does not deny `clippy::float_arithmetic`, one outside
+  `crates/` and `xtask/`, a member whose manifest sets its own lint levels (a `[lints]` table
+  other than `workspace = true`), a `[patch]` or `[replace]` in the root manifest, and any
+  `.cargo/config.toml` or `.cargo/config` in the repository (flyingrobots/lumen#158).
+
 ### Fixed
+
+- The canyon heightfield's public helpers no longer wrap or panic on a spec the generator
+  would refuse (flyingrobots/lumen#160, the heightfield half). `HeightfieldSpec::bounds` and
+  `HeightfieldSpec::centre_256` now return `Result`, refusing with `generate`'s own
+  `HeightfieldError`: before, `bounds` of a layer of amplitude `i64::MAX` wrapped to a wrong
+  range in release and panicked in debug, and `centre_256` read a meander spacing of 0 as 1 and
+  overflowed past an amplitude of about `2^48`. `terrain::stratum_material` sums the corners in
+  `i128`, so extreme heights no longer overflow. Tests reach every refusal and accept each limit
+  (`tests/canyon/limits.rs`), and kill three generator mutations that survived (the plateau's
+  weight dropped from the bounds, the spread truncated instead of floored, the grid's column
+  check deleted). The scene's bytes are unchanged: the golden image hash, the 4K hash, the
+  content identity and the generator's heights for the scene's spec are the same before and
+  after.
+
+- The canyon's craft poses no longer panic or wrap on a public input (flyingrobots/lumen#160,
+  the poses half). `Rational`'s fields are private: `Rational::new` refuses a denominator that
+  is not positive and numerators off `cos^2 + sin^2 = hyp^2` with `PoseError::NotARotation`, and
+  `Rational::cos`, `sin` and `hyp` read it. `Pose::place` returns `Result`: before,
+  `Rational { cos: 1, sin: 0, hyp: 0 }` made it panic dividing by zero, and its products and
+  sums were unchecked; now a point whose posed coordinates leave `i64` is refused with
+  `PoseError::Overflow`. `craft::craft_part` and `craft::push_craft` return the error, the
+  latter as the new `CanyonError::Craft`, and the convex solids' means are checked. Tests in
+  `tests/canyon/pose.rs`. The scene's bytes are unchanged: the golden image hash, the 4K hash
+  and the content identity are the same before and after.
+
+- Statistics and scan tests that could not fail now compare against something computed
+  independently (flyingrobots/lumen#162). The memory test asserts all seven buffers, vertex
+  normals included, and the total as their sum on a scene with no normals (reference), one with
+  normals on every triangle (Fixed Point) and a three-triangle scene worked by hand; before, it
+  summed six terms on the reference scene alone, so dropping `vertex_normals` from
+  `SceneMemory::total` passed. The ray ceiling is tested at exactly four rays per sample (passes)
+  and one past (refused), which a `>=` fails. The scan's seeded forms include `FxHashMap` and
+  `FxHashSet`. The ray-count assertion `rays == statistics.count()`, which compared a value with
+  itself, compares both with the queries the observing tracer saw. The statistics test that
+  compared two calls checks every value of each call (before and after a render, and on a second
+  build) against values worked by hand and a tree walked by the test. The tree oracle starts from
+  a record of the test's own rather than from the value under test. A triangle with one or two
+  vertex normals is tested to render the flat bytes (ADR 0007 clarification): shading smooth only
+  when all three are present is equivalent.
+
+- `render --out` no longer refuses a valid long file name (flyingrobots/lumen#159). The temporary
+  file was named `.NAME.lumen-PID-N.tmp` after the whole destination name, so a destination of
+  244 bytes or more made a temporary name past the 255-byte limit and was refused as unwritable
+  (`File name too long`). The temporary name now keeps at most 32 bytes of the destination's
+  name, cut at a character boundary, and is at most 57 bytes. A name of 255 bytes, the limit, now
+  publishes. It is still in the destination's directory, still created exclusively, and still
+  removed on every failure. Tests publish 244- and 255-byte names through a file system seam that
+  enforces the 255-byte limit and through the host's own, fail a rename at the longest name, and
+  check the temporary name's form.
+
+- Documentation no longer claims more than the code does (flyingrobots/lumen#57, the
+  documentation half). "Equal provenance means equal bytes" is scoped to a render of the scene as
+  its own tracer: `RenderProvenance`, `render_traced`, the README and ADRs 0002, 0005 and 0007
+  say that a caller-supplied `Tracer` is outside it. The stop rule is stated as what is
+  guaranteed (a worker that has observed a failure in row `y` begins no row and takes no band from
+  `y` down; the reported failure is the raster-first one, with the tests named), not as a
+  real-time fact, in the README, the scheduler's documentation and ADR 0003. ADR 0003's untested
+  claim that no worker takes a band below the failure is now tested
+  (`after_a_failure_no_band_from_its_row_down_is_handed_out`); ignoring `end` when a band is
+  taken, formerly an equivalent mutant, fails it. The golden hashes' comments name `BUNNY_REV` as
+  the commit they hold at and keep the older revisions as history. The README's claim that the
+  one `as` conversion left is `widen` now names the command's information-only cast and the
+  CRC table's. ADRs are amended by dated clarification sections; no decision changes.
 
 - A panic in the pixel function now halts the other workers (flyingrobots/lumen#56). Each worker
   owns a guard that calls the halt when dropped while unwinding, so every other worker begins no
