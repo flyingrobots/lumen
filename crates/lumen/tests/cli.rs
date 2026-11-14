@@ -26,7 +26,7 @@ impl Scratch {
     fn new(name: &str) -> Self {
         let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("cli-{}-{name}", std::process::id()));
-        assert!(dir.is_absolute(), "{dir:?}");
+        assert!(dir.is_absolute(), "{}", dir.display());
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch directory");
         Self(dir)
