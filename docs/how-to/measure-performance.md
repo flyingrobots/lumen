@@ -38,9 +38,10 @@ python3 $D lumen ~/git/lumen --commit HEAD --exclusive --cpus 18 --memory 12g --
 Add `--export 4k.png --out "$(mktemp -d)"` to take the PNG out of the container. The interval to
 compare with a wall-clock target such as flyingrobots/lumen#5's 60 seconds is `total-seconds`:
 the whole command after argument parsing, that is scene build, render, hashing and writing the
-PNG; the report shows each part. `rays-per-second` and `ns-per-ray` divide the render's wall time
-by the rays traced on all threads, so they are not CPU time per ray; the single-thread figure is a
-run with `--threads 1`.
+PNG; the report shows each part. `rays-per-second` is the rays traced on all threads over the
+render's wall time and `ns-per-ray` that wall time over the rays
+([the report](../reference/cli.md#the-report)), so neither is CPU time per ray; the single-thread
+figure is a run with `--threads 1`.
 
 ## Verify the run
 
