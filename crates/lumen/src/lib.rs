@@ -68,7 +68,7 @@ mod workers;
 /// The Bunny commit lumen is built against: the `rev` of every Bunny dependency in
 /// `Cargo.toml`. A test checks that `Cargo.lock` resolves to it, so moving the pin means
 /// editing this constant, next to the golden image hash it may change.
-pub const BUNNY_REV: &str = "d4fe51d38fa10f8d6496bd110955314edac30bbf";
+pub const BUNNY_REV: &str = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd";
 
 pub use builtin_scene::{BuiltinScene, BuiltinSceneError, ParseSceneError};
 pub use image::{ImageSize, LengthError, Rgba8Image, SizeError, MAX_DIMENSION, MAX_PIXELS};
