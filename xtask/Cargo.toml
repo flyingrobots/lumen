@@ -1,0 +1,15 @@
+[package]
+name = "xtask"
+description = "Repository checks for lumen that cargo does not provide: the file-length gate."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+keywords = ["ci"]
+categories = ["development-tools"]
+publish = false
+
+[lints]
+workspace = true

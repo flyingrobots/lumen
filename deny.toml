@@ -1,0 +1,34 @@
+# cargo-deny policy (`cargo deny --locked check`; CI job `Gates / cargo-deny`).
+#
+# Lumen's only dependencies are Bunny's crates, taken from one git repository at one full
+# commit. Anything else (another git repository, a branch or tag instead of a commit, a
+# registry other than crates.io, a licence other than Apache-2.0, a second version of a
+# crate, a wildcard version) fails until this file is changed on purpose.
+
+[graph]
+all-features = true
+
+[advisories]
+# RustSec advisories for anything in Cargo.lock; none is ignored.
+ignore = []
+unmaintained = "all"
+yanked = "deny"
+
+[licenses]
+# Lumen and Bunny are Apache-2.0. A new licence is added here only with the crate that
+# needs it.
+allow = ["Apache-2.0"]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = ["https://github.com/flyingrobots/bunny"]
+# A git dependency must name a commit (`rev`), not a branch or tag.
+required-git-spec = "rev"
