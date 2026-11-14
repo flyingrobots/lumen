@@ -76,10 +76,11 @@ pub use png::{png_len, write_png, PngError};
 pub use provenance::{ProvenanceValue, RenderProvenance, PROVENANCE_FIELDS};
 pub use reference::{reference_scene, REFERENCE_SCENE_ID};
 pub use render::{
-    pixel_radiance, render, render_reference, render_scheduled, render_traced, trace_path,
-    Integrator, PathError, PathSample, RayCheckError, RayCount, RayOutcomes, RayStatistics, Render,
-    RenderError, RenderSettings, SettingsError, BOUNCE_PAIR, CAMERA_PAIR, INTEGRATOR_ID,
-    MAX_BOUNCES, SMOOTH_INTEGRATOR_ID, SMOOTH_SHADING_IDS, TONE_CURVE,
+    pixel_radiance, render, render_reference, render_scheduled, render_traced,
+    render_traced_with_run, trace_path, Integrator, PathError, PathSample, RayCheckError, RayCount,
+    RayOutcomes, RayStatistics, Render, RenderError, RenderSettings, RunStatistics, SettingsError,
+    WorkerStatistics, BOUNCE_PAIR, CAMERA_PAIR, INTEGRATOR_ID, MAX_BOUNCES, SMOOTH_INTEGRATOR_ID,
+    SMOOTH_SHADING_IDS, TONE_CURVE,
 };
 pub use scene::{
     CameraPlacement, Hit, Lighting, PrimitiveIndex, Scene, SceneBuffer, SceneContentId, SceneError,
@@ -88,4 +89,7 @@ pub use scene::{
 };
 pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
 pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};
-pub use workers::{render_pixels, Reservation, SpawnError, WorkerError};
+pub use workers::{
+    render_pixels, render_pixels_by_worker, Rendered, Reservation, SpawnError, WorkerError,
+    WorkerRun,
+};
