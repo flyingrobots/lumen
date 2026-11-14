@@ -1,7 +1,12 @@
 //! Rust source as tokens, on the file-length gate's lexer: comments dropped, string literals
-//! kept whole, numbers kept whole with their float form, everything else one character.
+//! kept whole, numbers kept whole with their float form, raw identifiers without their `r#`,
+//! everything else one character. A leading byte-order mark and shebang line are skipped, as
+//! `rustc` skips them ([`code_start`]).
 
-use crate::file_length::count::{step, State};
+#[cfg(test)]
+mod tests;
+
+use crate::file_length::count::{code_start, step, State};
 
 /// One token of a Rust file.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,7 +29,7 @@ pub(crate) type Located = (usize, Token);
 pub(crate) fn tokens(text: &str) -> Vec<Located> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Lexer { out: Vec::new(), word: String::new(), line: 1, word_line: 1 };
-    let (mut state, mut at, mut literal) = (State::Code, 0, String::new());
+    let (mut state, mut at, mut literal) = (State::Code, code_start(&chars), String::new());
     while let Some(&c) = chars.get(at) {
         if c == '\n' {
             out.flush();
@@ -69,19 +74,25 @@ struct Lexer {
 impl Lexer {
     /// One character of code, with the character after it.
     fn code(&mut self, c: char, after: Option<char>) {
+        let starts_word = after.is_some_and(|a| a.is_alphabetic() || a == '_');
+        if c == '#' && self.word == "r" && starts_word {
+            // A raw identifier, `r#fs`, is the identifier `fs`.
+            self.word.clear();
+            return;
+        }
         let number = self.word.starts_with(|d: char| d.is_ascii_digit());
-        let digit_after = after.is_some_and(|a| a.is_ascii_digit());
         let joins = if c.is_alphanumeric() || c == '_' {
             true
         } else if number && c == '.' {
-            // `1.5` and `1.` join; `1..2`, `1.max(2)` and a tuple index `p.0.1` do not.
-            let tuple_index = matches!(self.out.last(), Some((_, Token::Punct('.'))));
-            !tuple_index
-                && !self.word.contains('.')
-                && after.is_none_or(|a| digit_after || !(a == '.' || a.is_alphabetic() || a == '_'))
+            // `1.5` and `1.` join; `1..2`, `1.max(2)`, `1._x` and a tuple index `p.0.1` do not.
+            !self.after_field_dot()
+                && split_digits(&self.word).1.is_empty()
+                && after.is_none_or(|a| a != '.' && !(a.is_alphabetic() || a == '_'))
         } else {
-            // The sign of an exponent: `1e-3`.
-            number && matches!(c, '+' | '-') && self.word.ends_with(['e', 'E']) && digit_after
+            // The sign of an exponent: `1e-3`, `2.5E+7`, `1e+_3`.
+            matches!(c, '+' | '-')
+                && awaits_exponent_sign(&self.word)
+                && after.is_some_and(|a| a.is_ascii_digit() || a == '_')
         };
         if joins {
             if self.word.is_empty() {
@@ -94,6 +105,13 @@ impl Lexer {
         if !c.is_whitespace() {
             self.out.push((self.line, Token::Punct(c)));
         }
+    }
+
+    /// Whether the number being read follows a lone `.` (a field access, so a tuple index),
+    /// not the `..` of a range or `...`.
+    fn after_field_dot(&self) -> bool {
+        let before = |back: usize| self.out.len().checked_sub(back).map(|i| &self.out[i].1);
+        before(1) == Some(&Token::Punct('.')) && before(2) != Some(&Token::Punct('.'))
     }
 
     /// Ends the word being read, if any.
@@ -111,15 +129,38 @@ impl Lexer {
     }
 }
 
-/// Whether a number literal is a float: decimal, with a fraction, an exponent or a float suffix.
+/// Whether a number literal starts `0x`, `0o` or `0b`: it is then an integer whatever follows.
+fn radix_prefixed(number: &str) -> bool {
+    ["0x", "0o", "0b"].iter().any(|prefix| number.starts_with(prefix))
+}
+
+/// The decimal digits and `_`s at the start of `text`, and the rest.
+fn split_digits(text: &str) -> (&str, &str) {
+    text.split_at(text.find(|c: char| !(c.is_ascii_digit() || c == '_')).unwrap_or(text.len()))
+}
+
+/// Whether `word` is a decimal literal up to an exponent's `e`, so a sign may follow:
+/// `1e`, `1_e`, `2.5E`, but not `1usize` or `0x1e`.
+fn awaits_exponent_sign(word: &str) -> bool {
+    let (_, rest) = split_digits(word);
+    let rest = rest.strip_prefix('.').map_or(rest, |fraction| split_digits(fraction).1);
+    word.starts_with(|d: char| d.is_ascii_digit()) && matches!(rest, "e" | "E")
+}
+
+/// Whether a number literal is a float, by the Rust reference's grammar: a decimal literal with a
+/// fraction (`1.5`, `1.`), with an exponent (`1e3`, `2.5E-7`, `1e+_3`), or with the suffix `f32`
+/// or `f64` (`1f32`, `2_f64`). A literal starting `0x`, `0o` or `0b` never is.
 pub(crate) fn is_float(number: &str) -> bool {
-    let digits = number.replace('_', "");
-    if digits.starts_with("0x") || digits.starts_with("0o") || digits.starts_with("0b") {
+    if radix_prefixed(number) {
         return false;
     }
-    let exponent = digits.char_indices().any(|(i, c)| {
-        matches!(c, 'e' | 'E')
-            && digits[i + 1..].starts_with(|d: char| d.is_ascii_digit() || d == '+' || d == '-')
-    });
-    digits.contains('.') || digits.ends_with("f32") || digits.ends_with("f64") || exponent
+    let (_, rest) = split_digits(number);
+    if rest.starts_with('.') {
+        return true;
+    }
+    let exponent = rest.strip_prefix(['e', 'E']).map(|e| e.strip_prefix(['+', '-']).unwrap_or(e));
+    if let Some(digits) = exponent {
+        return split_digits(digits).0.contains(|d: char| d.is_ascii_digit());
+    }
+    matches!(rest, "f32" | "f64")
 }

@@ -55,6 +55,20 @@ fn a_multi_line_string_counts_its_lines_with_text() {
 }
 
 #[test]
+fn a_character_literal_quote_does_not_open_a_string() {
+    assert_eq!(code_lines("let q = '\"';\n// a comment \"\n"), 1);
+}
+
+#[test]
+fn a_shebang_line_is_skipped_as_rustc_skips_it() {
+    let body = "fn a() {}\n".repeat(603);
+    assert_eq!(code_lines(&format!("#!/bin/x /*\n{body}")), 603);
+    assert_eq!(code_lines(&format!("\u{feff}#!/usr/bin/env run\n{body}")), 603);
+    assert_eq!(failures(&[file(SRC, code_lines(&format!("#!/bin/x /*\n{body}")))], &[]), 1);
+    assert_eq!(code_lines("#![allow(dead_code)]\nfn a() {}\n"), 2);
+}
+
+#[test]
 fn a_last_line_without_a_newline_counts() {
     assert_eq!(code_lines("fn a() {}\nfn b() {}"), 2);
     assert_eq!(code_lines(""), 0);

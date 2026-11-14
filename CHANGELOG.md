@@ -574,6 +574,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- The file-length gate and the nondeterminism scan read a file as `rustc` lexes it
+  (flyingrobots/lumen#120, part of flyingrobots/lumen#119): a leading shebang line is skipped,
+  not lexed, so `#!/bin/x /*` no longer hides the rest of a file from both gates (a 603-line file
+  had counted as one line and been scanned not at all); a byte-order mark before it is skipped
+  too. Float literals follow the Rust reference's grammar, so `..1.5` and `1e+_3` are floats and
+  `1usize+2`, which the scan reported as a float, is not. Raw identifiers are read without `r#`,
+  so `std::r#env::var` is a `std-env` finding. New tests kill the three mutations of the lexer
+  and the `env!` ban that the review found surviving.
 - The PLY reader's generated-corruption test assumed a 64-bit `usize`: it converted each 64-bit
   generator output to `usize` before reducing it, which fails on `wasm32` and aborted the
   WebAssembly test run (found by the new WebAssembly job, flyingrobots/lumen#23). It now reduces

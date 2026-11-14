@@ -1204,7 +1204,8 @@ Lint posture mirrors Bunny: `unsafe` is forbidden, clippy `all` is denied and
 | `Gates / nondeterminism` | `cargo run -p xtask -- nondeterminism` (see "Nondeterminism bans") | a float, a banned name or `std` path in the deterministic core, a malformed or unused scan waiver, or a ban lint waived with `allow` or without rule IDs in its reason |
 | `Signal / coverage` | `cargo llvm-cov --workspace --summary-only`, in the job summary | never: coverage is reported, not gated |
 
-A line of code is a line with a character outside a comment; doc comments are comments. The
+A line of code is a line with a character outside a comment; doc comments are comments, and so
+is a shebang line, which both gates skip exactly as `rustc` does (ADR 0006). The
 exceptions live in `xtask/src/file_length/exceptions.rs`, each with the count it was granted at,
 the date and the issue that splits the file.
 
