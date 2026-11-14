@@ -10,15 +10,15 @@ repository = "https://github.com/flyingrobots/lumen"
 rust-version = "1.96"
 version = "0.1.0"
 
-# Bunny 0.7.0 is tagged but not yet on crates.io, so its crates come in as git dependencies
-# pinned to one full commit. They move to the registry once 0.7.0 is published there.
+# Bunny's crates come in as git dependencies pinned to one full commit of Bunny's main, after
+# the 0.7.1 release. They move to the registry when a release holds what lumen needs.
 [workspace.dependencies]
-bunny-broadphase = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
-bunny-geom = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
-bunny-linalg = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
-bunny-num = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
-bunny-optics = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
-bunny-query = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
+bunny-broadphase = { git = "https://github.com/flyingrobots/bunny", rev = "3c395f9950ac63d5ecfbd2055c306954111daf9d" }
+bunny-geom = { git = "https://github.com/flyingrobots/bunny", rev = "3c395f9950ac63d5ecfbd2055c306954111daf9d" }
+bunny-linalg = { git = "https://github.com/flyingrobots/bunny", rev = "3c395f9950ac63d5ecfbd2055c306954111daf9d" }
+bunny-num = { git = "https://github.com/flyingrobots/bunny", rev = "3c395f9950ac63d5ecfbd2055c306954111daf9d" }
+bunny-optics = { git = "https://github.com/flyingrobots/bunny", rev = "3c395f9950ac63d5ecfbd2055c306954111daf9d" }
+bunny-query = { git = "https://github.com/flyingrobots/bunny", rev = "3c395f9950ac63d5ecfbd2055c306954111daf9d" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -4,8 +4,9 @@
 ///
 /// Recorded for `lumen-reference-scene/3`, `lumen-diffuse-path/1` (Bunny's
 /// `bunny-sobol-owen/1` and `bunny-diffuse-shading/1`), `bunny-tone-srgb/1` and
-/// `bunny-rgba8-opaque/1`, at 96 by 54 pixels, 4 samples per pixel, seed 0, built against Bunny
-/// dcd6bd37613738de93f7084e7c8aa0283de964ea. First recorded on aarch64 Linux (the
+/// `bunny-rgba8-opaque/1`, at 96 by 54 pixels, 4 samples per pixel, seed 0, recorded against Bunny
+/// dcd6bd37613738de93f7084e7c8aa0283de964ea, unchanged at
+/// 3c395f9950ac63d5ecfbd2055c306954111daf9d. First recorded on aarch64 Linux (the
 /// rust-dev:1.96.0 container on an Apple M5 Pro). It is the one expected value for every
 /// platform and build profile: CI's `Determinism / ...` jobs check it on x86-64 and aarch64
 /// Linux, aarch64 macOS, x86-64 Windows and `wasm32-wasip1`, each in the test and the release
@@ -33,8 +34,9 @@ pub(crate) const GOLDEN_96X54_4SPP: &str =
 ///
 /// Recorded for `lumen-fixed-point-scene/1`, `lumen-diffuse-path/1` (Bunny's
 /// `bunny-sobol-owen/1` and `bunny-diffuse-shading/1`), `bunny-tone-srgb/1` and
-/// `bunny-rgba8-opaque/1`, built against Bunny dcd6bd37613738de93f7084e7c8aa0283de964ea; first
-/// recorded on aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). Like the
+/// `bunny-rgba8-opaque/1`, recorded against Bunny dcd6bd37613738de93f7084e7c8aa0283de964ea,
+/// unchanged at 3c395f9950ac63d5ecfbd2055c306954111daf9d; first recorded
+/// on aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). Like the
 /// reference scene's, it is the one expected value for every platform and build profile, checked
 /// by the same `Determinism / ...` jobs. Never add a per-platform value.
 ///
