@@ -440,7 +440,11 @@ pub fn render_traced_with_run<T: Tracer + Sync + ?Sized>(
             let run = RunStatistics {
                 band_rows: schedule.band().get(),
                 bands: schedule.band().count(size),
-                workers: done.workers.iter().map(|w| WorkerStatistics::of(w, size.width())).collect(),
+                workers: done
+                    .workers
+                    .iter()
+                    .map(|w| WorkerStatistics::of(w, size.width()))
+                    .collect(),
             };
             Ok((render, run))
         }
