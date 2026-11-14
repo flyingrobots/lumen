@@ -15,6 +15,28 @@
 //! uses) are public modules. It reads no arguments, files, clock or environment, prints nothing
 //! and asks the host nothing: the caller passes the thread count and any writer. The `lumen`
 //! command (`src/bin/lumen/`) is one such front end.
+//!
+//! # Example
+//!
+//! Render the reference scene, record what was rendered, hash it and encode it as a PNG in
+//! memory:
+//!
+//! ```
+//! use lumen::{reference_scene, render_scheduled, write_png, ImageSize, RenderProvenance};
+//! use lumen::{RenderSettings, Schedule, DEFAULT_TILE, REFERENCE_SCENE_ID};
+//!
+//! let scene = reference_scene()?;
+//! let size = ImageSize::new(32, 18)?;
+//! let settings = RenderSettings::new(2, 7)?;
+//! let render = render_scheduled(&scene, size, settings, Schedule::new(2, DEFAULT_TILE)?)?;
+//! let provenance = RenderProvenance::new(REFERENCE_SCENE_ID, size, settings);
+//! assert_eq!(provenance.size(), render.image.size());
+//! let hash = render.image.hash();
+//! assert!(hash.starts_with("sha256:") && hash.len() == 71);
+//! let mut png = Vec::new();
+//! write_png(&mut png, &render.image)?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 mod image;
 pub mod mesh;

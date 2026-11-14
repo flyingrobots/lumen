@@ -195,9 +195,25 @@ pub fn png_len(image: &Rgba8Image) -> u64 {
 
 /// Writes `image` as a PNG file to `out`.
 ///
+/// This performs no I/O of its own: `out` may be a file, a socket or memory.
+///
 /// # Errors
 ///
 /// Any error of `out`.
+///
+/// # Examples
+///
+/// ```
+/// use lumen::{png_len, write_png, ImageSize, Rgba8Image};
+///
+/// let image = Rgba8Image::from_bytes(ImageSize::new(2, 1)?, vec![255, 0, 0, 255, 0, 0, 255, 255])
+///     .ok_or("eight bytes for two pixels")?;
+/// let mut png = Vec::new();
+/// write_png(&mut png, &image)?;
+/// assert_eq!(png[..8], *b"\x89PNG\r\n\x1a\n");
+/// assert_eq!(u64::try_from(png.len())?, png_len(&image));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn write_png<W: Write>(out: &mut W, image: &Rgba8Image) -> io::Result<()> {
     out.write_all(&SIGNATURE)?;
     let mut header = [0_u8; 13];
