@@ -23,7 +23,7 @@ use lumen::{
 use std::cell::Cell;
 
 mod golden;
-use golden::GOLDEN_96X54_4SPP;
+use golden::{GOLDEN_96X54_4SPP, GOLDEN_BUNNY_REV};
 
 // ---------------------------------------------------------------------------------------------
 // Helpers.
@@ -920,7 +920,7 @@ fn the_reference_image_has_its_golden_hash() {
     assert_eq!(bunny_optics::SHADING_ID, "bunny-diffuse-shading/1");
     assert_eq!(TONE_CURVE.identity(), "bunny-tone-srgb/1");
     assert_eq!(bunny_optics::RGBA8_OPAQUE_IDENTITY, "bunny-rgba8-opaque/1");
-    assert_eq!(BUNNY_REV, "2cd551e248d55407a8f27e84dcb26d1b1d8768bd");
+    assert_eq!(BUNNY_REV, GOLDEN_BUNNY_REV);
     let render = render_reference(96, 54, settings(4, 0)).expect("renders");
     assert_eq!(render.image.hash(), GOLDEN_96X54_4SPP);
 }

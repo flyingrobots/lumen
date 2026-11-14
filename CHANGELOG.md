@@ -16,13 +16,16 @@ All notable changes to lumen are recorded here. The format follows
   `bunny-optics` with new tests, added `parse_ascii_ply_with_limits`, made `TraceRay::from_ray`
   accept a unit direction with a component of `2^32 + 1` raw (a `None` becomes a `Some`; neither
   lumen nor the Bunny functions it calls use `from_ray`) and tightened its own gate; no
-  function lumen calls changed its output. Lumen calls none of the new APIs yet. Both golden
-  image hashes and both golden content digests are unchanged, as is the render time (three
+  function lumen calls changed its output. Lumen calls none of the new APIs yet. The three
+  scenes' golden image hashes and golden content digests (reference, Fixed Point, canyon) are
+  unchanged, as is the render time (three
   alternated runs each at 1280 by 720, 16 samples, 18 threads; the pull request records them).
   Re-reading Bunny's public API at the new pin for float-typed items (ADR 0006) found nothing
   new, and one function missed before: `bunny_num::is_finite`, which takes an `f32` and whose
   name has no float word. It is now a Clippy ban (144, up from 143, each firing on the fixture)
-  and a token-scan path.
+  and a token-scan path. The golden tests of the three scenes check `BUNNY_REV` against one
+  constant, `GOLDEN_BUNNY_REV` in `tests/golden/mod.rs`, the commit the golden values were last
+  checked at, instead of each its own literal, so a pin move is acknowledged in one place.
 
 ### Fixed
 
