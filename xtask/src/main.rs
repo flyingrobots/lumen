@@ -7,7 +7,9 @@
 //!
 //! `cargo run --locked -p xtask -- nondeterminism` scans the deterministic core
 //! ([`layout::Layout::is_core`]) for what Clippy's bans cannot see, and every file for the form of
-//! their waivers ([`nondeterminism`]), and exits 1 on any finding.
+//! their waivers ([`nondeterminism`]), checks the workspace boundary from `cargo metadata`
+//! ([`workspace`]: every member classified, no dependency from outside the workspace but Bunny,
+//! no build script or procedural macro in a deterministic crate), and exits 1 on any finding.
 //!
 //! Both fail on a form that makes the compiler read a file they do not: `include!`, or a
 //! `#[path]` to anything but a `.rs` file under the roots ([`layout::Layout::failures`]).
@@ -30,6 +32,7 @@ mod clippy_bans;
 mod file_length;
 mod layout;
 mod nondeterminism;
+mod workspace;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -39,7 +42,7 @@ use file_length::{code_lines, judge, Measured, EXCEPTIONS};
 use layout::Layout;
 
 /// The directories read, relative to the repository root.
-const ROOTS: [&str; 2] = ["crates", "xtask"];
+pub(crate) const ROOTS: [&str; 2] = ["crates", "xtask"];
 
 /// Each file's path, relative to the repository root with `/` separators, and its text.
 type Files = Vec<(String, String)>;
@@ -48,7 +51,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let gate = match args.as_slice() {
-        [command] if command == "file-length" => file_length_gate as fn(&_, &_) -> bool,
+        [command] if command == "file-length" => file_length_gate as Gate,
         [command] if command == "nondeterminism" => nondeterminism_gate,
         [command, docs, toolchain] if command == "std-items" => {
             return match clippy_bans::run::std_items_list(Path::new(docs), toolchain) {
@@ -79,15 +82,25 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    match sources(&root) {
-        Ok((files, crates)) if gate(&files, &Layout::new(&files, &crates)) => ExitCode::SUCCESS,
-        Ok(_) => ExitCode::FAILURE,
+    let read = sources(&root).and_then(|found| Ok((found, workspace::run::boundary_of(&root)?)));
+    match read {
+        Ok(((files, crates), boundary)) => {
+            if gate(&files, &Layout::new(&files, &crates, &boundary.libraries), &boundary) {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
         Err(error) => {
             eprintln!("xtask: {error}");
             ExitCode::from(2)
         }
     }
 }
+
+/// A gate over the repository's files, their layout and the workspace boundary; true when it
+/// passes.
+type Gate = fn(&[(String, String)], &Layout, &workspace::Boundary) -> bool;
 
 /// Prints `layout`'s failures as errors; true when there are none.
 fn layout_passes(layout: &Layout) -> bool {
@@ -101,7 +114,7 @@ fn layout_passes(layout: &Layout) -> bool {
 }
 
 /// The file-length gate over `files`; true when it passes.
-fn file_length_gate(files: &[(String, String)], layout: &Layout) -> bool {
+fn file_length_gate(files: &[(String, String)], layout: &Layout, _: &workspace::Boundary) -> bool {
     let files: Vec<Measured> = files
         .iter()
         .map(|(path, text)| Measured {
@@ -126,9 +139,29 @@ fn file_length_gate(files: &[(String, String)], layout: &Layout) -> bool {
     layout_passes(layout) && verdict.failures.is_empty()
 }
 
-/// The nondeterminism scan over `files`; true when nothing is found.
-fn nondeterminism_gate(files: &[(String, String)], layout: &Layout) -> bool {
-    let (mut core, mut failures) = (0, 0);
+/// The nondeterminism scan over `files`, and the workspace `boundary`; true when nothing is
+/// found.
+fn nondeterminism_gate(
+    files: &[(String, String)],
+    layout: &Layout,
+    boundary: &workspace::Boundary,
+) -> bool {
+    for failure in &boundary.failures {
+        println!("::error file=Cargo.toml::[workspace] {failure}");
+    }
+    let mut failures = boundary.failures.len();
+    for library in &boundary.libraries {
+        let root = files.iter().find(|(path, _)| *path == library.root).map(|(_, text)| text);
+        if !root.is_some_and(|text| nondeterminism::denies_float_arithmetic(text)) {
+            println!(
+                "::error file={}::[float-type] `{}` is a deterministic crate: its root must have \
+                 #![deny(clippy::float_arithmetic)]",
+                library.root, library.name
+            );
+            failures += 1;
+        }
+    }
+    let mut core = 0;
     for (path, text) in files {
         let mut found = nondeterminism::waiver_forms(text);
         if layout.is_core(path) {
