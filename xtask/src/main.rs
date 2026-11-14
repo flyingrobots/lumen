@@ -177,12 +177,19 @@ fn nondeterminism_gate(
             failures += 1;
         }
     }
+    let core_texts: Vec<&str> = files
+        .iter()
+        .filter(|(path, _)| layout.is_core(path))
+        .map(|(_, text)| text.as_str())
+        .collect();
+    let names: Vec<String> = boundary.libraries.iter().map(|l| l.name.replace('-', "_")).collect();
+    let aliases = nondeterminism::crate_aliases(&core_texts, &names);
     let mut core = 0;
     for (path, text) in files {
         let mut found = nondeterminism::waiver_forms(text);
         if layout.is_core(path) {
             core += 1;
-            found.extend(nondeterminism::core_findings(text));
+            found.extend(nondeterminism::core_findings(text, &aliases));
         }
         for finding in &found {
             println!(
