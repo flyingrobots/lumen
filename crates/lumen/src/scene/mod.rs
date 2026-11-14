@@ -20,6 +20,7 @@ use bunny_optics::{
 use bunny_query::TraceTriangle;
 
 use crate::mesh::PlaceError;
+use crate::schedule::widen;
 
 mod content_id;
 mod primitive_index;
@@ -128,6 +129,15 @@ pub enum SceneError {
     },
     /// The bounding volume hierarchy could not be built or converted.
     BvhBuild,
+    /// Bunny's tree builder put a primitive index in the tree that names no triangle. Bunny's
+    /// builder fills the buffer with indices of the boxes it is given, so no input reaches this;
+    /// `Scene::new` checks it once so that no traversal of the scene can meet such an index.
+    TreeNamesUnknownPrimitive {
+        /// The index found in the tree.
+        index: u32,
+        /// The scene's triangle count: every valid index is below it.
+        triangles: usize,
+    },
     /// Memory for the scene's buffers could not be reserved.
     OutOfMemory,
     /// A mesh of the scene could not be read or placed.
@@ -153,6 +163,11 @@ impl fmt::Display for SceneError {
                 write!(f, "triangle {primitive} names a material that does not exist")
             }
             Self::BvhBuild => f.write_str("the bounding volume hierarchy could not be built"),
+            Self::TreeNamesUnknownPrimitive { index, triangles } => write!(
+                f,
+                "the bounding volume hierarchy names triangle {index}, but the scene has \
+                 {triangles} triangles"
+            ),
             Self::OutOfMemory => f.write_str("not enough memory for the scene"),
             Self::Mesh(error) => write!(f, "a mesh could not be placed: {error}"),
             Self::Camera(error) => write!(f, "invalid camera placement: {error}"),
@@ -254,7 +269,7 @@ impl Scene {
         {
             let triangle = TraceTriangle::new(v0, v1, v2)
                 .ok_or(SceneError::OutsideTraceDomain { primitive })?;
-            let known = usize::try_from(material).is_ok_and(|index| index < spec.materials.len());
+            let known = widen(material) < spec.materials.len();
             if !known {
                 return Err(SceneError::UnknownMaterial { primitive });
             }
@@ -291,14 +306,14 @@ impl Scene {
     /// or a zero-area triangle.
     #[must_use]
     pub fn surface(&self, primitive: PrimitiveIndex) -> Option<&TriangleSurface> {
-        self.surfaces.get(primitive.to_usize()?)?.as_ref()
+        self.surfaces.get(primitive.to_usize())?.as_ref()
     }
 
     /// The albedo of the triangle at `primitive`, or `None` for an index out of range.
     #[must_use]
     pub fn albedo(&self, primitive: PrimitiveIndex) -> Option<&Albedo> {
-        let material = *self.material_of.get(primitive.to_usize()?)?;
-        self.materials.get(usize::try_from(material).ok()?)
+        let material = *self.material_of.get(primitive.to_usize())?;
+        self.materials.get(widen(material))
     }
 
     /// The light and the sky.

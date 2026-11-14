@@ -10,6 +10,8 @@ use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
 use bunny_query::{TraceRay, TraceTriangle};
 
+use crate::schedule::widen;
+
 use super::{reserved, Hit, PrimitiveIndex, Scene, SceneError, TraceError, Tracer, FAR};
 
 /// A compact BVH: its root, its nodes and the primitive-index buffer its leaves refer to.
@@ -29,9 +31,11 @@ impl Scene {
         }
     }
 
-    /// The triangle Bunny's traversal names by its raw `u32` primitive index.
+    /// The triangle Bunny's traversal names by its raw `u32` primitive index. `Scene::new` has
+    /// checked that every index in the tree names a triangle, so for an index the traversal
+    /// reports this is never `None`.
     fn triangle(&self, primitive: u32) -> Option<&TraceTriangle> {
-        self.triangles.get(PrimitiveIndex::new(primitive).to_usize()?)
+        self.triangles.get(PrimitiveIndex::new(primitive).to_usize())
     }
 }
 
@@ -46,11 +50,16 @@ impl Tracer for Scene {
         })
         .map_err(TraceError::Traversal)?;
         let Some(found) = found else { return Ok(None) };
-        let triangle = self.triangle(found.primitive).ok_or(TraceError::InconsistentHit)?;
+        let primitive = PrimitiveIndex::new(found.primitive);
+        let Some(triangle) = self.triangle(found.primitive) else {
+            let triangles = self.triangles.len();
+            return Err(TraceError::UnknownPrimitive { primitive, triangles });
+        };
+        let distance = found.distance;
         let hit = ray
-            .hit_triangle(triangle, found.distance, found.distance)
-            .ok_or(TraceError::InconsistentHit)?;
-        Ok(Some(Hit { primitive: PrimitiveIndex::new(found.primitive), hit }))
+            .hit_triangle(triangle, distance, distance)
+            .ok_or(TraceError::HitNotRepeatable { primitive, distance })?;
+        Ok(Some(Hit { primitive, hit }))
     }
 
     /// Bunny's `compact_any_hit` over the scene's tree with `TraceRay::hit_triangle` (`t_min`
@@ -77,6 +86,11 @@ pub(super) fn build_tree(boxes: &[FixedAabb3]) -> Result<Tree, SceneError> {
     let mut prim_indices = reserved(count)?;
     prim_indices.resize(count, 0_u32);
     let used = build_bvh_sah(&mut nodes, &mut prim_indices, boxes).ok_or(SceneError::BvhBuild)?;
+    // Checked once here, so the traversal callbacks below never meet an index past the
+    // triangles: their `None` for a missing triangle is unreachable for a built scene.
+    if let Some(&index) = prim_indices.iter().find(|&&index| widen(index) >= count) {
+        return Err(SceneError::TreeNamesUnknownPrimitive { index, triangles: count });
+    }
     nodes.truncate(used);
     // A tree of n nodes has (n - 1) / 2 interior nodes, one compact node each.
     let interior = used.saturating_sub(1) / 2;

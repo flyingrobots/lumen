@@ -66,7 +66,9 @@ second front end would have had to rebuild that list by hand.
   (`SceneError::Camera`), so at render time only the image size can be refused.
 - **A triangle is named by its `PrimitiveIndex`** (flyingrobots/lumen#20): a `u32`, the
   triangle's zero-based position in `SceneSpec::triangles` in the order the caller gave them,
-  the width of Bunny's primitive-index buffer. `Hit`, `Scene::surface`, `Scene::albedo` and the
+  the width of Bunny's primitive-index buffer. `PrimitiveIndex::to_usize` cannot fail
+  (flyingrobots/lumen#21): lumen builds only where `usize` has at least 32 bits, which a
+  compile-time assertion checks. `Hit`, `Scene::surface`, `Scene::albedo` and the
   primitive-naming `SceneError` variants use it instead of a bare `u32` or `usize`. The order is
   part of the scene's identity, not an incidental layout: of triangles hit at the same distance
   the lowest index wins, so the same triangles in another order can render other pixels. A

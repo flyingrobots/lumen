@@ -45,7 +45,7 @@ struct Checked<'a> {
 
 impl Checked<'_> {
     fn count(&self, primitive: PrimitiveIndex) {
-        let index = primitive.to_usize().expect("fits");
+        let index = primitive.to_usize();
         let kind = self.kinds.iter().find(|(range, _)| range.contains(&index)).map(|(_, k)| *k);
         let slot = match kind {
             Some(PartKind::Bunny) => 0,
