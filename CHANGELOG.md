@@ -31,6 +31,20 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- `render_traced_with_traversal` (part of flyingrobots/lumen#29, ADR 0008): `render_traced_with_run`
+  through a `CountingTracer`, also returning the traversal work of every ray by kind,
+  `TraversalStatistics` (camera, bounce and shadow rays), each a `TraversalWork`: Bunny's
+  `TraversalCounts` added over the rays (`total`) and the most any one ray took, counter by
+  counter (`most`). Every count is a sum or a maximum, combined per pixel and then per worker at
+  `join`, so it is the same at every thread count and band height. The path is generic, privately,
+  over how it asks its queries: `render_traced` and everything built on it use the uncounted
+  queries and a zero-sized record, so a render that does not ask pays nothing for counting.
+  `tests/traversal_statistics.rs` checks the image, ray counts and statistics against the plain
+  render and the golden hashes at 1, 2, 4 and 18 threads and band heights 1 and 3 for the
+  three built-in scenes, the counts against a tracer that records every query itself and tells camera from
+  bounce rays by their origin, a scene where every camera ray's work is one box test, and that a
+  failing tracer gives the same error.
+
 - `CountingTracer`, the ray-query port's counted form (part of flyingrobots/lumen#29, ADR 0008):
   `closest_counted` and `occluded_counted` answer as `Tracer::closest` and `Tracer::occluded` do
   and also return Bunny's `TraversalCounts` for the search (box tests, boxes entered, popped
@@ -39,7 +53,7 @@ All notable changes to lumen are recorded here. The format follows
   queries still call the uncounted searches. `tests/traversal_counts.rs` checks the counts
   derived by hand for a one-triangle tree (a hit, a ray through the box beside the triangle and a
   ray that misses the box, for both searches) and for a two-leaf tree where a nearer hit skips
-  the farther leaf, and compares every camera ray of a 32 by 18 image of each built-in scene with
+  the farther leaf, and compares every camera ray of a 32 by 18 image of each built-in scene (the canyon included) with
   Bunny's counted searches called directly on a tree rebuilt in the test.
 
 ### Changed
