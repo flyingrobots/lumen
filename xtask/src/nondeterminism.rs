@@ -9,11 +9,14 @@
 //! `env!` and `option_env!` macros; and paths into `std::env`, `std::fs`, `std::process`,
 //! `std::net` and `std::thread::sleep`, written out, through a `use` tree (groups, `self`,
 //! renames) or through a name a `use` brought in. Any line that names open addressing is
-//! `hand-hashed-table`. In every file it checks the form of Clippy waivers ([`waiver_forms`]).
+//! `hand-hashed-table`, and an attribute built from a macro metavariable is a `waiver` finding.
+//! In every file it checks each lint-level attribute that could turn a Clippy ban off
+//! ([`waiver_forms`]).
 //!
-//! A finding is waived by a comment on its line or the line above:
-//! `// nondeterminism: allow <rule-id> -- <reason>`. A waiver with an unknown rule or no
-//! reason, or one that waives nothing, is itself a failure.
+//! A finding is waived by a plain line comment, read by the lexer, on its line or the line above:
+//! `// nondeterminism: allow <rule-id> -- <reason>`; the same text in a string or a doc comment is
+//! not a waiver. A waiver with an unknown rule or no reason, or one that waives nothing, is
+//! itself a failure.
 
 #[cfg(test)]
 mod tests;
@@ -131,6 +134,7 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
             add(n + 1, "hand-hashed-table", "open addressing");
         }
     }
+    found.extend(waivers::macro_attributes(&toks));
     apply_waivers(text, found)
 }
 
