@@ -6,6 +6,25 @@ All notable changes to lumen are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Nondeterminism bans, the compiler layer (part of flyingrobots/lumen#17; ADR 0006): `clippy.toml`
+  bans the clock, sleeping, the core count, thread spawning, hash maps and sets, arguments, the
+  environment, files, processes, sockets and the float types, each reason starting with an Echo
+  `ban-nondeterminism` rule ID, and `lib.rs` denies float arithmetic. The command, examples,
+  `tests/cli.rs`, `xtask`, the scheduler's thread pool and two unit tests carry reasoned
+  `#[expect]` waivers. `deny.toml` now allows no registry, so a crates.io crate fails
+  `Gates / cargo-deny`. Main had no finding inside the deterministic core other than the
+  scheduler's threads. No code, pixel or output byte changed.
+- Nondeterminism scan (flyingrobots/lumen#17; ADR 0006): `cargo run -p xtask -- nondeterminism`,
+  `make nondeterminism` and the `Gates / nondeterminism` job read the library's tokens for what
+  Clippy cannot see: float types, literals and casts, banned names and `std` paths under a `cfg`
+  that is not built or in a macro body, open addressing in any line, resolved through each file's
+  `use` trees; and every file's ban waivers must be `expect` with rule IDs in the reason. Waivers
+  are `// nondeterminism: allow <rule-id> -- <reason>`; a malformed or unused one fails. 46 of the
+  50 seeded forms and none of the 10 look-alikes are reported (`xtask/src/nondeterminism/tests.rs`);
+  with Clippy, 50 of 50. Main has no finding.
+
 ### Changed
 
 - A refused scene says what was wrong (part of flyingrobots/lumen#21). `SceneError` variants

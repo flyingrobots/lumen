@@ -87,6 +87,11 @@ fn the_bunny_keeps_every_face_and_none_is_degenerate() {
 /// in [`bunny_triangles`], and its faces wind counter-clockwise seen from outside: the signed
 /// volume they enclose is positive (about 0.347 cubic units after placement).
 #[test]
+#[expect(
+    clippy::disallowed_types,
+    reason = "unordered-container: a test that only counts edges and faces; no count depends on the \
+              iteration order"
+)]
 fn the_bunny_winding_is_consistent_and_its_holes_are_counted() {
     use std::collections::HashMap;
     let mesh = read_ascii_ply(STANFORD_BUNNY_PLY.as_bytes()).expect("reads");
