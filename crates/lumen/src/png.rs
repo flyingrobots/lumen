@@ -10,9 +10,13 @@
 //! last ending with the Adler-32 of the uncompressed data; `IEND`. Every row has filter
 //! type 0 (none). The encoder streams: it holds one block, never a second copy of the image.
 
-use std::io::{self, Write};
+use std::io::Write;
 
 use crate::image::Rgba8Image;
+
+mod error;
+
+pub use error::PngError;
 
 /// The PNG file signature.
 pub(crate) const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n'];
@@ -119,16 +123,17 @@ impl Adler32 {
 }
 
 /// Writes one chunk: length, type, data, CRC of type and data.
-fn write_chunk<W: Write>(out: &mut W, kind: [u8; 4], data: &[u8]) -> io::Result<()> {
-    let length = u32::try_from(data.len())
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "PNG chunk too long"))?;
+fn write_chunk<W: Write>(out: &mut W, kind: [u8; 4], data: &[u8]) -> Result<(), PngError> {
+    let length =
+        u32::try_from(data.len()).map_err(|_| PngError::ChunkTooLong { length: data.len() })?;
     let mut crc = Crc32::new();
     crc.update(&kind);
     crc.update(data);
     out.write_all(&length.to_be_bytes())?;
     out.write_all(&kind)?;
     out.write_all(data)?;
-    out.write_all(&crc.value().to_be_bytes())
+    out.write_all(&crc.value().to_be_bytes())?;
+    Ok(())
 }
 
 /// Collects the zlib stream into stored blocks, one `IDAT` chunk each.
@@ -142,7 +147,7 @@ struct StoredBlocks<'w, W: Write> {
 }
 
 impl<W: Write> StoredBlocks<'_, W> {
-    fn push(&mut self, mut bytes: &[u8]) -> io::Result<()> {
+    fn push(&mut self, mut bytes: &[u8]) -> Result<(), PngError> {
         self.adler.update(bytes);
         while !bytes.is_empty() {
             let take = (MAX_STORED - self.block.len()).min(bytes.len());
@@ -156,9 +161,9 @@ impl<W: Write> StoredBlocks<'_, W> {
         Ok(())
     }
 
-    fn flush(&mut self) -> io::Result<()> {
+    fn flush(&mut self) -> Result<(), PngError> {
         let len = u16::try_from(self.block.len())
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "stored block too long"))?;
+            .map_err(|_| PngError::BlockTooLong { length: self.block.len() })?;
         self.remaining = self.remaining.saturating_sub(u64::from(len));
         let last = self.remaining == 0;
         self.chunk.clear();
@@ -199,7 +204,8 @@ pub fn png_len(image: &Rgba8Image) -> u64 {
 ///
 /// # Errors
 ///
-/// Any error of `out`.
+/// [`PngError::Write`] with the error of `out`. The encoder's own checks, a chunk or block
+/// too long for its length field, cannot fail for any image.
 ///
 /// # Examples
 ///
@@ -213,7 +219,7 @@ pub fn png_len(image: &Rgba8Image) -> u64 {
 /// assert_eq!(u64::try_from(png.len())?, png_len(&image));
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-pub fn write_png<W: Write>(out: &mut W, image: &Rgba8Image) -> io::Result<()> {
+pub fn write_png<W: Write>(out: &mut W, image: &Rgba8Image) -> Result<(), PngError> {
     out.write_all(&SIGNATURE)?;
     let mut header = [0_u8; 13];
     header[..4].copy_from_slice(&image.width().to_be_bytes());

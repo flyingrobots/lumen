@@ -22,8 +22,8 @@ use std::time::Instant;
 
 use cli::{Command, USAGE};
 use lumen::{
-    png_len, render_scheduled, write_png, BuiltinScene, ImageSize, RenderError, RenderProvenance,
-    RenderSettings, Rgba8Image, Schedule, BUNNY_REV, MAX_THREADS,
+    png_len, render_scheduled, write_png, BuiltinScene, ImageSize, PngError, RenderError,
+    RenderProvenance, RenderSettings, Rgba8Image, Schedule, BUNNY_REV, MAX_THREADS,
 };
 use report::{Report, Times};
 
@@ -122,7 +122,7 @@ fn run(
 }
 
 /// Writes the PNG file and returns its length.
-fn write_file(path: &Path, image: &Rgba8Image) -> io::Result<u64> {
+fn write_file(path: &Path, image: &Rgba8Image) -> Result<u64, PngError> {
     let mut file = BufWriter::new(File::create(path)?);
     write_png(&mut file, image)?;
     file.into_inner().map_err(io::IntoInnerError::into_error)?.sync_all()?;
