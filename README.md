@@ -708,12 +708,18 @@ its four corners' mean height in bands 1.5 units thick picks material 0, 1, 0, 2
 hull and dark engine blocks built from convex solids (`convex`: corners and faces, each face a
 fan wound away from the solid's centre), drawn nose toward `-Z` in 64ths of 3 units and posed
 by rational rotations (a bank about `+Z`, then a heading about `+Y`, each coordinate floored to
-the grid): the skiff (a hexagonal hull with a pointed nose, straight swept wings and a fin,
+the grid; a `Rational` is built only by `Rational::new`, which refuses a denominator that is not
+positive or numerators off the rule `cos^2 + sin^2 = hyp^2`, and `Pose::place` refuses a point
+whose posed coordinates leave `i64`, both with a `PoseError`): the skiff (a hexagonal hull with a pointed nose, straight swept wings and a fin,
 orange) high at `(-2.5, 7, -10)`, banked by `-atan(7/24)` and turned by `atan(7/24)`; the tug (a
 wedge tapering to a narrow nose between two pontoons joined by a short wing, cream) at
 `(-7.5, 5.5, -15)`, banked and turned by `-atan(7/24)`; and the kite (a flat diamond wing with
 two engine pods, teal) leading low at `(-5.5, 4, -24)`, banked by `atan(7/24)`. `push_craft`
-appends them to a `CanyonContent` in that order, each its hull then its engines.
+appends them to a `CanyonContent` in that order, each its hull then its engines
+(`CanyonError::Craft` if a corner does not pose; a test shows every one does). Tests
+(`crates/lumen/tests/canyon/pose.rs`): the rotations admitted and refused on triples worked by
+hand, every craft's rotation built by `Rational::new`, points turned, floored and moved by hand,
+and a point whose coordinates would leave `i64` refused.
 
 **The planet** (16 128 triangles, `scenes::canyon::planet`): a sphere of radius 22 centred at
 `(-44, 48, -200)`, 128 longitudes by 64 latitude rows, its points from Bunny's table-based
@@ -811,9 +817,10 @@ reimplemented, is:
 6. **Shelves**: each `Shelf` cuts the rock in its rectangle down to its height, leaving a level
    ledge whose edges stay rough where the rock was already lower.
 
-`HeightfieldSpec::bounds` states the range every height lies in; `generate` refuses a spec
-outside its stated ranges (`HeightfieldError`, naming the parameter) before computing anything,
-and those ranges keep every product inside `i64`. Any change to the steps, their constants or
+`HeightfieldSpec::bounds` states the range every height lies in and `HeightfieldSpec::centre_256`
+the centre line of a row; `generate` refuses a spec outside its stated ranges
+(`HeightfieldError`, naming the parameter) before computing anything, and so do `bounds` and
+`centre_256`, with the same error. Those ranges keep every product inside `i64`. Any change to the steps, their constants or
 their order is a new version of the generator.
 
 Tests (`crates/lumen/tests/canyon/heightfield.rs`): exact values on tiny grids, from SplitMix64's
@@ -821,9 +828,15 @@ published first output and from an independent Python model of the documented al
 3 grid, a hand-worked profile, and the sum, weighted sum, extremes and two vertices of a 64 by 96
 canyon with every step in use); determinism; every height within the stated bounds; the channel
 (the floor at the centre line below every plateau vertex of its row by a stated margin); a wall
-smooth to within its slope where the centre line bends; the shelf's rule; and each refusal.
-Seeded mutations of the noise blend, the carve's floor width, the centre line's fraction and the
-shelf's rule each fail at least one of them.
+smooth to within its slope where the centre line bends; the shelf's rule; the bounds worked by
+hand where the plateau's weight is the largest and where the spread is not a whole step; no
+height past the grid's edge. `crates/lumen/tests/canyon/limits.rs`: each refusal, every
+`HeightfieldError` variant but `OutOfMemory` (which needs the allocator to fail), reached by a
+constructed spec and given alike by `generate`, `bounds` and `centre_256`; a spec exactly at
+each limit accepted; and the bounds worked by hand at the largest spec the ranges allow. Seeded
+mutations of the noise blend, the carve's floor width, the centre line's fraction, the shelf's
+rule, the bounds' weight and floor, the grid's column check and the helpers' range check each
+fail at least one of them.
 
 ## The integrator
 

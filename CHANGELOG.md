@@ -8,6 +8,45 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- The canyon heightfield's public helpers no longer wrap or panic on a spec the generator
+  would refuse (flyingrobots/lumen#160, the heightfield half). `HeightfieldSpec::bounds` and
+  `HeightfieldSpec::centre_256` now return `Result`, refusing with `generate`'s own
+  `HeightfieldError`: before, `bounds` of a layer of amplitude `i64::MAX` wrapped to a wrong
+  range in release and panicked in debug, and `centre_256` read a meander spacing of 0 as 1 and
+  overflowed past an amplitude of about `2^48`. `terrain::stratum_material` sums the corners in
+  `i128`, so extreme heights no longer overflow. Tests reach every refusal and accept each limit
+  (`tests/canyon/limits.rs`), and kill three generator mutations that survived (the plateau's
+  weight dropped from the bounds, the spread truncated instead of floored, the grid's column
+  check deleted). The scene's bytes are unchanged: the golden image hash, the 4K hash, the
+  content identity and the generator's heights for the scene's spec are the same before and
+  after.
+
+- The canyon's craft poses no longer panic or wrap on a public input (flyingrobots/lumen#160,
+  the poses half). `Rational`'s fields are private: `Rational::new` refuses a denominator that
+  is not positive and numerators off `cos^2 + sin^2 = hyp^2` with `PoseError::NotARotation`, and
+  `Rational::cos`, `sin` and `hyp` read it. `Pose::place` returns `Result`: before,
+  `Rational { cos: 1, sin: 0, hyp: 0 }` made it panic dividing by zero, and its products and
+  sums were unchecked; now a point whose posed coordinates leave `i64` is refused with
+  `PoseError::Overflow`. `craft::craft_part` and `craft::push_craft` return the error, the
+  latter as the new `CanyonError::Craft`, and the convex solids' means are checked. Tests in
+  `tests/canyon/pose.rs`. The scene's bytes are unchanged: the golden image hash, the 4K hash
+  and the content identity are the same before and after.
+
+- Statistics and scan tests that could not fail now compare against something computed
+  independently (flyingrobots/lumen#162). The memory test asserts all seven buffers, vertex
+  normals included, and the total as their sum on a scene with no normals (reference), one with
+  normals on every triangle (Fixed Point) and a three-triangle scene worked by hand; before, it
+  summed six terms on the reference scene alone, so dropping `vertex_normals` from
+  `SceneMemory::total` passed. The ray ceiling is tested at exactly four rays per sample (passes)
+  and one past (refused), which a `>=` fails. The scan's seeded forms include `FxHashMap` and
+  `FxHashSet`. The ray-count assertion `rays == statistics.count()`, which compared a value with
+  itself, compares both with the queries the observing tracer saw. The statistics test that
+  compared two calls checks every value of each call (before and after a render, and on a second
+  build) against values worked by hand and a tree walked by the test. The tree oracle starts from
+  a record of the test's own rather than from the value under test. A triangle with one or two
+  vertex normals is tested to render the flat bytes (ADR 0007 clarification): shading smooth only
+  when all three are present is equivalent.
+
 - `render --out` no longer refuses a valid long file name (flyingrobots/lumen#159). The temporary
   file was named `.NAME.lumen-PID-N.tmp` after the whole destination name, so a destination of
   244 bytes or more made a temporary name past the 255-byte limit and was refused as unwritable
