@@ -536,7 +536,7 @@ samples per pixel, seed 0 and the thread count the host reports (the example ask
 does not). The image does not depend on the thread count. It prints the scene identity, the
 triangle count, the settings, the rays traced, the image hash and the render time. The 1280 by
 720 render at 64 samples through the command has the image hash
-`sha256:078b8a2b8f5504a0bba817054e128ea0da28090ce8d363f8e5228a35b3ca553d`. Version 1 (the
+`sha256:86cdfd58d7745297b52f63f443cedd789a773996c66ad57d45b5d8a6f67fb153`. Version 1 (the
 decimated, flat bunny and the black-rimmed puck) is retired: its 1280 by 720 hash was
 `sha256:e638f32442d90d5fb5bc8212044856433b1f4998a5d17ca549370747313d253c`.
 
