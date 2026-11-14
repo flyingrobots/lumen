@@ -248,7 +248,12 @@ fn crate_root_names() -> Vec<&'static str> {
         let rest = &LIB_RS[at + "\npub use ".len()..];
         let item = &rest[..rest.find(';').expect("a use declaration ends")];
         let list = item.split_once('{').map_or(item, |(_, list)| list.trim_end_matches('}'));
-        let entries = list.split(',').map(|entry| entry.trim().rsplit("::").next().unwrap_or(""));
+        let entries = list.split(',').map(|entry| {
+            // `path::Item as Alias` makes `Alias` public; otherwise the last segment is the name.
+            let entry = entry.trim();
+            let public = entry.rsplit_once(" as ").map_or(entry, |(_, alias)| alias);
+            public.rsplit("::").next().unwrap_or("")
+        });
         names.extend(entries.filter(|name| !name.is_empty()));
     }
     for keyword in ["\npub const ", "\npub mod "] {
@@ -266,6 +271,13 @@ fn crate_root_names() -> Vec<&'static str> {
 /// documents. Witness count: the 82 names of the crate root when this test was written, or more.
 #[test]
 fn the_library_reference_names_every_item_of_the_crate_root() {
+    // Deny by default: a public item `crate_root_names` cannot read fails here, not silently.
+    let read = ["pub use ", "pub const ", "pub mod "];
+    let unread: Vec<&str> = LIB_RS
+        .lines()
+        .filter(|line| line.starts_with("pub ") && !read.iter().any(|form| line.starts_with(form)))
+        .collect();
+    assert!(unread.is_empty(), "lib.rs makes public a form this test does not read: {unread:?}");
     let names = crate_root_names();
     let missing: Vec<&&str> =
         names.iter().filter(|name| !LIBRARY_REFERENCE.contains(&format!("`{name}`"))).collect();
