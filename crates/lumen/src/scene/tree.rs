@@ -1,0 +1,96 @@
+//! The adapter to Bunny's bounding volume hierarchy: the tree [`Scene::new`] builds over the
+//! triangles' boxes, and [`Tracer`] for [`Scene`] through Bunny's compact traversals.
+
+use bunny_broadphase::{
+    build_bvh_sah, compact_any_hit, compact_bvh, compact_closest_hit, BvhNode, CompactChild,
+    CompactNode, CompactRoot, CompactView,
+};
+use bunny_geom::FixedAabb3;
+use bunny_linalg::FixedVec3;
+use bunny_num::FixedQ32_32;
+use bunny_query::{TraceRay, TraceTriangle};
+
+use super::{reserved, Hit, Scene, SceneError, TraceError, Tracer, FAR};
+
+/// A compact BVH: its root, its nodes and the primitive-index buffer its leaves refer to.
+#[derive(Clone, Debug)]
+pub(super) struct Tree {
+    root: Option<CompactRoot>,
+    pub(super) nodes: Vec<CompactNode>,
+    prim_indices: Vec<u32>,
+}
+
+impl Scene {
+    fn view(&self) -> CompactView<'_> {
+        CompactView {
+            root: self.tree.root,
+            nodes: &self.tree.nodes,
+            prim_indices: &self.tree.prim_indices,
+        }
+    }
+
+    fn triangle(&self, primitive: u32) -> Option<&TraceTriangle> {
+        self.triangles.get(usize::try_from(primitive).ok()?)
+    }
+}
+
+impl Tracer for Scene {
+    /// Bunny's `compact_closest_hit` over the scene's tree with `TraceRay::hit_triangle` as the
+    /// primitive test (`t_min` zero, `t_max` the traversal's limit, at first [`FAR`]). The
+    /// winner is tested once more, at exactly its distance, to read its full `TriangleHit`.
+    fn closest(&self, ray: &TraceRay) -> Result<Option<Hit>, TraceError> {
+        let found = compact_closest_hit(self.view(), ray, FAR, |primitive, limit| {
+            let triangle = self.triangle(primitive)?;
+            ray.hit_triangle(triangle, FixedQ32_32::ZERO, limit).map(|hit| hit.distance)
+        })
+        .map_err(TraceError::Traversal)?;
+        let Some(found) = found else { return Ok(None) };
+        let triangle = self.triangle(found.primitive).ok_or(TraceError::InconsistentHit)?;
+        let hit = ray
+            .hit_triangle(triangle, found.distance, found.distance)
+            .ok_or(TraceError::InconsistentHit)?;
+        Ok(Some(Hit { primitive: found.primitive, hit }))
+    }
+
+    /// Bunny's `compact_any_hit` over the scene's tree with `TraceRay::hit_triangle` (`t_min`
+    /// zero, `t_max` as given) as the primitive test.
+    fn occluded(&self, ray: &TraceRay, t_max: FixedQ32_32) -> Result<bool, TraceError> {
+        compact_any_hit(self.view(), ray, t_max, |primitive| {
+            self.triangle(primitive).is_some_and(|triangle| {
+                ray.hit_triangle(triangle, FixedQ32_32::ZERO, t_max).is_some()
+            })
+        })
+        .map_err(TraceError::Traversal)
+    }
+}
+
+/// A tree over `boxes` from `build_bvh_sah`, converted by `compact_bvh`: the compact root, the
+/// compact nodes and the primitive-index buffer.
+pub(super) fn build_tree(boxes: &[FixedAabb3]) -> Result<Tree, SceneError> {
+    let count = boxes.len();
+    let node_count = count.checked_mul(2).ok_or(SceneError::TooManyTriangles)?;
+    let empty_box = FixedAabb3::new(ZERO_VEC, ZERO_VEC);
+    let empty = BvhNode { bounds: empty_box, first_child_or_prim_idx: 0, prim_count: 0 };
+    let mut nodes = reserved(node_count)?;
+    nodes.resize(node_count, empty);
+    let mut prim_indices = reserved(count)?;
+    prim_indices.resize(count, 0_u32);
+    let used = build_bvh_sah(&mut nodes, &mut prim_indices, boxes).ok_or(SceneError::BvhBuild)?;
+    nodes.truncate(used);
+    // A tree of n nodes has (n - 1) / 2 interior nodes, one compact node each.
+    let interior = used.saturating_sub(1) / 2;
+    let blank = CompactNode {
+        bounds: [empty_box, empty_box],
+        children: [CompactChild::default(), CompactChild::default()],
+    };
+    let mut compact = reserved(interior)?;
+    compact.resize(interior, blank);
+    let converted = compact_bvh(&nodes, &mut compact).map_err(|_| SceneError::BvhBuild)?;
+    let root = converted.map(|(root, written)| {
+        compact.truncate(written);
+        root
+    });
+    Ok(Tree { root, nodes: compact, prim_indices })
+}
+
+const ZERO_VEC: FixedVec3 = FixedVec3::new(FixedQ32_32::ZERO, FixedQ32_32::ZERO, FixedQ32_32::ZERO);

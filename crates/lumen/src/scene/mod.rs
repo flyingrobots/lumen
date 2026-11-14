@@ -9,22 +9,24 @@
 
 use core::fmt;
 
-use bunny_broadphase::{
-    build_bvh_sah, compact_any_hit, compact_bvh, compact_closest_hit, BvhNode, CompactChild,
-    CompactNode, CompactRoot, CompactView, TraversalError,
-};
 use bunny_geom::FixedAabb3;
 use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
     Albedo, CameraError, CameraSpec, DirectionalLight, PinholeCamera, SkyLight, TriangleSurface,
 };
-use bunny_query::{TraceRay, TraceTriangle, TriangleHit};
+use bunny_query::TraceTriangle;
 
 use crate::mesh::PlaceError;
 
-/// The farthest distance a camera or bounce ray searches: no limit, raw `i64::MAX`.
-pub const FAR: FixedQ32_32 = FixedQ32_32::from_raw(i64::MAX);
+mod tracer;
+mod tree;
+
+#[cfg(test)]
+mod tests;
+
+pub use tracer::{Hit, TraceError, Tracer, FAR};
+use tree::{build_tree, Tree};
 
 /// Where a pinhole camera stands and where it looks. The image size is chosen per render.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,56 +136,6 @@ impl fmt::Display for SceneError {
 
 impl std::error::Error for SceneError {}
 
-/// The nearest triangle a ray hits.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Hit {
-    /// The primitive index of the triangle.
-    pub primitive: u32,
-    /// Bunny's `TriangleHit` for that triangle: the distance (a multiple of the ray's
-    /// direction, floored) and the facing.
-    pub hit: TriangleHit,
-}
-
-/// Why a ray could not be traced.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TraceError {
-    /// The traversal refused the tree.
-    Traversal(TraversalError),
-    /// The traversal named a primitive that the triangle list does not hold, or whose hit
-    /// could not be repeated. Neither can happen with a tree built by [`Scene::new`].
-    InconsistentHit,
-}
-
-impl fmt::Display for TraceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Traversal(error) => write!(f, "traversal failed: {error:?}"),
-            Self::InconsistentHit => f.write_str("traversal reported no valid hit"),
-        }
-    }
-}
-
-impl std::error::Error for TraceError {}
-
-/// The two ray queries a path needs. [`Scene`] implements it with Bunny's traversals; a test can
-/// wrap a scene to check every query against a test of every triangle.
-pub trait Tracer {
-    /// The nearest triangle `ray` hits at a distance in `0..=FAR`, or `None` for a miss. Of
-    /// triangles at the same distance the lowest primitive index wins.
-    ///
-    /// # Errors
-    ///
-    /// A [`TraceError`] if the traversal fails.
-    fn closest(&self, ray: &TraceRay) -> Result<Option<Hit>, TraceError>;
-
-    /// Whether `ray` hits any triangle at a distance in `0..=t_max`.
-    ///
-    /// # Errors
-    ///
-    /// A [`TraceError`] if the traversal fails.
-    fn occluded(&self, ray: &TraceRay, t_max: FixedQ32_32) -> Result<bool, TraceError>;
-}
-
 /// Triangles in primitive order with their surfaces, materials, lighting, acceleration structure
 /// and camera placement.
 #[derive(Clone, Debug)]
@@ -196,15 +148,6 @@ pub struct Scene {
     camera: CameraPlacement,
     tree: Tree,
 }
-
-/// A compact BVH: its root, its nodes and the primitive-index buffer its leaves refer to.
-#[derive(Clone, Debug)]
-struct Tree {
-    root: Option<CompactRoot>,
-    nodes: Vec<CompactNode>,
-    prim_indices: Vec<u32>,
-}
-
 impl Scene {
     /// Builds a scene.
     ///
@@ -328,173 +271,11 @@ impl Scene {
     pub const fn camera(&self) -> CameraPlacement {
         self.camera
     }
-
-    fn view(&self) -> CompactView<'_> {
-        CompactView {
-            root: self.tree.root,
-            nodes: &self.tree.nodes,
-            prim_indices: &self.tree.prim_indices,
-        }
-    }
-
-    fn triangle(&self, primitive: u32) -> Option<&TraceTriangle> {
-        self.triangles.get(usize::try_from(primitive).ok()?)
-    }
 }
-
-impl Tracer for Scene {
-    /// Bunny's `compact_closest_hit` over the scene's tree with `TraceRay::hit_triangle` as the
-    /// primitive test (`t_min` zero, `t_max` the traversal's limit, at first [`FAR`]). The
-    /// winner is tested once more, at exactly its distance, to read its full `TriangleHit`.
-    fn closest(&self, ray: &TraceRay) -> Result<Option<Hit>, TraceError> {
-        let found = compact_closest_hit(self.view(), ray, FAR, |primitive, limit| {
-            let triangle = self.triangle(primitive)?;
-            ray.hit_triangle(triangle, FixedQ32_32::ZERO, limit).map(|hit| hit.distance)
-        })
-        .map_err(TraceError::Traversal)?;
-        let Some(found) = found else { return Ok(None) };
-        let triangle = self.triangle(found.primitive).ok_or(TraceError::InconsistentHit)?;
-        let hit = ray
-            .hit_triangle(triangle, found.distance, found.distance)
-            .ok_or(TraceError::InconsistentHit)?;
-        Ok(Some(Hit { primitive: found.primitive, hit }))
-    }
-
-    /// Bunny's `compact_any_hit` over the scene's tree with `TraceRay::hit_triangle` (`t_min`
-    /// zero, `t_max` as given) as the primitive test.
-    fn occluded(&self, ray: &TraceRay, t_max: FixedQ32_32) -> Result<bool, TraceError> {
-        compact_any_hit(self.view(), ray, t_max, |primitive| {
-            self.triangle(primitive).is_some_and(|triangle| {
-                ray.hit_triangle(triangle, FixedQ32_32::ZERO, t_max).is_some()
-            })
-        })
-        .map_err(TraceError::Traversal)
-    }
-}
-
-/// A tree over `boxes` from `build_bvh_sah`, converted by `compact_bvh`: the compact root, the
-/// compact nodes and the primitive-index buffer.
-fn build_tree(boxes: &[FixedAabb3]) -> Result<Tree, SceneError> {
-    let count = boxes.len();
-    let node_count = count.checked_mul(2).ok_or(SceneError::TooManyTriangles)?;
-    let empty_box = FixedAabb3::new(ZERO_VEC, ZERO_VEC);
-    let empty = BvhNode { bounds: empty_box, first_child_or_prim_idx: 0, prim_count: 0 };
-    let mut nodes = reserved(node_count)?;
-    nodes.resize(node_count, empty);
-    let mut prim_indices = reserved(count)?;
-    prim_indices.resize(count, 0_u32);
-    let used = build_bvh_sah(&mut nodes, &mut prim_indices, boxes).ok_or(SceneError::BvhBuild)?;
-    nodes.truncate(used);
-    // A tree of n nodes has (n - 1) / 2 interior nodes, one compact node each.
-    let interior = used.saturating_sub(1) / 2;
-    let blank = CompactNode {
-        bounds: [empty_box, empty_box],
-        children: [CompactChild::default(), CompactChild::default()],
-    };
-    let mut compact = reserved(interior)?;
-    compact.resize(interior, blank);
-    let converted = compact_bvh(&nodes, &mut compact).map_err(|_| SceneError::BvhBuild)?;
-    let root = converted.map(|(root, written)| {
-        compact.truncate(written);
-        root
-    });
-    Ok(Tree { root, nodes: compact, prim_indices })
-}
-
-const ZERO_VEC: FixedVec3 = FixedVec3::new(FixedQ32_32::ZERO, FixedQ32_32::ZERO, FixedQ32_32::ZERO);
 
 /// An empty vector with room for `count` items, or [`SceneError::OutOfMemory`].
 fn reserved<T>(count: usize) -> Result<Vec<T>, SceneError> {
     let mut items = Vec::new();
     items.try_reserve_exact(count).map_err(|_| SceneError::OutOfMemory)?;
     Ok(items)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::reference::{per_256, reference_camera, reference_scene, REFERENCE_TRIANGLE_COUNT};
-    use crate::vertex_grid::{at, grid, U};
-
-    fn grey() -> Albedo {
-        Albedo::new([per_256(128); 3]).expect("valid")
-    }
-
-    fn dark() -> Lighting {
-        Lighting { sun: None, sky: SkyLight::new([FixedQ32_32::ZERO; 3]).expect("valid") }
-    }
-
-    /// A tree over n primitives has at most n - 1 interior nodes.
-    #[test]
-    fn the_reference_tree_has_fewer_interior_nodes_than_triangles() {
-        let scene = reference_scene().expect("the reference scene builds");
-        assert!(scene.tree.nodes.len() < REFERENCE_TRIANGLE_COUNT);
-    }
-
-    #[test]
-    fn scene_construction_refuses_bad_input() {
-        let camera = reference_camera();
-        let materials = [grey()];
-        let spec = |triangles: &[[FixedVec3; 3]], material_of: &[u32]| {
-            let spec = SceneSpec {
-                triangles,
-                material_of,
-                materials: &materials,
-                lighting: dark(),
-                camera,
-            };
-            Scene::new(&spec).err()
-        };
-        assert_eq!(spec(&[], &[]), Some(SceneError::Empty));
-        let far = FixedVec3::new(grid(256 * U), FixedQ32_32::ZERO, FixedQ32_32::ZERO);
-        let fine = at(0, 0, 0);
-        let good = [fine, at(U, 0, 0), at(0, U, 0)];
-        let triangles = [good, [fine, far, at(0, U, 0)]];
-        assert_eq!(
-            spec(&triangles, &[0, 0]),
-            Some(SceneError::OutsideTraceDomain { primitive: 1 })
-        );
-        assert_eq!(spec(&[good], &[]), Some(SceneError::MaterialCount));
-        assert_eq!(
-            spec(&[good, good], &[0, 1]),
-            Some(SceneError::UnknownMaterial { primitive: 1 })
-        );
-        // A zero-area triangle is accepted and has no surface.
-        let flat = [fine, fine, at(U, 0, 0)];
-        let built = Scene::new(&SceneSpec {
-            triangles: &[good, flat],
-            material_of: &[0, 0],
-            materials: &materials,
-            lighting: dark(),
-            camera,
-        })
-        .expect("builds");
-        assert!(built.surface(0).is_some());
-        assert!(built.surface(1).is_none());
-        assert!(built.surface(2).is_none());
-    }
-
-    /// A one-triangle scene is a one-leaf tree, which the compact layout stores in its root
-    /// with no compact node; tracing still works.
-    #[test]
-    fn a_one_triangle_scene_traces() {
-        let triangle = [at(-U, -U, 0), at(U, -U, 0), at(0, U, 0)];
-        let scene = Scene::new(&SceneSpec {
-            triangles: &[triangle],
-            material_of: &[0],
-            materials: &[grey()],
-            lighting: dark(),
-            camera: reference_camera(),
-        })
-        .expect("builds");
-        assert!(scene.tree.nodes.is_empty());
-        let toward = TraceRay::new(at(0, 0, 4 * U), at(0, 0, -U)).expect("ray");
-        let hit = scene.closest(&toward).expect("traces").expect("hits");
-        assert_eq!((hit.primitive, hit.hit.distance, hit.hit.front_face), (0, grid(4 * U), true));
-        assert!(scene.occluded(&toward, FAR).expect("traces"));
-        assert!(!scene.occluded(&toward, grid(4 * U - 1)).expect("traces"));
-        let away = TraceRay::new(at(0, 0, 4 * U), at(0, 0, U)).expect("ray");
-        assert_eq!(scene.closest(&away).expect("traces"), None);
-        assert!(!scene.occluded(&away, FAR).expect("traces"));
-    }
 }
