@@ -11,7 +11,9 @@ Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
 
 Lumen renders a built-in scene, prints its image hash and timing, and writes it to a PNG file
 if asked; `lumen stats` prints what a scene holds ([Statistics](#statistics)). `--scene reference` (the default) is the reference scene, which includes the Stanford
-bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece. The
+bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece;
+`--scene canyon` is [the canyon](#the-canyon-scene), a picture and a large-triangle-count
+benchmark. The
 reference render:
 
 - in bands of rows on all cores (`--threads`, below), with the same bytes at every thread count;
@@ -35,9 +37,11 @@ light, textures, smooth normals and more than one bounce are not supported.
 The short way, from a checkout:
 
 ```sh
-make demo            # both built-in scenes at 1280x720, opened when done
+make demo            # the three built-in scenes at 1280x720, opened when done
 make fixed-point     # just the Fixed Point scene
+make canyon          # just the canyon scene
 make 4k              # the reference scene at 3840x2160, 16 samples
+make 4k-canyon       # the canyon scene at 3840x2160, 16 samples
 make help            # every target and the variables you can override
 ```
 
@@ -100,7 +104,7 @@ rays-per-second <rate> (information only: wall clock, all threads)
 ns-per-ray <time> (information only: wall clock, all threads)
 ```
 
-Usage: `lumen render [--scene reference|fixed-point] [--out FILE] [--width W] [--height H]
+Usage: `lumen render [--scene reference|fixed-point|canyon] [--out FILE] [--width W] [--height H]
 [--samples N] [--seed S] [--threads T] [--band-rows R]`; the defaults are the reference scene,
 320 by 180, 4 samples per pixel, seed 0, bands of 1 row and as many threads as the system
 reports available. Without `--out`
@@ -171,7 +175,7 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
 
 - **The library's API is the crate root.** Every type and function a front end, a `Tracer` or a
   test needs is re-exported there: scene building (`Scene`, `SceneSpec`, `CameraPlacement`,
-  `Lighting`, `reference_scene`, `fixed_point_scene`, and `BuiltinScene`, the registry of
+  `Lighting`, `reference_scene`, `fixed_point_scene`, `canyon_scene`, and `BuiltinScene`, the registry of
   named scenes with their identities that the command's `--scene` reads), rendering (`render`, `render_scheduled`, `render_traced`,
   `Schedule`, `BandRows`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
   its `hash`), its provenance (`RenderProvenance`), a scene's statistics (`Scene::statistics`,
@@ -266,8 +270,9 @@ through the public API and checks its values and its chain.
   (`UnknownMaterial`); the buffer, the item count and the allocator's error (`OutOfMemory`,
   with a `SceneBuffer`); Bunny's `CompactError` (`BvhCompact`, named in words, since Bunny's has
   no text) or the room given when `build_bvh_sah` refuses (`BvhBuild`); and the camera, mesh and
-  constant errors as sources. `FixedPointError`, `BuiltinSceneError` and `PlaceError` return
-  theirs from `source()` too.
+  constant errors as sources. `FixedPointError`, `CanyonError`, `BuiltinSceneError` and
+  `PlaceError` return theirs from `source()` too; `HeightfieldError` names the parameter of a
+  refused heightfield spec.
 - **A PNG** (`write_png`) fails with a `PngError`: `Write` with the writer's `io::Error` as its
   source and its text; `ChunkTooLong` and `BlockTooLong` carry the length for the encoder's own
   length checks, which no image reaches.
@@ -280,8 +285,8 @@ through the public API and checks its values and its chain.
   types through `From` or `try_from`, not `as`; the one `as` left on such a value is `widen`
   (`u32` to `usize`, lossless under a compile-time assertion, behind a scoped lint exception).
 - `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
-  `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `BuiltinSceneError` and
-  `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
+  `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `CanyonError`,
+  `HeightfieldError`, `BuiltinSceneError` and `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
 
 ## Statistics
 
@@ -650,6 +655,163 @@ off the face and chest.
   commit. Any change to the scene's triangles, their order, materials, lighting or camera is a
   new scene version and a new hash. Every platform in [Determinism](#determinism) checks it.
 
+## The canyon scene
+
+`lumen-canyon-scene/1` (`crates/lumen/src/scenes/canyon/`) is a large-triangle-count scene and a
+picture: a fractal canyon of integer terrain, three small craft of lumen's own design flying
+along it in a chase, the full-resolution Stanford bunny on a ledge, a low sun, a near-black sky
+and a banded planet. Composition after a 1990s canyon-chase render; no image from it is in the
+repository. The library builds it with `lumen::canyon_scene()`; `canyon_content()` returns its
+566 005 triangles in primitive order (the terrain, each craft's hull and engines, the bunny, the
+planet's bands) with the part each belongs to, its material and its vertex normals. Every
+coordinate is a whole number of `2^-16` grid steps.
+
+Render it with the command (`--scene canyon`):
+
+```sh
+python3 $D lumen ~/git/lumen --worktree --fetch --export canyon.png --out "$(mktemp -d)" -- \
+  bash -c 'mkdir -p /scratch/out && cargo run --locked --release -q -p lumen -- render --scene canyon --width 1280 --height 720 --samples 64 --out /scratch/out/canyon.png'
+```
+
+The 1280 by 720 render at 64 samples has the image hash
+`sha256:1bd910dcea9c3daaa3ea57e3972a639202aa341ba59e0e075a2e55184dc56446` (158 564 967 rays).
+`BuiltinScene::Canyon` is the registry entry; its content identity is
+`sha256:a809761e5cbc96944721e8e2095ae9e0eaa76d8f3ac8bf25e536446835eaf88d`.
+
+**The terrain** (480 256 triangles) is a grid of 513 by 470 vertices, an eighth of a unit apart
+across the canyon (X, from -40 to 24) and three eighths along it (Z, from 16 to -159.875), so
+that a wall's facets are about as tall as they are long; two triangles per cell, wound up, none
+of zero area (each projects onto half a cell), every coordinate a whole number of `2^-16` grid
+steps. The spec (`terrain::CANYON_HEIGHTFIELD`, seed 2009): a floor 14 units across, walls of
+four tiers each rising 3 units over one unit with a half-unit tread, a ragged plateau about 12
+units up, eight noise layers (lattice spacings 128 to 1, amplitudes from 1.5 units, each three
+quarters of the one before, the finest two halved again) weighted a quarter on the floor, twice
+on the walls and one and a half times on the plateau, and a centre line that bends about 9 units
+to the left between 30 and 60 units from `z = 12`. One shelf (`LEDGE`) cuts a level ledge 3
+units up into the left wall near the canyon's mouth. Each cell is coloured by its rock stratum:
+its four corners' mean height in bands 1.5 units thick picks material 0, 1, 0, 2 in turn (`STRATA`).
+
+**The craft** (170 triangles, `scenes::canyon::craft`), shapes of lumen's own, each a painted
+hull and dark engine blocks built from convex solids (`convex`: corners and faces, each face a
+fan wound away from the solid's centre), drawn nose toward `-Z` in 64ths of 3 units and posed
+by rational rotations (a bank about `+Z`, then a heading about `+Y`, each coordinate floored to
+the grid): the skiff (a hexagonal hull with a pointed nose, straight swept wings and a fin,
+orange) high at `(-2.5, 7, -10)`, banked by `-atan(7/24)` and turned by `atan(7/24)`; the tug (a
+wedge tapering to a narrow nose between two pontoons joined by a short wing, cream) at
+`(-7.5, 5.5, -15)`, banked and turned by `-atan(7/24)`; and the kite (a flat diamond wing with
+two engine pods, teal) leading low at `(-5.5, 4, -24)`, banked by `atan(7/24)`. `push_craft`
+appends them to a `CanyonContent` in that order, each its hull then its engines.
+
+**The planet** (16 128 triangles, `scenes::canyon::planet`): a sphere of radius 22 centred at
+`(-44, 48, -200)`, 128 longitudes by 64 latitude rows, its points from Bunny's table-based
+`FixedAngle::sin_cos` (each within one raw unit) floored to the grid, its axis tilted a
+thirty-second of a turn toward `-X`, in eight latitude bands (8, 6, 10, 6, 12, 6, 8 and 8 rows
+from the south pole), each its own material. `push_planet` appends the bands.
+
+**The bunny** (69 451 triangles, `scenes::canyon::bunny`): the full-resolution Stanford bunny
+(`bun_zipper.ply`, none dropped), turned half a turn to face across the canyon (`+X`), scaled by
+16 (about 2.4 units tall), floored to the grid and moved by whole grid steps so that its lowest
+vertex is exactly on the ledge (3 units up) and the middle of its footprint is at column 220,
+row 39 of the terrain grid (`x = -12.5`, `z = 1.375`). Its smooth-shading normals are Bunny's
+`VertexNormals` over the placed positions, as in Fixed Point.
+
+**The look** (`scenes::canyon::look`). Only the bunny is smooth, so the scene is rendered by
+`lumen-smooth-diffuse-path/1` (ADR 0007): the terrain keeps its facets, which suit rock, cost a
+flat hit each, and avoid the shadow-terminator steps of interpolated normals
+(flyingrobots/bunny#340) that a smooth heightfield would show on every wall. Materials (linear
+albedo in 256ths): rock `(150, 96, 64)`, `(178, 128, 86)` and `(118, 74, 52)`; skiff
+`(225, 105, 25)`, kite `(30, 150, 165)`, tug `(215, 205, 180)`, engines `(36, 36, 40)`, bunny
+`(205, 200, 192)`; planet bands from the south `(200, 170, 125)`, `(150, 95, 60)`,
+`(225, 205, 165)`, `(175, 110, 70)`, `(235, 220, 185)`, `(120, 80, 55)`, `(205, 185, 150)` and
+`(140, 160, 185)`. The sun comes from low behind the camera and a little to its right, toward
+`(0.1875, 0.375, 1.0)` (about 20 degrees up), irradiance `(1152, 1075, 950) / 256`: the right
+wall throws a long shadow across the floor, the craft throw theirs on it and the bunny's ears
+theirs on the wall behind it. The sky is a near-black `(2, 2, 3) / 256`. The camera stands over
+the floor at `(-4.5, 4.25, 12)` and looks along `(-0.03125, 0.1, -1)` (its Y is 6 553 grid
+steps), up `+Y`, with a vertical half-angle whose tangent is 0.5.
+
+`CanyonContent` (`scenes::canyon::content`) holds triangles in primitive order with each one's
+material index, vertex normals and named part (`PartKind`: the terrain, a craft's hull or
+engines, the bunny, a planet band).
+
+Tests (`crates/lumen/tests/canyon/parts.rs`): every craft part's and band's triangle count,
+derived by hand; every triangle inside the trace domain and none degenerate; one material per
+part, eight distinct for the bands, no vertex normals; and every craft at least half a unit above
+every terrain triangle under it (each triangle's vertices below the craft's lowest point, so the
+whole triangle is), the three craft's boxes apart.
+
+Tests of the assembled scene (`crates/lumen/tests/canyon/integrity.rs`, the content and the
+scene built once per test binary): the parts in order covering all 566 005 primitives, 16
+materials; every triangle inside the trace domain and none degenerate; only the bunny smooth,
+so the integrator is the smooth one; and the bunny resting on its ledge to the grid step (its
+lowest vertex at the ledge's height, no terrain vertex under it above that, and the cell under
+its lowest vertex level at that height on all four corners). Building the scene takes about 0.7
+seconds in the release profile and about 3 in the test profile.
+
+Rendering tests (`crates/lumen/tests/canyon/rendering.rs`): the composition as pixels (of a 320
+by 180 image, the camera ray through each pixel's centre meets the bunny in at least 900 pixels,
+each craft in at least 40 and the planet in at least 800); every camera, shadow and bounce ray
+of a 48 by 27 image at 1 sample (1 296 samples) equal to a test of all 566 005 triangles, a
+large test that runs in the release profile only (about 12 seconds; the test profile skips it
+with `#[cfg_attr(debug_assertions, ignore = ...)]`, and CI runs both profiles); and a golden
+hash: 96 by 54 pixels, 4 samples per pixel, seed 0,
+`sha256:019fcdddaaff8761f3f6e64dfe28d1ce7d2b07200b8c69663345ca4a495466c5`, under the same rules
+as the other scenes', the same at every thread count and band height (`tests/threads.rs`). The
+canyon's test binary is not in the WebAssembly job's list; that job checks the canyon's content
+identity and a small render through `tests/library.rs`.
+
+At 3840 by 2160 and 16 samples it renders in about 14.5 seconds with 18 CPUs, 2.7 times the
+reference scene's time per ray: [the measurement record](docs/measurements/2026-11-14-canyon.md)
+has the runs, the tree and what was not measured.
+
+**Known limits of version 1.** The tug reads as a box from behind; the near right wall is a dark
+mass in shadow, lit only by the bounce; the far right wall shows vertical fluting where the low
+sun rakes a steep heightfield; and the ledge's back is a cut cliff, flat where the shelf sliced
+the wall. A change for any of these is a new scene version.
+
+Tests (`crates/lumen/tests/canyon/terrain.rs`): two triangles per cell in row order on the grid
+points of their corners, inside Bunny's trace domain, none degenerate, each facing up (an exact
+integer cross product); every cell's material from the stratum rule written out in the test,
+each of the three used. The generator's bound and channel tests also run on the scene's spec
+(the floor at the centre line at least 2.5 units below every plateau vertex of its row).
+
+## Canyon terrain: `lumen-canyon-heightfield/1`
+
+`lumen::scenes::canyon::heightfield` generates the canyon scene's terrain heights in integers only:
+`generate(&HeightfieldSpec)` returns one height, in whole `2^-16` grid steps, for every vertex
+of a grid of `columns` by `rows` (column `i` across the canyon, row `j` along it). A height is a
+pure function of the spec and `(i, j)`: the same spec gives the same heights, bit for bit, on
+every platform. The algorithm, specified exactly in the module's documentation so that it can be
+reimplemented, is:
+
+1. **Lattice hash**: the seed, a layer tag and a lattice point mixed with three odd constants,
+   then the SplitMix64 output function; its top 16 bits scaled to the layer's amplitude.
+2. **Noise**: value noise, one layer per `NoiseLayer` (lattice spacing in vertices, amplitude in
+   grid steps), each the bilinear blend of its four lattice values, floored, summed.
+3. **Centre line**: a one-dimensional noise layer (the meander) moves the canyon's centre from
+   row to row, carried in 256ths of a column so that a wall stays smooth where the line bends
+   by less than a column per row.
+4. **Carve**: by distance from the centre line, a floor, walls of `Terraces` (each tier a steep
+   riser and a level tread) and a plateau.
+5. **Height**: the carve's profile plus the noise, weighted by zone (`NoiseWeights`, in
+   quarters): little on the floor, most on the walls.
+6. **Shelves**: each `Shelf` cuts the rock in its rectangle down to its height, leaving a level
+   ledge whose edges stay rough where the rock was already lower.
+
+`HeightfieldSpec::bounds` states the range every height lies in; `generate` refuses a spec
+outside its stated ranges (`HeightfieldError`, naming the parameter) before computing anything,
+and those ranges keep every product inside `i64`. Any change to the steps, their constants or
+their order is a new version of the generator.
+
+Tests (`crates/lumen/tests/canyon/heightfield.rs`): exact values on tiny grids, from SplitMix64's
+published first output and from an independent Python model of the documented algorithm (a 3 by
+3 grid, a hand-worked profile, and the sum, weighted sum, extremes and two vertices of a 64 by 96
+canyon with every step in use); determinism; every height within the stated bounds; the channel
+(the floor at the centre line below every plateau vertex of its row by a stated margin); a wall
+smooth to within its slope where the centre line bends; the shelf's rule; and each refusal.
+Seeded mutations of the noise blend, the carve's floor width, the centre line's fraction and the
+shelf's rule each fail at least one of them.
+
 ## The integrator
 
 `lumen-diffuse-path/1` (`crates/lumen/src/render.rs`, `trace_path`) is a composition of named
@@ -913,6 +1075,11 @@ builds](docs/measurements/2026-11-13-4k-row-bands.md) repeats it for flyingrobot
 records the showpiece for flyingrobots/lumen#39: the same image hash,
 `sha256:d276602407edb72109ebfbc8cec9121230171cf156144f139fb2bc3ca1c13bef`, on every run, a mean
 of 21.2 seconds with 18 CPUs, about 10 % more than version 1 (19.2 seconds).
+[The canyon scene at 4K and 16 samples per pixel, 2026-11-14](docs/measurements/2026-11-14-canyon.md)
+records flyingrobots/lumen#40: 566 005 triangles, a tree of 575 687 nodes, the image hash
+`sha256:cbd020b9949ae7310b11fb21650e9336ca2e6ec99e0f2bcd950ff61d39469eab` on every run, a mean
+render of 14.5 seconds with 18 CPUs, and 40.7 ns per ray against 15.0 for the reference scene
+and 18.0 for Fixed Point at the same settings in the same session.
 Each states its commit and conditions and applies to that commit only.
 
 ### Readings
