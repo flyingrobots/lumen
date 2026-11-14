@@ -19,7 +19,7 @@ use lumen::{
 };
 
 mod golden;
-use golden::{GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP};
+use golden::{GOLDEN_96X54_4SPP, GOLDEN_CANYON_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP};
 
 fn settings(samples: u32, seed: u32) -> RenderSettings {
     RenderSettings::new(samples, seed).expect("valid settings")
@@ -68,7 +68,7 @@ fn raster_order(
 // ---------------------------------------------------------------------------------------------
 // The image does not depend on the schedule.
 
-/// The golden 96 by 54 images of both built-in scenes at every thread count and at band heights
+/// The golden 96 by 54 images of the three built-in scenes at every thread count and at band heights
 /// of one row, heights that divide the image (2, 6, 27), that leave a partial last band (4, 5, 7,
 /// 16), the whole image and more than the image.
 #[test]
@@ -76,6 +76,7 @@ fn the_golden_hashes_hold_at_every_thread_count_and_band_height() {
     for (scene_kind, golden) in [
         (BuiltinScene::Reference, GOLDEN_96X54_4SPP),
         (BuiltinScene::FixedPoint, GOLDEN_FIXED_POINT_96X54_4SPP),
+        (BuiltinScene::Canyon, GOLDEN_CANYON_96X54_4SPP),
     ] {
         let scene = scene_kind.build().expect("builds");
         let (want_image, want_rays) = raster_order(&scene, size(96, 54), settings(4, 0));

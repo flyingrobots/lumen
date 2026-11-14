@@ -1,7 +1,7 @@
 //! Lumen: a deterministic ray tracer built on Bunny's integer math.
 //!
-//! Lumen renders a built-in scene ([`BuiltinScene`]: the reference scene, [`reference_scene`], or
-//! the Fixed Point showpiece, [`fixed_point_scene`]), in bands of rows on all cores
+//! Lumen renders a built-in scene ([`BuiltinScene`]: the reference scene, [`reference_scene`], the
+//! Fixed Point showpiece, [`fixed_point_scene`], or the canyon, [`canyon_scene`]), in bands of rows on all cores
 //! ([`render_scheduled`], [`Schedule`], [`render_pixels`]) with a power-of-two number of samples
 //! per pixel, each one diffuse path with a shadow-casting directional light, a uniform sky and one
 //! bounce ([`trace_path`], `lumen-diffuse-path/1`, or `lumen-smooth-diffuse-path/1` with Bunny's
@@ -89,6 +89,7 @@ pub use scene::{
     TraceError, Tracer, TreeStatistics, FAR, LEAF_SIZE_BUCKETS, SCENE_CONTENT_ENCODING,
     TREE_BUILDER, TREE_LAYOUT,
 };
+pub use scenes::canyon::{canyon_scene, CANYON_SCENE_ID};
 pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
 pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};
 pub use workers::{

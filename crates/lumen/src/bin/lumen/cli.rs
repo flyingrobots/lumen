@@ -29,7 +29,7 @@ usage: lumen render [--scene NAME] [--out FILE] [--width W] [--height H] [--samp
        lumen stats [--scene NAME]
        lumen --help | --version
 
-Renders one of lumen's built-in scenes (reference, the default, or fixed-point) on T threads,
+Renders one of lumen's built-in scenes (reference, the default, fixed-point or canyon) on T threads,
 each taking bands of R whole rows, with N samples per pixel of a diffuse path (a shadow-casting
 sun, a uniform sky and one bounce), writes it to a PNG file if --out is given, and prints the
 image hash (SHA-256 of the raw RGBA8 bytes) and the timing. The image is the same for every
@@ -37,7 +37,8 @@ thread count and band height. --stats adds the scene's statistics and what the r
 after the report (see the README, Statistics). `lumen stats` builds the scene, renders nothing
 and prints what it holds: triangles by material, bounds, lights, camera, the shape of its tree
 and its memory.
-Scenes (--scene NAME): reference, fixed-point (the Stanford bunny in sunglasses at a craps table).
+Scenes (--scene NAME): reference, fixed-point (the Stanford bunny in sunglasses at a craps table),
+canyon (craft flying along a fractal canyon under a banded planet).
 Defaults: --scene reference --width 320 --height 180 --samples 4 --seed 0 --band-rows 1, and as
 many threads as the system reports available.
 Width and height are 1..=32768 each, with at most 134217728 (2^27) pixels in all.
