@@ -83,9 +83,10 @@ pub use render::{
     SMOOTH_SHADING_IDS, TONE_CURVE,
 };
 pub use scene::{
-    CameraPlacement, Hit, Lighting, PrimitiveIndex, Scene, SceneBuffer, SceneContentId, SceneError,
-    SceneMemory, SceneSpec, SceneStatistics, StatisticsError, TraceError, Tracer, TreeStatistics,
-    FAR, LEAF_SIZE_BUCKETS, SCENE_CONTENT_ENCODING, TREE_BUILDER, TREE_LAYOUT,
+    CameraPlacement, CountingTracer, Hit, Lighting, PrimitiveIndex, Scene, SceneBuffer,
+    SceneContentId, SceneError, SceneMemory, SceneSpec, SceneStatistics, StatisticsError,
+    TraceError, Tracer, TreeStatistics, FAR, LEAF_SIZE_BUCKETS, SCENE_CONTENT_ENCODING,
+    TREE_BUILDER, TREE_LAYOUT,
 };
 pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
 pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};
