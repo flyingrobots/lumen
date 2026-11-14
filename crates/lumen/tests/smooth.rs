@@ -173,6 +173,42 @@ fn face_normals_at_every_vertex_render_the_flat_bytes() {
     assert_eq!(a.rays, b.rays);
 }
 
+/// A triangle given one or two vertex normals (as `SceneSpec` allows) counts as smooth and goes
+/// through `SmoothHit`, but Bunny's `SmoothHit::new` takes the geometric frame when any normal
+/// is missing. Then its light sample is `SurfaceHit`'s, and its bounce is the same ray: a
+/// cosine-weighted direction around the geometric frame's normal has at least
+/// `MIN_BOUNCE_COSINE_RAW` with it, so it is above the exact plane and never rejected. So the
+/// reference scene with a wrong normal (`+Z`) at one or two vertices of every triangle renders
+/// the flat bytes, with the flat ray count and no rejected bounce, though it gets the smooth
+/// integrator. (Shading such a triangle smooth only when all three normals are present is
+/// therefore the same image: the mutation the review found to survive is equivalent.)
+#[test]
+fn a_triangle_with_a_missing_vertex_normal_renders_flat() {
+    let triangles = reference_triangles().expect("the reference triangles");
+    let flat = lumen::reference_scene().expect("builds");
+    let z = Some(FixedUnitVec3::UNIT_Z);
+    let size = ImageSize::new(64, 36).expect("size");
+    let settings = RenderSettings::new(4, 0).expect("settings");
+    let want = render(&flat, size, settings).expect("renders");
+    for given in [[z, None, None], [None, z, z]] {
+        let partial = Scene::new(&SceneSpec {
+            triangles: &triangles,
+            material_of: &reference_material_of(),
+            materials: &reference_materials().expect("materials"),
+            normals: &vec![given; triangles.len()],
+            lighting: reference_lighting().expect("lighting"),
+            camera: reference_camera(),
+        })
+        .expect("builds");
+        assert_eq!(partial.smooth_triangles(), triangles.len());
+        assert_eq!(Integrator::for_scene(&partial).id(), "lumen-smooth-diffuse-path/1");
+        let got = render(&partial, size, settings).expect("renders");
+        assert_eq!(got.image.hash(), want.image.hash(), "{given:?}");
+        assert_eq!(got.rays, want.rays, "{given:?}");
+        assert_eq!(got.statistics.outcomes.rejected_bounces, 0, "{given:?}");
+    }
+}
+
 /// Oracle: hand-derived. Every vertex normal is `+Y` and the sun is straight above at 1.0, so
 /// at every hit Bunny's shared-normal rule gives exactly `+Y`, the cosine is exactly 1.0, the
 /// light's term is `FRAC_1_PI` (raw 1 367 130 551), and an albedo of 0.5 reflects half of it,

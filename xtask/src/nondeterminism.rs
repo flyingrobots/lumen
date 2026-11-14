@@ -165,3 +165,28 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
     found.extend(waivers::macro_attributes(&toks));
     apply_waivers(text, found)
 }
+
+/// Whether a crate root's text denies (or forbids) `clippy::float_arithmetic` in an inner
+/// attribute, `#![deny(.., clippy::float_arithmetic, ..)]`: each deterministic crate must, since
+/// the lint catches arithmetic on a float whose type is only inferred and is not a workspace
+/// lint (the binary, tests and tooling use floats).
+pub(crate) fn denies_float_arithmetic(text: &str) -> bool {
+    let toks = tokens(text);
+    let word =
+        |t: Option<&(usize, Token)>, w: &str| matches!(t, Some((_, Token::Ident(x))) if x == w);
+    (0..toks.len()).any(|i| {
+        let inner = toks.get(i).map(|(_, t)| t) == Some(&Token::Punct('#'))
+            && toks.get(i + 1).map(|(_, t)| t) == Some(&Token::Punct('!'))
+            && toks.get(i + 2).map(|(_, t)| t) == Some(&Token::Punct('['));
+        let raises = word(toks.get(i + 3), "deny") || word(toks.get(i + 3), "forbid");
+        let list =
+            toks[(i + 4).min(toks.len())..].iter().take_while(|(_, t)| *t != Token::Punct(')'));
+        let names: Vec<&Token> = list.map(|(_, t)| t).collect();
+        inner
+            && raises
+            && names.windows(4).any(|w| {
+                matches!(w, [Token::Ident(c), Token::Punct(':'), Token::Punct(':'), Token::Ident(l)]
+                    if c == "clippy" && l == "float_arithmetic")
+            })
+    })
+}
