@@ -34,7 +34,7 @@ each taking bands of R whole rows, with N samples per pixel of a diffuse path (a
 sun, a uniform sky and one bounce), writes it to a PNG file if --out is given, and prints the
 image hash (SHA-256 of the raw RGBA8 bytes) and the timing. The image is the same for every
 thread count and band height. --stats adds the scene's statistics and what the rays found
-after the report (see the README, Statistics). `lumen stats` builds the scene, renders nothing
+after the report (see docs/reference/cli.md). `lumen stats` builds the scene, renders nothing
 and prints what it holds: triangles by material, bounds, lights, camera, the shape of its tree
 and its memory.
 --view NAME renders a debug view instead of the lit image: lit (the default), normals (the

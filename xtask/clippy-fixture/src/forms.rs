@@ -1,5 +1,5 @@
 //! The compiler layer's seeded forms: the 42 of ADR 0006's 50 that Clippy catches, and the forms
-//! of flyingrobots/lumen#115 that it catches. Each module is one form, marked with its rule.
+//! of flyingrobots/lumen#115 and #156 that it catches. Each module is one form, marked with its rule.
 
 // seeded: time-instant
 mod instant_qualified {
@@ -359,5 +359,27 @@ mod float_arithmetic_inferred {
     pub fn f(d: core::time::Duration) -> u64 {
         let x = d.as_secs_f64();
         (x * x).to_bits()
+    }
+}
+
+// seeded: float-type
+mod c_double_trait_call {
+    pub fn f(x: u32) -> bool {
+        <core::ffi::c_double as From<u32>>::from(x).is_sign_positive()
+    }
+}
+
+// seeded: float-type
+mod c_double_std_os_raw {
+    pub fn f(x: u32) -> bool {
+        std::os::raw::c_double::from(x).is_sign_positive()
+    }
+}
+
+// seeded: float-type
+mod c_float_renamed {
+    use std::ffi::c_float as Real;
+    pub fn f(x: u16) -> bool {
+        Real::from(x).is_sign_positive()
     }
 }
