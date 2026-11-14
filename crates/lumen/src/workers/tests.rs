@@ -304,11 +304,14 @@ fn after_a_halt_no_row_is_begun() {
 
 /// Starts workers with the operating system, except worker `refuse`, which it refuses with an
 /// `Other` error, as an operating system out of threads would. It counts the workers it started.
+/// Not on WebAssembly, which starts no thread at all (`tests/library.rs` checks that there).
+#[cfg(not(target_family = "wasm"))]
 struct RefuseAt {
     refuse: u32,
     started: Cell<u32>,
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl Spawner for RefuseAt {
     fn spawn<'scope, 'env, T, F>(
         &self,
@@ -333,6 +336,7 @@ impl Spawner for RefuseAt {
 /// after the `n - 1` workers already started have been joined, and never more pixels than the
 /// image has (each worker asked is counted, and the count past the image fails the test). That
 /// they stop at their next row is the halt rule, checked on every order above.
+#[cfg(not(target_family = "wasm"))]
 #[test]
 fn a_refused_worker_is_reported_with_its_number_and_its_error() {
     use std::sync::atomic::AtomicUsize;
