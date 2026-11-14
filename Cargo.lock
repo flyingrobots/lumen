@@ -93,6 +93,9 @@ dependencies = [
 name = "lumen-clippy-fixture"
 version = "0.1.0"
 dependencies = [
+ "bunny-codec",
+ "bunny-geom",
+ "bunny-linalg",
  "bunny-num",
 ]
 
