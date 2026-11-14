@@ -126,7 +126,8 @@ pub enum RenderError {
     Size(SizeError),
     /// The scene could not be built.
     Scene(SceneError),
-    /// Bunny refused the camera.
+    /// Bunny refused the camera at the image size. [`Scene::new`] has already checked the
+    /// placement, so for a built scene this is a size Bunny's camera does not accept.
     Camera(CameraError),
     /// The camera gave no ray for a pixel sample inside the image.
     NoRay {
@@ -219,7 +220,9 @@ impl Add for RayCount {
     type Output = Self;
 
     /// The rays of both. Ray counts of a render stay far below `u64::MAX` (an image has at most
-    /// 2^27 pixels of at most 1024 samples of at most five rays), so the sums never saturate.
+    /// 2^27 pixels of at most 1024 samples of at most four rays: the camera ray, the bounce ray
+    /// and a shadow ray at each of their hits, so at most 2^39 rays), so the sums never
+    /// saturate.
     fn add(self, other: Self) -> Self {
         Self {
             closest: self.closest.saturating_add(other.closest),

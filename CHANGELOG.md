@@ -8,6 +8,20 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- `Scene::new` refuses an invalid camera placement (part of flyingrobots/lumen#20): it builds
+  Bunny's `PinholeCamera` at a one-pixel image before anything is allocated and returns the new
+  `SceneError::Camera(CameraError)` for a position outside the trace domain, a tangent not in
+  `(0, 256]`, a zero look direction or an up hint that is zero or parallel to it. Before, such a
+  scene built and every render of it failed with `RenderError::Camera`. A test covers each
+  invalid field; a mutation that discards the check fails it.
+- `lumen::reference::reference_lighting()` and `reference_materials()` return
+  `Result<_, ShadingError>` instead of panicking if Bunny refused a constant, as the Fixed Point
+  scene's do; `reference_scene()` reports such a refusal as the new `SceneError::Constant`.
+- `SceneError` and `TraceError` are `#[non_exhaustive]` (ADR 0002): a `match` on them outside
+  the crate needs a wildcard arm.
+- The `RayCount` addition's documentation says a sample traces at most four rays (camera,
+  bounce and a shadow ray at each hit), not five; the bound of 2^39 rays per render stands.
+
 - Bunny is pinned to `3c395f9950ac63d5ecfbd2055c306954111daf9d` (was `dcd6bd37613738de93f7084e7c8aa0283de964ea`), a commit of Bunny's main after the 0.7.1
   release, for every Bunny crate lumen uses (flyingrobots/lumen#27, part of it). Both golden image
   hashes are unchanged. Of Bunny's 0.7.1 behaviour changes, `ray_intersects_aabb` and

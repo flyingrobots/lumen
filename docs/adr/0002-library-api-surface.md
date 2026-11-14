@@ -36,6 +36,12 @@ second front end would have had to rebuild that list by hand.
   a stable order: `scene`, `integrator`, `shading`, `sampler`, `tone`, `encoding`, `bunny`,
   `size`, `pixels`, `samples`, `seed`, `bounces`. New fields go at the end. Equal provenance
   means equal RGBA8 bytes.
+- **The scene errors can grow.** `SceneError` and `TraceError` are `#[non_exhaustive]`
+  (flyingrobots/lumen#20): a new reason to refuse a scene or a ray is not a breaking change, and
+  a `match` on either outside the crate needs a wildcard arm. Code outside the crate may still
+  construct their variants, as a custom `Tracer` does. A scene is validated whole when it is
+  built: `Scene::new` refuses a camera placement Bunny's camera refuses
+  (`SceneError::Camera`), so at render time only the image size can be refused.
 - **Run facts are not provenance.** The thread count, the band height, the output file and the
   wall-clock times change no pixel (ADR 0003), so a front end reports them separately. The ray
   count and the image hash are results of the render, carried by `Render` and

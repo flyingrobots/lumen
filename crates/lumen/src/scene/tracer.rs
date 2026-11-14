@@ -21,7 +21,11 @@ pub struct Hit {
 }
 
 /// Why a ray could not be traced.
+///
+/// Non-exhaustive: a later version may report a new failure, so a `match` outside this crate
+/// needs a wildcard arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TraceError {
     /// The traversal refused the tree.
     Traversal(TraversalError),

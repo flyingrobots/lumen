@@ -1,6 +1,6 @@
 //! The reference scene's diffuse materials and the material of each triangle.
 
-use bunny_optics::Albedo;
+use bunny_optics::{Albedo, ShadingError};
 
 use super::{per_256, BUNNY_FIRST_PRIMITIVE, REFERENCE_TRIANGLE_COUNT};
 
@@ -14,15 +14,17 @@ pub const REFERENCE_ALBEDO_256: [[i64; 3]; 5] =
 /// 2, sphere 3, bunny 4.
 pub const REFERENCE_MATERIAL_OF: [u32; 5] = [0, 1, 2, 3, 4];
 
-/// The reference materials, [`REFERENCE_ALBEDO_256`] as Bunny albedos.
+/// The reference materials, [`REFERENCE_ALBEDO_256`] as Bunny albedos, in the same order.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Never: every channel is in `0..=256`, inside Bunny's `0..=1.0`.
-#[must_use]
-pub fn reference_materials() -> [Albedo; 5] {
-    REFERENCE_ALBEDO_256
-        .map(|channels| Albedo::new(channels.map(per_256)).expect("albedo channels are in 0..=1"))
+/// The [`ShadingError`] of Bunny's `Albedo::new` for the first albedo it refuses. Every
+/// channel is in `0..=256`, inside Bunny's `0..=1.0`, and a test checks that all five are
+/// accepted.
+pub fn reference_materials() -> Result<[Albedo; 5], ShadingError> {
+    let albedo = |channels: [i64; 3]| Albedo::new(channels.map(per_256));
+    let [ground, wall, octahedron, sphere, bunny] = REFERENCE_ALBEDO_256;
+    Ok([albedo(ground)?, albedo(wall)?, albedo(octahedron)?, albedo(sphere)?, albedo(bunny)?])
 }
 
 /// The material index of each reference triangle, in primitive order.

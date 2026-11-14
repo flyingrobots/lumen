@@ -469,6 +469,9 @@ one mutex, one atomic); there is no `unsafe` and no thread-pool dependency.
   a pixel in row `y` fails, no worker begins a row from `y` down: every pixel before it is in an
   earlier row, or earlier in row `y`, which only the failing worker renders. No worker panics or
   waits on another; a panic in the pixel function reaches the caller after every worker stops.
+  A scene is checked whole before any of this: `Scene::new` refuses bad triangles, material
+  indices and a camera placement Bunny's camera refuses (`SceneError::Camera`), so a render of a
+  built scene can be refused only for its size.
 - **Progress** is not reported: there is nothing on stderr during a render.
 
 ### Why the image does not depend on the threads
