@@ -22,10 +22,12 @@ fn earlier<E>(a: Failure<E>, b: Failure<E>) -> Failure<E> {
     }
 }
 
-/// What a worker counts besides its pixels' sum: nothing ([`NoTally`], a zero-sized type, so the
-/// compiler removes the counting entirely), or the bands it took ([`BandTally`]). The scheduler is
-/// generic over it, so a render that did not ask for run statistics pays nothing for them, not
-/// even a branch per band (ADR 0008).
+/// What a worker counts besides its pixels' sum: nothing ([`NoTally`], a zero-sized type whose
+/// counting is an empty function the optimiser can remove), or the bands it took
+/// ([`BandTally`]). The scheduler is generic over it, so a render that did not ask for run
+/// statistics does no counting work in the source; no cost above the noise of the runs ADR 0008
+/// records was measured (+0.8 %, rank-sum z 1.33, 14 runs at 18 threads), and no IR or assembly
+/// comparison is recorded.
 pub(super) trait Tally: Copy + Send {
     /// Nothing counted yet.
     const ZERO: Self;
