@@ -72,9 +72,10 @@ part was built.
   shape, buffer sizes), ray statistics in every `Render` (`RayOutcomes`, `RayStatistics`), and
   run statistics on request (`render_traced_with_run`, `RunStatistics`), which cost a render
   that does not ask no counting work and nothing measured above the noise of 14 runs (about
-  1 to 2 %; asking costs about 2.5 % at 18 threads). The counted ray-query port,
-  `CountingTracer`, returns Bunny's `TraversalCounts` with each answer; traversal statistics
-  built on it are not yet in the report. (flyingrobots/lumen#29.)
+  1 to 2 %; asking costs about 2.5 % at 18 threads); and traversal statistics on request
+  (`render_traced_with_traversal` through `CountingTracer`, which returns Bunny's
+  `TraversalCounts` with each answer): `TraversalStatistics` per kind of ray, sums and maxima,
+  the same at every schedule. The command does not print them yet. (flyingrobots/lumen#29.)
 - **The image hash and the PNG**: `sha256:` and the lowercase hex SHA-256 of the raw RGBA8 bytes
   (ADR 0009), with Lumen's own SHA-256; a PNG encoder with stored deflate blocks, whose bytes are
   a fixed function of the pixels (`write_png`, `png_len`). (flyingrobots/lumen#2.)
