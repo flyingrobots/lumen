@@ -238,8 +238,9 @@ fn collect_markdown(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let path = entry?.path();
         let name = path.file_name().map(|name| name.to_string_lossy().into_owned());
+        let skipped = |name: &str| name.starts_with('.') || name == "target" || name == "out";
         if path.is_dir() {
-            if name.is_some_and(|name| !name.starts_with('.') && name != "target" && name != "out") {
+            if name.is_some_and(|name| !skipped(&name)) {
                 collect_markdown(&path, out)?;
             }
         } else if path.extension().is_some_and(|ext| ext == "md") {
