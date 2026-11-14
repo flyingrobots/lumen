@@ -13,8 +13,8 @@ use bunny_optics::{Albedo, DirectionalLight, SkyLight};
 use bunny_query::TraceRay;
 use lumen::{
     pixel_radiance, render, render_traced, BandRows, BuiltinScene, CameraPlacement, Hit, ImageSize,
-    Lighting, RayCheckError, RayStatistics, RenderSettings, Scene, SceneSpec, Schedule, TraceError,
-    Tracer,
+    Lighting, RayCheckError, RayCount, RayStatistics, RenderSettings, Scene, SceneSpec, Schedule,
+    TraceError, Tracer,
 };
 
 const ONE: i64 = 1 << 32;
@@ -90,7 +90,9 @@ fn observed_render(scene: &Scene, (width, height): (u32, u32), samples: u32) -> 
         assert_eq!(found.shadow_occluded, seen(4), "{at}: occluded shadow rays");
         assert_eq!(found.shadow_unoccluded, seen(5), "{at}: unoccluded shadow rays");
         assert_eq!(found.rejected_bounces, seen(0) - seen(2) - seen(3), "{at}: rejected");
-        assert_eq!(got.rays, got.statistics.count(), "{at}: the ray count");
+        let observed = RayCount { closest: (0..4).map(seen).sum(), shadow: seen(4) + seen(5) };
+        assert_eq!(got.rays, observed, "{at}: the ray count, as the tracer saw it");
+        assert_eq!(got.statistics.count(), observed, "{at}: the statistics' ray count");
         assert_eq!(got.statistics.check(image, settings), Ok(()), "{at}");
         assert_eq!(got.statistics, own.statistics, "{at}: the same at every schedule");
     }
@@ -234,5 +236,25 @@ fn the_checks_name_the_count_that_is_wrong() {
     assert_eq!(
         wrong.check(image, settings),
         Err(RayCheckError::TooManyRays { limit: 96, observed })
+    );
+}
+
+/// Oracle: the ceiling as documented, at most four rays per sample, at its boundary. A real
+/// render of 4 by 3 pixels at 2 samples (24 samples, a ceiling of 96 rays) given more shadow
+/// rays until it has exactly 96 passes; one more is refused, naming the limit and the count.
+#[test]
+fn the_ray_ceiling_admits_exactly_four_rays_per_sample() {
+    let scene = lumen::reference_scene().expect("builds");
+    let (image, settings) = (size(4, 3), settings(2));
+    let good = render(&scene, image, settings).expect("renders").statistics;
+    let mut full = good;
+    full.outcomes.shadow_unoccluded += 96 - good.count().total();
+    assert_eq!(full.count().total(), 96);
+    assert_eq!(full.check(image, settings), Ok(()));
+    let mut over = full;
+    over.outcomes.shadow_occluded += 1;
+    assert_eq!(
+        over.check(image, settings),
+        Err(RayCheckError::TooManyRays { limit: 96, observed: 97 })
     );
 }

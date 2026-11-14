@@ -29,8 +29,9 @@ part was built.
   are read as OS strings; every option also takes `--option=value`; a separate value that reads
   as an option is refused; leading zeros are decimal. `--out` is checked before the render and
   published atomically: a temporary file beside the destination, synced and renamed into place
-  (the directory synced on Unix), so it holds the complete new PNG or what was there before.
-  (flyingrobots/lumen#2, #3, #4, #12, #15, #19, #28, #29, #54, #57.)
+  (the directory synced on Unix), so it holds the complete new PNG or what was there before;
+  the temporary name keeps at most 32 bytes of the destination's, so any name the file system
+  accepts publishes. (flyingrobots/lumen#2, #3, #4, #12, #15, #19, #28, #29, #54, #57, #159.)
 - **The renderer.** Each sample is one diffuse path composed of Bunny's contracts with no
   arithmetic of Lumen's own: `lumen-diffuse-path/1` (a camera ray from `bunny-sobol-owen/1`
   pair 0, the nearest triangle, direct light from one directional light with a shadow ray from
@@ -47,9 +48,11 @@ part was built.
   and `lumen-canyon-scene/1` (566 005 triangles: a terrain of 480 256 from the integer generator
   `lumen-canyon-heightfield/1`, specified exactly in `scenes::canyon::heightfield`, three craft
   of Lumen's own design, the full-resolution bunny on a ledge and a banded planet).
-  `BuiltinScene` is their registry. Both Stanford meshes are in `assets/stanford-bunny/` with
-  their provenance, read by Bunny's ASCII PLY reader and placed exactly (`mesh`).
-  (flyingrobots/lumen#2, #14, #15, #27, #39, #40.)
+  `BuiltinScene` is their registry. The canyon's public helpers refuse what they cannot compute
+  rather than wrap or panic (`HeightfieldSpec::bounds` and `centre_256` with `HeightfieldError`,
+  `Rational::new` and `Pose::place` with `PoseError`). Both Stanford meshes are in
+  `assets/stanford-bunny/` with their provenance, read by Bunny's ASCII PLY reader and placed
+  exactly (`mesh`). (flyingrobots/lumen#2, #14, #15, #27, #39, #40, #160.)
 - **Rendering on all cores** (ADR 0003, which supersedes ADR 0001): row bands from `chunks_mut`
   handed out under one small lock, results returned through `join`, one shared atomic. The image
   and the ray count are the same at every thread count and band height; a failed render reports
@@ -79,7 +82,7 @@ part was built.
   every platform), simulated hand-out orders, generated tests from a seeded generator, and the
   documentation's own checks (the command reference against the program, the library reference
   against the crate root, the tutorial by running it). Each integration test file states its size
-  class. (flyingrobots/lumen#3, #4, #14, #24, #25, #55, #57.)
+  class. (flyingrobots/lumen#3, #4, #14, #24, #25, #55, #57, #162.)
 - **CI**: the determinism matrix (`Determinism / ...` on x86-64 and aarch64 Linux, aarch64
   macOS, x86-64 Windows and `wasm32-wasip1` under Node, each in both profiles; ADR 0004), `fmt,
   clippy`, and `Gates / cargo-deny` (no registry crate, Bunny's repository only, pinned by
@@ -91,8 +94,13 @@ part was built.
   clippy-bans` checks on a seeded fixture that every ban resolves and fires and that the std item
   list (`xtask/bans/std-items.txt`, from the toolchain's documentation) is complete; the token
   scan (`xtask nondeterminism`) covers what Clippy cannot see, over the deterministic core found
-  by following the module tree, and fails every lint attribute that would silence a ban.
-  (flyingrobots/lumen#17, #115, #119, #120.)
+  by following the module tree, and fails every lint attribute that would silence a ban. The
+  scan also checks the workspace boundary from `cargo metadata`: every deterministic crate's
+  library is core and must deny float arithmetic; a member neither reached by `lumen` nor
+  classified as tooling, a path dependency outside the workspace, a dependency from anywhere but
+  Bunny's repository at a full commit, a build script or procedural macro in a deterministic
+  crate, a member's own lint levels, a `[patch]` or `[replace]`, and any `.cargo/config` fail.
+  (flyingrobots/lumen#17, #115, #119, #120, #158.)
 - **Repository tooling**: `xtask` (`file-length`, `nondeterminism`, `clippy-bans`, `std-items`,
   `doc-links`) and a `Makefile` (`make demo`, `reference`, `fixed-point`, `4k`,
   `4k-fixed-point`, `canyon`, `4k-canyon`, `test`, `nondeterminism`, `clippy-bans`,

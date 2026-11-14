@@ -406,3 +406,131 @@ fn the_returned_count_is_the_length_of_the_published_file() {
     let bytes = publish(&Disk, &dest, &image(3)).expect("publishes");
     assert_eq!(bytes, fs::metadata(&dest).expect("meta").len());
 }
+
+/// The longest file name ext4, APFS and (in UTF-16 units) NTFS accept: 255.
+const NAME_MAX: usize = 255;
+
+/// The real file system with a limit of [`NAME_MAX`] bytes on the name of every file it creates
+/// or renames, checked before the call, whatever the host's own limit: a longer name fails as
+/// Linux's `ENAMETOOLONG` does.
+struct NameLimit;
+
+impl NameLimit {
+    fn check(path: &Path) -> io::Result<()> {
+        let length = path.file_name().map_or(0, std::ffi::OsStr::len);
+        if length > NAME_MAX {
+            return Err(io::Error::new(io::ErrorKind::InvalidFilename, "File name too long"));
+        }
+        Ok(())
+    }
+}
+
+impl Filesystem for NameLimit {
+    type File = File;
+
+    fn unique(&self) -> String {
+        Disk.unique()
+    }
+
+    fn mode(&self, destination: &Path) -> io::Result<Mode> {
+        Disk.mode(destination)
+    }
+
+    fn create_new(&self, path: &Path) -> io::Result<File> {
+        Self::check(path)?;
+        Disk.create_new(path)
+    }
+
+    fn open_in_place(&self, path: &Path) -> io::Result<File> {
+        Disk.open_in_place(path)
+    }
+
+    fn sync(&self, file: &mut File) -> io::Result<()> {
+        Disk.sync(file)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        Self::check(from)?;
+        Self::check(to)?;
+        Disk.rename(from, to)
+    }
+
+    fn remove(&self, path: &Path) -> io::Result<()> {
+        Disk.remove(path)
+    }
+
+    fn sync_directory(&self, directory: &Path) -> io::Result<()> {
+        Disk.sync_directory(directory)
+    }
+}
+
+/// A file name of `bytes` bytes ending `.png`: `a` repeated.
+fn long_name(bytes: usize) -> String {
+    format!("{}.png", "a".repeat(bytes - 4))
+}
+
+/// Oracle: the file system's limit. A destination whose name is 244 bytes (the review's case,
+/// refused before) or exactly 255 is checked and published through the name limit and through
+/// the host's own file system, leaving exactly the image. Witness: creating a file of that name
+/// directly works.
+#[test]
+fn a_destination_name_up_to_the_file_systems_limit_is_published() {
+    let dir = Scratch::new("long-name");
+    for bytes in [244, NAME_MAX] {
+        let name = long_name(bytes);
+        let dest = dir.file(&name);
+        fs::write(&dest, OLD).expect("a name of this length can be created directly");
+        fs::remove_file(&dest).expect("removed");
+        preflight(&NameLimit, &dest).expect("the limit admits it");
+        assert_eq!(publish(&NameLimit, &dest, &image(3)).ok(), Some(png_len(&image(3))));
+        assert_eq!(fs::read(&dest).expect("file"), png(&image(3)), "{bytes} bytes");
+        assert_eq!(dir.names(), std::slice::from_ref(&name));
+        preflight(&Disk, &dest).expect("the host admits it");
+        publish(&Disk, &dest, &image(5)).expect("the host publishes it");
+        assert_eq!(fs::read(&dest).expect("file"), png(&image(5)), "{bytes} bytes");
+        assert_eq!(dir.names(), [name]);
+        fs::remove_file(&dest).expect("removed");
+    }
+}
+
+/// Oracle: the atomic guarantees again, at the longest name: a failed rename leaves the old file
+/// and no temporary file.
+#[test]
+fn a_failure_at_the_longest_name_leaves_the_old_file_and_no_temporary_file() {
+    let dir = Scratch::new("long-name-failure");
+    let name = long_name(NAME_MAX);
+    let dest = dir.file(&name);
+    fs::write(&dest, OLD).expect("old file");
+    let faulty = Faulty { fails: &[Step::Rename], ..Faulty::default() };
+    let error = publish(&faulty, &dest, &image(3)).expect_err("fails").to_string();
+    assert!(error.contains("rename refused"), "{error}");
+    assert_eq!(fs::read(&dest).expect("file"), OLD);
+    assert_eq!(dir.names(), [name]);
+}
+
+/// Oracle: the temporary name's stated form, `.PREFIX.lumen-PID-N.tmp`, with `PREFIX` the
+/// destination's name cut to at most 32 bytes at a character boundary, seen while it exists (at
+/// the first sync). A 247-byte name of `a` and 121 two-byte `é`s keeps `a` and 15 of them (31
+/// bytes: a 16th would end at byte 33); 244 bytes of `a` keep exactly 32; a short name is kept
+/// whole.
+#[test]
+fn the_temporary_name_keeps_a_bounded_prefix_of_the_destinations() {
+    let dir = Scratch::new("temporary-name");
+    let unique = Disk.unique();
+    for (name, prefix) in [
+        (format!("a{}.png", "é".repeat(121)), format!("a{}", "é".repeat(15))),
+        (long_name(244), "a".repeat(32)),
+        ("a.png".to_owned(), "a.png".to_owned()),
+    ] {
+        let seen = RefCell::new(Vec::new());
+        let record = || *seen.borrow_mut() = dir.names();
+        let faulty =
+            Faulty { at_first_sync: RefCell::new(Some(Box::new(record))), ..Faulty::default() };
+        publish(&faulty, &dir.file(&name), &image(3)).expect("publishes");
+        let want = format!(".{prefix}.lumen-{unique}-0.tmp");
+        assert!(want.len() <= 1 + 32 + 24, "{want}");
+        assert_eq!(*seen.borrow(), [want]);
+        assert_eq!(dir.names(), std::slice::from_ref(&name));
+        fs::remove_file(dir.file(&name)).expect("removed");
+    }
+}
