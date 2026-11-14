@@ -36,7 +36,7 @@ pub use statistics::{
     SceneMemory, SceneStatistics, StatisticsError, TreeStatistics, LEAF_SIZE_BUCKETS, TREE_BUILDER,
     TREE_LAYOUT,
 };
-pub use tracer::{Hit, TraceError, Tracer, FAR};
+pub use tracer::{CountingTracer, Hit, TraceError, Tracer, FAR};
 use tree::{build_tree, Tree};
 
 /// Where a pinhole camera stands and where it looks. The image size is chosen per render.
