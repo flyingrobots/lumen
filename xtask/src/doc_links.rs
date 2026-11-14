@@ -14,6 +14,8 @@
 
 use std::collections::BTreeMap;
 
+mod emphasis;
+
 /// A link that leads nowhere.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Broken {
@@ -96,38 +98,28 @@ fn heading_text(title: &str) -> String {
 }
 
 /// Heading text outside code spans as it renders: an HTML tag dropped, a link's `(destination)`
-/// dropped, and a run of underscores dropped unless it stands between two letters or digits
-/// (`snake_case` keeps its underscore; `_emphasis_` loses both).
+/// dropped, and the underscores that mark emphasis dropped ([`emphasis`]): `_emphasis_` loses
+/// both, `snake_case` and an unmatched `_private` keep theirs.
 fn prose_text(prose: &str) -> String {
     let chars: Vec<char> = prose.chars().collect();
-    let mut out = String::new();
+    let mut kept = Vec::new();
     let mut at = 0;
     while let Some(&c) = chars.get(at) {
         let skip_to =
             |close: char| chars[at..].iter().position(|&d| d == close).map(|n| at + n + 1);
         let skip = match c {
             '<' => skip_to('>'),
-            ']' if chars.get(at + 1) == Some(&'(') => skip_to(')').inspect(|_| out.push(']')),
-            '_' => {
-                let run = chars[at..].iter().take_while(|&&d| d == '_').count();
-                let before = at.checked_sub(1).and_then(|b| chars.get(b));
-                let inside = before.is_some_and(|b| b.is_alphanumeric())
-                    && chars.get(at + run).is_some_and(|a| a.is_alphanumeric());
-                if inside {
-                    out.extend(&chars[at..at + run]);
-                }
-                Some(at + run)
-            }
+            ']' if chars.get(at + 1) == Some(&'(') => skip_to(')').inspect(|_| kept.push(']')),
             _ => None,
         };
         if let Some(next) = skip {
             at = next;
         } else {
-            out.push(c);
+            kept.push(c);
             at += 1;
         }
     }
-    out
+    emphasis::without_emphasis(&kept)
 }
 
 /// Every broken relative link on `pages` (each a path relative to the repository root, with `/`
