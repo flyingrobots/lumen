@@ -4,9 +4,10 @@
 //! Clippy resolves paths exactly but only in code it compiles, and has no rule for a float
 //! literal. This scan reads tokens instead, so it also reads code under a `cfg` that is not built
 //! and macro bodies, and ignores comments and strings. In the deterministic core it reports
-//! float types, float literals and casts to a float; the names `Instant`, `SystemTime`,
+//! float types (`f16`, `f32`, `f64`, `f128`, and std's aliases `c_double` and `c_float`), float
+//! literals and casts to a float; the names `Instant`, `SystemTime`,
 //! `UNIX_EPOCH`, `available_parallelism`, `HashMap`, `HashSet` and `RandomState`; the
-//! `env!` and `option_env!` macros; names with the word `f32` or `f64` or ending `_float`
+//! `env!` and `option_env!` macros; names with the word `f16`, `f32`, `f64` or `f128`, or ending `_float`
 //! (`as_secs_f64`, `into_float`); Bunny's float-bridge types (`bunny_linalg::Vec3`, `bunny_codec::PlyVertex`); and
 //! paths into `std::env`, `std::fs`, `std::process`, `std::net` and the `std::thread` sleeps,
 //! written out, raw (`std::r#fs`), through a `use` tree (groups, `self`, renames), through a name
@@ -55,8 +56,14 @@ pub(crate) const RULES: [&str; 20] = [
     "float-cast",
 ];
 
-/// Names banned wherever they are spelled, and their rules.
-const NAMES: [(&str, &str); 9] = [
+/// The float types: `f16` and `f128` are unstable on the pinned toolchain, and named so that
+/// a toolchain that stabilises them cannot bring one into the core unseen.
+const FLOAT_TYPES: [&str; 4] = ["f16", "f32", "f64", "f128"];
+
+/// Names banned wherever they are spelled, and their rules. `c_double` and `c_float` are std's
+/// aliases of `f64` and `f32` (`core::ffi`, `std::ffi`, `std::os::raw`): a float type with no
+/// float token.
+const NAMES: [(&str, &str); 11] = [
     ("Instant", "time-instant"),
     ("SystemTime", "time-system"),
     ("UNIX_EPOCH", "time-system"),
@@ -66,6 +73,8 @@ const NAMES: [(&str, &str); 9] = [
     ("RandomState", "unordered-container"),
     ("FxHashMap", "unordered-container"),
     ("FxHashSet", "unordered-container"),
+    ("c_double", "float-type"),
+    ("c_float", "float-type"),
 ];
 
 /// Banned path prefixes and their rules. Each is compared segment by segment after the path is
@@ -119,16 +128,16 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
     for (i, (line, token)) in toks.iter().enumerate() {
         let prev = i.checked_sub(1).and_then(|p| toks.get(p)).map(|(_, t)| t);
         match token {
-            Token::Ident(name) if name == "f32" || name == "f64" => {
+            Token::Ident(name) if FLOAT_TYPES.contains(&name.as_str()) => {
                 let cast = prev == Some(&Token::Ident("as".to_owned()));
                 add(*line, if cast { "float-cast" } else { "float-type" }, name);
             }
             Token::Num(number) if is_float(number) => add(*line, "float-literal", number),
-            // A name with the word `f32` or `f64` (`as_secs_f64`, `to_f32`), or ending `_float`
+            // A name with the word `f16`, `f32`, `f64` or `f128` (`as_secs_f64`, `to_f32`), or ending `_float`
             // (Bunny's `into_float`): a float passes through it even when no float type or
             // literal is written. Not `float_arithmetic`, the lint `lib.rs` denies.
             Token::Ident(name)
-                if name.split('_').any(|w| w == "f32" || w == "f64")
+                if name.split('_').any(|w| FLOAT_TYPES.contains(&w))
                     || name.ends_with("_float") =>
             {
                 add(*line, "float-type", name);

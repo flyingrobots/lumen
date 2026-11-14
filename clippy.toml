@@ -17,6 +17,10 @@ msrv = "1.96.0"
 disallowed-types = [
     { path = "f32", reason = "float-type: no float in the deterministic core" },
     { path = "f64", reason = "float-type: no float in the deterministic core" },
+    { path = "core::ffi::c_double", reason = "float-type: f64 under another name; std::ffi re-exports it" },
+    { path = "core::ffi::c_float", reason = "float-type: f32 under another name; std::ffi re-exports it" },
+    { path = "std::os::raw::c_double", reason = "float-type: f64 under another name" },
+    { path = "std::os::raw::c_float", reason = "float-type: f32 under another name" },
     { path = "std::time::SystemTime", reason = "time-system: the wall clock differs on every run" },
     { path = "std::time::SystemTimeError", reason = "time-system: the wall clock differs on every run" },
     { path = "std::time::Instant", reason = "time-instant: the clock may appear only in the binary" },
