@@ -38,10 +38,10 @@ second front end would have had to rebuild that list by hand.
   `sampler`, `tone`, `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed`, `bounces`,
   `scene-content` (the last added by flyingrobots/lumen#38). New fields go at the end. Equal
   provenance means equal RGBA8 bytes.
-- **The errors can grow.** `SceneError` and `TraceError` (flyingrobots/lumen#20), `RenderError`
-  and `PathError` (flyingrobots/lumen#21) are `#[non_exhaustive]`: a new reason to refuse a
-  scene, a ray, a path or a render is not a breaking change, and a `match` on any of them
-  outside the crate needs a wildcard arm. Code outside the crate may still construct their
+- **The errors can grow.** `SceneError` and `TraceError` (flyingrobots/lumen#20), `RenderError`,
+  `PathError`, `WorkerError`, `Reservation` and `SizeError` (flyingrobots/lumen#21) are
+  `#[non_exhaustive]`: a new reason to refuse a scene, a ray, a path, a size or a render is not
+  a breaking change, and a `match` on any of them outside the crate needs a wildcard arm. Code outside the crate may still construct their
   variants, as a custom `Tracer` does.
 - **An error says what failed and keeps its cause** (flyingrobots/lumen#21). Each variant carries
   the values it saw (an index and a count, Bunny's reason, a pixel's coordinates), not a bare
@@ -53,7 +53,15 @@ second front end would have had to rebuild that list by hand.
   fail for a size, a scene or a thread; the render wraps it with the pixel
   (`RenderError::Pixel { x, y, error }`). Where Bunny has a fast `Option` form and a typed
   `try_` form of the same check, lumen calls the `Option` form and the `try_` form only after a
-  `None`, so carrying the reason costs a render that succeeds nothing. A scene is validated whole when it is
+  `None`, so carrying the reason costs a render that succeeds nothing.
+- **The render's errors keep the system's errors and stay comparable** (flyingrobots/lumen#21).
+  `RenderError::OutOfMemory` holds the allocator's `TryReserveError` and `Spawn` a `SpawnError`
+  holding the operating system's `io::Error`, so neither enum is `Copy` any more. The `io::Error`
+  sits behind an `Arc`, so the errors stay `Clone`, and `SpawnError` compares the worker, the
+  error's kind, its operating-system code and its text, so they stay `PartialEq` and tests can
+  compare whole results. A refusal that cannot happen is made impossible rather than reported:
+  the workers render into a buffer `Rgba8Image` reserved at the size's length, so no length
+  check remains to fail, and `ImageSize::byte_len` is computed once by `ImageSize::new`. A scene is validated whole when it is
   built: `Scene::new` refuses a camera placement Bunny's camera refuses
   (`SceneError::Camera`), so at render time only the image size can be refused.
 - **A triangle is named by its `PrimitiveIndex`** (flyingrobots/lumen#20): a `u32`, the

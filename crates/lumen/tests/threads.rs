@@ -316,7 +316,7 @@ fn a_traversal_failure_is_the_same_typed_error_at_every_schedule() {
                     Failing { scene: &scene, queries: AtomicUsize::new(0), limit: budget };
                 let result =
                     render_traced(&scene, &bounded, size, settings, schedule(threads, band(rows)));
-                assert_eq!(result, Err(want), "{threads} threads, bands of {rows}");
+                assert_eq!(result, Err(want.clone()), "{threads} threads, bands of {rows}");
                 seen.push(result);
             }
         }

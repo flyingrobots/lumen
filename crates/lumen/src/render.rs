@@ -377,8 +377,9 @@ impl<T: Tracer + ?Sized> Frame<'_, T> {
 /// [`RenderError::Camera`] if Bunny refuses the camera at this size;
 /// [`RenderError::Pixel`] with the coordinates and the [`PathError`] of the first failing pixel
 /// in raster order (an error of [`pixel_radiance`] or of `write_rgba8`);
-/// [`RenderError::OutOfMemory`] if a buffer cannot be reserved; [`RenderError::Spawn`] if a
-/// worker thread cannot be started.
+/// [`RenderError::OutOfMemory`] with what was being reserved if a buffer cannot be reserved;
+/// [`RenderError::Spawn`] with the worker's number and the operating system's error if a worker
+/// thread cannot be started.
 pub fn render_traced<T: Tracer + Sync + ?Sized>(
     scene: &Scene,
     tracer: &T,
@@ -391,8 +392,10 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
     match render_pixels(size, schedule, RayCount::default(), |x, y| frame.rgba(x, y)) {
         Ok((image, rays)) => Ok(Render { image, rays }),
         Err(WorkerError::Pixel { x, y, error }) => Err(RenderError::Pixel { x, y, error }),
-        Err(WorkerError::OutOfMemory) => Err(RenderError::OutOfMemory),
-        Err(WorkerError::Spawn) => Err(RenderError::Spawn),
+        Err(WorkerError::OutOfMemory { reserving, error }) => {
+            Err(RenderError::OutOfMemory { reserving, error })
+        }
+        Err(WorkerError::Spawn(error)) => Err(RenderError::Spawn(error)),
     }
 }
 

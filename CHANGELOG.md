@@ -32,8 +32,23 @@ All notable changes to lumen are recorded here. The format follows
   (flyingrobots/bunny#289: `VertexNormals`, `smooth_normal`, `SmoothHit`, and
   `TriangleHit::barycentric_numerators`) and the traversal visit guard (a traversal that
   would visit more interior nodes than the tree holds, which only a tree with a cycle can, now
-  fails with `TraversalError::InvalidNodeIndex`; a tree built by `Scene::new` has none). Part of flyingrobots/lumen#39. Lumen calls none of the new
-  APIs yet; both golden image hashes and both golden content digests are unchanged.
+  fails with `TraversalError::InvalidNodeIndex`; a tree built by `Scene::new` has none). Part
+  of flyingrobots/lumen#39. Lumen calls none of the new APIs yet; both golden image hashes and
+  both golden content digests are unchanged.
+- Memory, spawn, size and buffer-length failures say what failed (part of
+  flyingrobots/lumen#21). `RenderError::OutOfMemory` and `WorkerError::OutOfMemory` carry a
+  `Reservation` (the image's bytes or the worker handles) and the allocator's
+  `TryReserveError`; `Spawn` carries a `SpawnError` with the refused worker's number and the
+  operating system's `io::Error` as its `source()`. `OutOfMemory` is no longer returned for a
+  failure that is not memory: the workers render into a buffer the image reserved at its length,
+  so the impossible `None` of `Rgba8Image::from_bytes` is gone. `from_bytes` returns
+  `Result<_, LengthError>` with both lengths; `ImageSize::byte_len` returns `usize`, computed and
+  checked once by `ImageSize::new`; `SizeError`'s variants carry the size asked for and the
+  limit. `RenderError` and `WorkerError` are no longer `Copy`. `WorkerError`, `Reservation` and
+  `SizeError` are `#[non_exhaustive]`. A spawn failure after a helper has started is now tested
+  through an injected spawner, and the halt it calls in the worker simulator. No pixel, hash,
+  digest, line of the command's output or message the command prints changes.
+
 - A failed path says what failed (part of flyingrobots/lumen#21). `trace_path` and
   `pixel_radiance` return the new `PathError`, and `RenderError::Shading`, which merged four
   causes and carried nothing, is gone: `PathError::UnknownPrimitive` (the index and the scene's

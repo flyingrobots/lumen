@@ -5,6 +5,7 @@
 //! constructed directly for its text, and `tests/generated.rs` counts that it never occurs.
 
 use std::error::Error;
+use std::io;
 
 use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
@@ -13,8 +14,8 @@ use bunny_query::TraceRay;
 use lumen::reference::{reference_lighting, reference_materials};
 use lumen::{
     pixel_radiance, render_traced, trace_path, CameraPlacement, Hit, ImageSize, PathError,
-    PrimitiveIndex, RenderError, RenderSettings, Scene, SceneSpec, Schedule, TraceError, Tracer,
-    FAR,
+    PrimitiveIndex, RenderError, RenderSettings, Reservation, Scene, SceneSpec, Schedule,
+    SpawnError, TraceError, Tracer, FAR,
 };
 
 fn point(x: i64, y: i64, z: i64) -> FixedVec3 {
@@ -205,4 +206,26 @@ fn unreachable_path_errors_state_their_values() {
         assert_eq!(error.to_string(), text);
         assert_eq!(error.source().is_some(), wraps, "{error:?}");
     }
+}
+
+/// Oracle: the text written out by hand, and the allocator's and the operating system's own
+/// errors as sources. A failed reservation names what was being reserved and how much, and a
+/// refused worker its number; neither can be forced on a host with memory and threads to spare,
+/// so both are built here from a real allocator refusal and a real `io::Error`. The spawn path
+/// is driven end to end through an injected spawner in `src/workers/tests.rs`.
+#[test]
+fn memory_and_spawn_failures_name_what_they_were_doing_and_chain_to_the_cause() {
+    let refusal = Vec::<u8>::new().try_reserve_exact(usize::MAX).expect_err("too large");
+    let reserving = Reservation::Image { bytes: 1 << 29 };
+    let memory = RenderError::OutOfMemory { reserving, error: refusal.clone() };
+    let text = format!("not enough memory for the image's 536870912 bytes: {refusal}");
+    assert_eq!(memory.to_string(), text);
+    assert_eq!(memory.source().map(ToString::to_string), Some(refusal.to_string()));
+    let handles = Reservation::Workers { handles: 17 };
+    assert_eq!(handles.to_string(), "17 worker thread handles");
+
+    let spawn = RenderError::Spawn(SpawnError::new(3, io::Error::other("no threads left")));
+    assert_eq!(spawn.to_string(), "worker thread 3 could not be started: no threads left");
+    let os = spawn.source().and_then(Error::source).map(ToString::to_string);
+    assert_eq!(os.as_deref(), Some("no threads left"));
 }
