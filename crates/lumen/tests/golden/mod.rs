@@ -51,13 +51,14 @@ pub(crate) const GOLDEN_96X54_4SPP: &str =
 /// `lumen-diffuse-path/1`) was
 /// `sha256:0688b03cf16be6d0336f17eacbdaf83fe03d62e9c66b8370e8208bb9c879634e`;
 /// version 2 (flyingrobots/lumen#39: the full-resolution bunny shaded smooth, the glasses'
-/// right arm refitted, a white puck with a thin black rim and bolder letters) replaced it.
+/// right arm refitted, a white puck with a thin black rim and bolder letters, the sun moved to
+/// the camera's side) replaced it.
 #[allow(
     dead_code,
     reason = "each test crate that includes this module uses only the hashes it needs"
 )]
 pub(crate) const GOLDEN_FIXED_POINT_96X54_4SPP: &str =
-    "sha256:914e42de3d5543984f70da11fdc0ebd5a3c536a22be02e19329473729b2d1a5a";
+    "sha256:da6cb05db0d366a2088f19e6eefed2ab017dd0d27c6c5e364a85121054d6093e";
 
 /// The golden content identity (`Scene::content_id`, `lumen-scene-content/2`, ADR 0005) of the
 /// reference scene, `lumen-reference-scene/3`. Like the image hashes it is one value for every
@@ -84,4 +85,4 @@ pub(crate) const GOLDEN_REFERENCE_CONTENT: &str =
     reason = "each test crate that includes this module uses only the constants it needs"
 )]
 pub(crate) const GOLDEN_FIXED_POINT_CONTENT: &str =
-    "sha256:355ff8253a068906a502b1db5822af20ef5c2ed45d434c72e40539e212ab385a";
+    "sha256:f80160bbd1ebb6e79f186bf5a86f2ce3419d4ef31168cc4cab0b6fd1f0f64e11";

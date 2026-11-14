@@ -73,7 +73,7 @@ fn measure(
 /// sees. The white face and side are white and the rim and letters black (the albedos), at least
 /// three times as many pixels show white puck as black, and the pixels wholly inside each colour
 /// render bright and dark. (When recorded: 314 white and 75 black pixels, of which 114 and 4 are
-/// wholly inside; means 224 and 53, a black albedo of 10/256 in sunlight through the sRGB curve.)
+/// wholly inside; means 230 and 53, a black albedo of 10/256 in sunlight through the sRGB curve.)
 #[test]
 fn the_camera_sees_a_white_puck_with_black_lettering() {
     let albedo = fixed_point_materials().expect("valid");

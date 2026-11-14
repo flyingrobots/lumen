@@ -472,9 +472,11 @@ the scene is rendered by `lumen-smooth-diffuse-path/1` (see
 Materials (linear albedo in 256ths): felt `(14, 62, 32)`, leather `(45, 22, 14)`, layout paint
 `(225, 225, 215)`, die red `(170, 12, 16)`, pips and the puck's face and side
 `(240, 240, 232)`, puck rim and letters `(10, 10, 10)`, the bunny's light warm grey `(205, 200, 192)` and the glasses
-`(6, 6, 8)`. The sun comes from high on the camera's left front, toward `(-0.5, 1.0, 0.875)`
-(about 45 degrees up), irradiance `(1024, 985, 920) / 256`, so it lights the bunny's face and
-the dice and the bunny cast their shadows back and to the right across the felt; the sky is a
+`(6, 6, 8)`. The sun comes from high and nearly behind the camera, toward `(-0.25, 1.0, 1.0)`
+(about 44 degrees up, 14 degrees left of the camera), irradiance `(1024, 985, 920) / 256`, so it
+lights the bunny's face and chest straight on and the dice and the bunny cast their shadows back
+across the felt (version 1's sun, from the side, put the smooth bunny's jagged shadow edges
+across its cheek and chest); the sky is a
 dim `(16, 16, 18) / 256`, a dark room behind the table. The camera stands low over the near rail
 at `(0, 2.125, 4.25)`, looks along `(0, -0.140625, -1)` with up `+Y` and a vertical half-angle
 whose tangent is `15/32`, framed for 16:9: the ear tip near the top, the puck and the 8 in the
@@ -483,12 +485,13 @@ middle, the dice near the bottom.
 Lumen renders diffuse surfaces with one sun and a sky, so the lenses are plain black. Mirror
 lenses, a glass of whisky on the rail and a lamp over the table wait for the materials and
 lights they need. Shadowed fur is tinted green: that is the one-bounce light from the felt.
-Where a shadow falls across the smooth bunny (the cheek below the glasses, the neck), its edge
+Where a shadow falls across the smooth bunny (under the ear, down the back), its edge
 follows the mesh's triangles: shadow rays leave the geometric surface, so a facet tilted away
 from the sun is in shadow even where its interpolated normal faces the sun. That is the shadow
 terminator of interpolated normals on a mesh, and Bunny's `bunny-smooth-shading/1` keeps it by
-design (its shadow ray is the geometric one); at 69 451 faces it shows only as a slightly
-jagged shadow edge.
+design (its shadow ray is the geometric one). At 4K the edges show as small steps, a few pixels
+each, under the ear and down the back where the ear's shadow falls; the frontal sun keeps them
+off the face and chest.
 
 **How it is tested** (`crates/lumen/tests/fixed_point/`, through the public API):
 
@@ -508,11 +511,11 @@ jagged shadow edge.
   every bunny triangle with a vertex normal at all three corners and no other part with any;
 - the puck as the camera sees it: its face and side white and its rim and letters black, at
   least three times as many pixels of a 480 by 270 image showing white puck as black, and the
-  pixels wholly inside each colour rendering bright and dark (means 224 and 53 when recorded);
+  pixels wholly inside each colour rendering bright and dark (means 230 and 53 when recorded);
 - every camera, shadow and bounce ray of a 32 by 18 image at 2 samples equals a test of every
   triangle, with hits on the bunny, the dice and the layout;
 - a golden hash: 96 by 54 pixels, 4 samples per pixel, seed 0,
-  `sha256:914e42de3d5543984f70da11fdc0ebd5a3c536a22be02e19329473729b2d1a5a`, under the same
+  `sha256:da6cb05db0d366a2088f19e6eefed2ab017dd0d27c6c5e364a85121054d6093e`, under the same
   rules as the reference scene's: it changes only with an identity, the settings or the Bunny
   commit. Any change to the scene's triangles, their order, materials, lighting or camera is a
   new scene version and a new hash. Every platform in [Determinism](#determinism) checks it.
