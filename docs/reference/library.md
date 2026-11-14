@@ -95,7 +95,9 @@ capacity, the allocator's overhead or the build's dropped buffers). `TREE_BUILDE
 tree's shape is read by a walk of Bunny's public compact nodes, with no Bunny arithmetic. Every
 value is an integer and a function of the scene, except that the byte counts also depend on the
 type sizes of the build. [ADR 0008](../adr/0008-statistics.md) records the design, including
-the ray, run and traversal statistics that are not yet built.
+the ray and run statistics (built: `RayStatistics` in every `Render`, `RunStatistics` from
+`render_traced_with_run`) and the traversal statistics, of which only the counted queries
+(`CountingTracer`) are built.
 
 ## The command owns everything at the edge
 
