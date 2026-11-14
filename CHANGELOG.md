@@ -14,6 +14,14 @@ All notable changes to lumen are recorded here. The format follows
   write into the source tree and the test and release profiles can run at once. Tests that
   covered two behaviours or branched on the platform are split, and each integration test file
   states a size class; the README's new Contributing section documents both conventions.
+- Generated tests for the claims that quantify over inputs (flyingrobots/lumen#24): a pixel's
+  result is the same for random evaluation orders, permutations and merge trees of its samples
+  (`tests/generated.rs`, also run on `wasm32-wasip1`); SHA-256 gives the digest of the whole for
+  random splits of random inputs of boundary and random lengths, and the published digests for
+  random splits of the published vectors (`src/sha256.rs`); PNG files of 73 random and
+  block-boundary sizes decode to the same pixels, have the length `png_len` gives and the block
+  count the format defines (`src/png/generated.rs`). The seeded generator is
+  `tests/generator/mod.rs`. Each test was shown to fail on a seeded mutation of the code it checks.
 - `png.rs`'s unit tests moved to `png/tests.rs` (flyingrobots/lumen#34), so the file is under the
   300-line review limit and its entry in the file-length gate's exceptions is gone. No code,
   public path or output byte changed.

@@ -41,9 +41,15 @@
 //! ```
 
 mod builtin_scene;
+#[cfg(test)]
+#[path = "../tests/generator/mod.rs"]
+mod generator;
 mod image;
 pub mod mesh;
 mod png;
+#[cfg(test)]
+#[path = "png/generated.rs"]
+mod png_generated;
 mod provenance;
 pub mod reference;
 mod render;
