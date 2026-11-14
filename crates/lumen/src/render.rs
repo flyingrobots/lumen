@@ -474,5 +474,5 @@ pub fn render_reference(
     settings: RenderSettings,
 ) -> Result<Render, RenderError> {
     let size = ImageSize::new(width, height)?;
-    render(&crate::scene::reference_scene()?, size, settings)
+    render(&crate::reference::reference_scene()?, size, settings)
 }

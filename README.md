@@ -8,8 +8,8 @@ Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
 
 ## What lumen does today
 
-Lumen renders one built-in reference scene, prints its image hash and timing, and writes it to
-a PNG file if asked:
+Lumen renders one built-in reference scene, which includes the Stanford bunny, prints its image
+hash and timing, and writes it to a PNG file if asked:
 
 - in tiles on all cores (`--threads`, below), with the same bytes at every thread count;
 - a power-of-two number of samples per pixel (1 to 1024, default 4), placed by Bunny's
@@ -42,7 +42,7 @@ python3 $D lumen ~/git/lumen --worktree --fetch --export reference.png --out "$(
 `--fetch` is needed on the first run in a worktree. The command prints:
 
 ```text
-scene lumen-reference-scene/2
+scene lumen-reference-scene/3
 integrator lumen-diffuse-path/1
 shading bunny-diffuse-shading/1
 sampler bunny-sobol-owen/1
@@ -90,11 +90,13 @@ The PNG is uncompressed (see below), so it is about four bytes per pixel: 922 26
 
 ## The reference scene
 
-`lumen-reference-scene/2` is defined in code in `crates/lumen/src/scene.rs`, entirely in Q32.32
-integers with no floating point and no randomness from the host. It is made of triangles only,
-so that a Geordi `geordi-ray-traced-scene/1` artifact can describe exactly the same scene
-(flyingrobots/lumen#6). In primitive order, with each object's diffuse albedo (linear, red, green,
-blue, in 256ths):
+`lumen-reference-scene/3` is built in `crates/lumen/src/reference/`, entirely in Q32.32 integers
+with no floating point and no randomness from the host. Four of its objects are defined in code;
+the fifth, the Stanford bunny, is read from a mesh file embedded in the binary
+(`assets/stanford-bunny/bun_zipper_res3.ply`, see [below](#the-stanford-bunny)). It is made of
+triangles only, 31 511 of them, so that a Geordi `geordi-ray-traced-scene/1` artifact can describe
+exactly the same scene (flyingrobots/lumen#6). In primitive order, with each object's diffuse
+albedo (linear, red, green, blue, in 256ths):
 
 1. the ground: two triangles at `y = -1.125`, spanning `-16..=16` on X and Z; albedo
    `(150, 145, 135)`, a warm light grey;
@@ -104,7 +106,13 @@ blue, in 256ths):
    `(50, 95, 200)`, blue;
 4. a bumpy sphere around the origin, radius 1.0 to 1.04: a cube subdivided 48 by 48 per face and
    pushed out with Bunny's `FixedVec3::normalize`, adapted from Bunny's scene benchmark
-   (27 648 triangles); albedo `(205, 60, 45)`, red.
+   (27 648 triangles); albedo `(205, 60, 45)`, red;
+5. the Stanford bunny: 3 851 triangles (every face of the file, none dropped), in the file's
+   face order, standing on the ground left of the sphere and facing it, about 1.24 units long,
+   1.21 tall and 0.96 deep; albedo `(70, 165, 85)`, green.
+
+The bunny's triangles come after all the others, so primitives 0 to 27 659 are those of version
+2 in the same order, and the bunny is 27 660 to 31 510.
 
 The lighting is one directional light and one uniform sky, the shape of Geordi's scene profile
 (at most one directional light, exactly one sky):
@@ -116,21 +124,86 @@ The lighting is one directional light and one uniform sky, the shape of Geordi's
   albedo `a` lit at cosine `c` reflects `a * E * c / pi`;
 - the sky: radiance `(64, 85, 120) / 256`, about `(0.25, 0.33, 0.47)`, a pale blue.
 
-The sphere and the octahedron cast long shadows back and to the left across the ground, and the
-sphere's shadow climbs the foot of the wall.
+The sphere, the octahedron and the bunny cast long shadows back and to the left across the
+ground, and the sphere's shadow climbs the foot of the wall.
 
-The camera stands at `(0, 1, 5)` looking along `(0, -0.25, -1)` with up `+Y` and a vertical
-half-angle whose tangent is 0.5. Every vertex coordinate is a multiple of `2^-16` below 256
-units, so it is exactly an `f32` and survives Geordi's `bunny-ply-binary-le-f32/1` mesh layout
-unchanged; the sphere's vertices are floored to that grid.
+The camera stands at `(-1, 2, 5)` looking along `(0.1875, -0.375, -1)` with up `+Y` and a
+vertical half-angle whose tangent is 0.5. Versions 1 and 2 stood at `(0, 1, 5)` looking along
+`(0, -0.25, -1)`; from there the bunny stood exactly in front of its own shadow, which the sun
+throws along `(-0.5, -1)` in X and Z, so version 3 moves the camera one unit left and one up.
+Every object and shadow of version 2 stays in the picture.
+
+Every vertex coordinate is a multiple of `2^-16` below 256 units, so it is exactly an `f32` and
+survives Geordi's `bunny-ply-binary-le-f32/1` mesh layout unchanged; the sphere's and the bunny's
+vertices are floored to that grid.
 
 The primitive order matters: of two triangles hit at the same distance, the lower index wins.
 **Any change to the scene's triangles, their order, their materials, the lighting or the camera
-placement is a new scene version, and changes every image hash.** Version 1
-(`lumen-reference-scene/1`: the same triangles and camera with no materials or lights, shaded by
-the normal-colour debugging view `lumen-normal-shading/1`) is retired. Neither it nor the normal
-view is kept: the view would have needed its own render path, flag, golden hash and tests to stay
-honest, and the lit render shows the same geometry.
+placement is a new scene version, and changes every image hash.** Version 2
+(`lumen-reference-scene/2`: the first four objects, the same materials and lighting, and the
+camera at `(0, 1, 5)`) is retired. Version 1 (`lumen-reference-scene/1`: the same triangles and
+camera with no materials or lights, shaded by the normal-colour debugging view
+`lumen-normal-shading/1`) is retired too. Neither the old versions nor the normal view is kept: they
+would have needed their own render paths, flags, golden hashes and tests to stay honest, and the
+current render shows the same geometry.
+
+### The Stanford bunny
+
+The mesh is the Stanford Bunny from the Stanford 3D Scanning Repository, Stanford Computer
+Graphics Laboratory (`https://graphics.stanford.edu/pub/3Dscanrep/bunny.tar.gz`,
+`bunny/reconstruction/bun_zipper_res3.ply`). Lumen's copy is Geordi's checked-in asset, byte for
+byte, with the same SHA-256 (`975e7f9b160b4ea15b0e225e21b10828ebcf678df020d2f6a46aa408fdcf5cd6`,
+checked by a test with lumen's own `sha256` module). It is Stanford's data, used with attribution
+as Geordi uses it; lumen's Apache-2.0 license does not cover it. `assets/stanford-bunny/README.md`
+records the provenance and Stanford's terms, and Stanford's reconstruction README is kept beside
+the file. `.gitattributes` keeps Git from rewriting its line endings.
+
+**Reading it: an interim, `lumen-ascii-ply-q32.32/1`.** Lumen's rule is that numerical code
+belongs in Bunny, but Bunny's PLY reader handles only binary little-endian files with exactly
+`x y z` vertices, and this file is ASCII with two more vertex columns. Until Bunny has an ASCII
+reader (flyingrobots/bunny#247), `crates/lumen/src/mesh/` (`ply.rs`, `decimal.rs`) reads exactly
+this file's profile and refuses anything else with a typed error (`PlyError`, `DecimalError`,
+each carrying the line number and what was found): a header of exactly `format ascii 1.0`,
+`element vertex`, the properties `x y z confidence intensity` as `float`, `element face` with
+`property list uchar int vertex_indices`, then five numbers per vertex line separated by single
+spaces, `3 a b c` per face line with every index in range, `\n` line endings, and nothing after
+the last face. `confidence` and `intensity` are checked but not used. Its limits, each a typed
+error: at most 2^20 vertices and 2^20 faces declared, lines of at most 256 bytes, counts and
+indices of at most ten digits. Declared counts never reserve memory.
+
+The conversion, `lumen-ascii-ply-q32.32/1`, follows Bunny's `bunny-decimal-q32-32/1` (in review
+as flyingrobots/bunny#281), so that the swap to Bunny's reader changes no bit: for decimal text
+`[+-]digits[.digits][(e|E)[+-]digits]` with exact value `v`, the raw value is `v * 2^32` rounded
+to the nearest integer, **ties to even**, applied to the magnitude and then the sign; a positive
+magnitude may reach `2^63 - 1` and a negative one `2^63`, decided after rounding. Values certainly
+out of range (`|v| >= 1e10`) or certainly below half a raw unit (`|v| < 1e-10`) are decided
+whatever their length; a value in between with more than 28 significant digits is refused.
+Everything is integer arithmetic in `u128`; no floating point. Bunny's exact tie vectors and
+range edges are among lumen's tests, and every one of the file's 5 667 coordinates agrees with an
+exact rational computation. The file has one coordinate in exponent form, `8.20736e-05`.
+
+**Placing it** (`BUNNY_PLACEMENT` in `crates/lumen/src/reference/bunny.rs`, applied by
+`crates/lumen/src/mesh/placement.rs`): every vertex is turned half a turn
+about `+Y` (`x` and `z` negated, exact; the file's bunny faces `-X`), scaled by 8 (a shift of
+three bits, exact), floored to the `2^-16` grid like the sphere, and moved by whole grid steps:
+`(-2.375, -1.392303466796875, 0.5)`. The Y offset puts the lowest vertex (file vertex 1 748,
+`y = 0.0334143`) exactly on the ground plane, so the bunny stands on the ground rather than a hair
+above it; the touching surfaces are handled by Bunny's start-point rule. Placed, the bunny spans
+`x = -2.8625..=-1.6201`, `y = -1.125..=0.0862` and `z = 0.0323..=0.9934`. A face that has zero area
+once placed would be dropped and listed (`PlacedMesh::dropped`) so that no degenerate triangle
+reaches Bunny's `TriangleSurface`; for this file and placement none is (the smallest face keeps
+about `2.2e-5` square units), and a test asserts the count.
+
+**What the mesh is like.** Its winding is consistent: every edge shared by exactly two faces is
+traversed in opposite directions by them, and the faces wind counter-clockwise seen from outside
+(the signed volume is positive). It is not a closed surface: as Stanford's README warns, the
+decimation does not preserve topology. 60 edges belong to one face only (four holes, three in
+the base, which rests on the ground, and a small one low on the front), 141 edges are shared by
+three or more faces, and 83 faces repeat another face's three vertices. Lumen shades two-sided, so
+none of this affects correctness; a repeated face is a coplanar tie that the lower primitive index
+wins. In the 640 by 360 reference picture the holes do not show: the base faces the ground and the
+small front hole is out of the camera's view, and no light leaks where the bunny meets the
+ground.
 
 The scene's types (`SceneSpec`: triangles, a material index per triangle, diffuse albedos, an
 optional directional light and a sky; `RenderSettings`: a power-of-two sample count and a `u32`
@@ -200,8 +273,19 @@ share of sampling and shading), for information:
 | `build_bvh`, compact layout | 205.5 | 99.7 ms |
 | `build_bvh_sah`, compact layout (lumen) | 192.5 | 17.2 ms |
 
-The 640 by 360 render at 64 samples per pixel traces 38 588 953 rays in about 6.75 s on one
-thread in the same setting (about 175 ns per ray, 458 ns per sample, all work included).
+The table was measured on `lumen-reference-scene/2`. The 640 by 360 render at 64 samples per
+pixel, in the same setting (the median of three runs of `lumen render`, one thread, all work
+included):
+
+| Scene | Triangles | Rays | Time | ns per ray |
+| --- | ---: | ---: | ---: | ---: |
+| `lumen-reference-scene/2` | 27 660 | 38 588 953 | 7.18 s | 186.1 |
+| `lumen-reference-scene/3` | 31 511 | 39 478 487 | 7.90 s | 200.1 |
+
+Version 3 traces 2.3 % more rays (the moved camera sees more ground and less sky) and each ray
+costs about 7.5 % more, about 10 % more time in all. The scene has 14 % more triangles, and the
+bunny's are small and dense; this measurement does not separate the bunny's cost from the
+camera's.
 
 ## Threads and tiles
 
@@ -329,14 +413,25 @@ How it is tested (`crates/lumen/tests/`):
   units from the shadow's edge; a pixel in full shadow under a zero sky is exactly zero from 1 to
   1024 samples.
 - **Against brute force**: for every sample of a 32 by 18 reference image, every traced ray
-  (camera, shadow and bounce) gets the answer of a test of every triangle; and every sample of a
+  (camera, shadow and bounce) gets the answer of a test of every triangle, including rays that
+  hit the bunny; and every sample of a
   16 by 9 image equals an independent composition of the documented order of operations written
   in the test with brute-force queries. The camera uses sampler pair 0 and the bounce pair 1.
 - **Order independence**: a pixel's samples accumulated forwards, backwards, shuffled and in
   merged partial accumulators give the same bits; an image whose pixels are computed in a
   scrambled order has the same hash.
-- **Convergence** (a regression guard, not a proof): for four reference pixels the mean of 1024
+- **Convergence** (a regression guard, not a proof): for six reference pixels the mean of 1024
   samples is within `5 / 256` of the mean of 256 per channel.
+- **The bunny**: the asset's SHA-256; exact decimal conversion (hand-derived raw values for the
+  first vertex, the bounds and the file's one exponent, exact ties, and 20 000 generated decimals
+  checked against the definition of rounding to nearest); the converted mesh's bounds equal the
+  exact conversion of the manifest's bounds; the PLY reader's refusals (a binary format line, a
+  missing property, a four-index face, an index out of range, a truncated file, a second decimal
+  point and more), each with its typed error; the placed bounds derived by hand, with the lowest
+  vertex exactly on the ground; no dropped and no degenerate triangle; the winding and hole
+  counts; a camera ray through the bunny's pixels hits it; and a ground point behind it, derived
+  from the light direction through a point inside its body, is in its shadow while a nearby point
+  in front is lit.
 - **Two runs**: the same image rendered twice in one process, and by two separate `lumen render`
   processes, compared byte for byte along with the printed hash and ray count.
 - **Thread counts and tile sizes**: see "Why the image does not depend on the threads" above.
@@ -389,3 +484,7 @@ Lint posture mirrors Bunny: `unsafe` is forbidden, clippy `all` is denied and
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+The Stanford Bunny mesh in `assets/stanford-bunny/` is not covered by that license: it is from the
+Stanford 3D Scanning Repository, Stanford Computer Graphics Laboratory, and is used with
+attribution. See `assets/stanford-bunny/README.md`.

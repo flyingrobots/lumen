@@ -37,15 +37,29 @@ All notable changes to lumen are recorded here. The format follows
 - A "Performance" section in the README: how to reproduce the thread-scaling, tile and 4K
   measurements through `devrun` with `--cpus` and `--exclusive`.
 
-### Changed
-
-- `lumen render --out FILE` is optional: without it the image is rendered and hashed but not
-  written, and the report says `png none`. `UsageError::MissingOut` is gone; `UsageError` gains
-  `Schedule` and `InvalidTile`, and `Command::Render` gains `threads` and `tile`.
-- `render` (one thread) now runs through the tile scheduler with one worker; its bytes, ray count
-  and errors are unchanged (the golden hash holds).
-- The report's `render-seconds` no longer includes the scene build, and `ns-per-ray` is the
-  render's wall time divided by the rays traced (on all threads).
+- The Stanford bunny in the reference scene (flyingrobots/lumen#14): `lumen-reference-scene/3`
+  appends its 3 851 triangles (none dropped; 31 511 triangles in all) after the triangles of
+  version 2, with a green albedo, standing on the ground left of the sphere. The mesh,
+  `assets/stanford-bunny/bun_zipper_res3.ply`, is Geordi's checked-in copy of Stanford's
+  `bun_zipper_res3.ply` (Stanford 3D Scanning Repository, Stanford Computer Graphics
+  Laboratory), byte for byte (SHA-256
+  `975e7f9b160b4ea15b0e225e21b10828ebcf678df020d2f6a46aa408fdcf5cd6`), with its provenance,
+  Stanford's reconstruction README and attribution; `.gitattributes` keeps its bytes intact.
+- An interim, strict ASCII PLY reader for exactly that file's profile
+  (`crates/lumen/src/mesh/ply.rs`, `mesh/decimal.rs`), with typed errors carrying line numbers
+  and found values, and explicit limits (2^20 vertices and faces, 256-byte lines, ten-digit
+  counts and indices). It converts decimals to Q32.32 with integers only by
+  `lumen-ascii-ply-q32.32/1`, which follows Bunny's `bunny-decimal-q32-32/1` (the exact value
+  times `2^32`, rounded to nearest, ties to even, sign applied after rounding). It is to be
+  replaced by Bunny's ASCII PLY reader (flyingrobots/bunny#247).
+- Mesh placement (`crates/lumen/src/mesh/placement.rs`): a half turn about `+Y`, a power-of-two scale, a
+  floor to the `2^-16` grid and a whole-step translation; faces with zero area after placement
+  are dropped and listed.
+- Tests: the asset hash; hand-derived conversions, Bunny's tie vectors and range edges, and
+  generated decimals; the manifest's bounds; the reader's refusals and limits; generated corrupt
+  files that must be refused without a panic; the placed bounds; the dropped and kept counts; the
+  winding and holes; brute force over a render that hits the bunny; the bunny's pixels and its
+  shadow; a new golden hash.
 
 - A lit render (flyingrobots/lumen#3): `lumen render` takes `--samples N` (a power of two from 1
   to 1024, default 4) and `--seed S` (`0..=4294967295`, default 0), and renders each sample as
@@ -90,6 +104,22 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- `lumen render --out FILE` is optional: without it the image is rendered and hashed but not
+  written, and the report says `png none`. `UsageError::MissingOut` is gone; `UsageError` gains
+  `Schedule` and `InvalidTile`, and `Command::Render` gains `threads` and `tile`.
+- `render` (one thread) now runs through the tile scheduler with one worker; its bytes, ray count
+  and errors are unchanged (the golden hash holds).
+- The report's `render-seconds` no longer includes the scene build, and `ns-per-ray` is the
+  render's wall time divided by the rays traced (on all threads).
+- The reference scene's content (its shapes, the bunny, camera, materials and lighting) moves
+  out of `scene.rs` into the `reference` module, and the vertex grid into `vertex_grid.rs`;
+  `scene.rs` keeps the scene machinery. Library paths change from `lumen::scene::reference_*`
+  and `REFERENCE_*` to `lumen::reference::...` (`lumen::reference_scene` and
+  `lumen::REFERENCE_SCENE_ID` are unchanged). No pixel changes.
+- The reference camera moves from `(0, 1, 5)` looking along `(0, -0.25, -1)` to `(-1, 2, 5)`
+  looking along `(0.1875, -0.375, -1)`, so the bunny's shadow can be seen; every object of
+  version 2 stays in the picture. The golden hash (96 by 54, 4 samples, seed 0) is updated for
+  the new scene identity.
 - Scenes are traced with a `build_bvh_sah` tree in Bunny's compact layout
   (`compact_closest_hit`, `compact_any_hit`), the fastest of the four combinations measured, and
   each triangle's Bunny `TriangleSurface` is built once with the scene.
@@ -99,6 +129,7 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Removed
 
+- `lumen-reference-scene/2` is retired.
 - `lumen-reference-scene/1` and the normal-colour debugging view `lumen-normal-shading/1` are
   retired; the view is not kept behind a flag.
 
