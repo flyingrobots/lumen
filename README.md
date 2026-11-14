@@ -894,6 +894,10 @@ Dated measurement records are kept under [`docs/measurements/`](docs/measurement
 flyingrobots/lumen#5 is [the 4K reference scene at 16 samples per pixel, 2026-11-13](docs/measurements/2026-11-13-4k-reference.md),
 taken with the tile scheduler. [The 4K reference scene with row bands and whole-program release
 builds](docs/measurements/2026-11-13-4k-row-bands.md) repeats it for flyingrobots/lumen#28.
+[Fixed Point version 2 at 4K and 64 samples per pixel, 2026-11-14](docs/measurements/2026-11-14-4k-fixed-point-v2.md)
+records the showpiece for flyingrobots/lumen#39: the same image hash,
+`sha256:d276602407edb72109ebfbc8cec9121230171cf156144f139fb2bc3ca1c13bef`, on every run, a mean
+of 21.2 seconds with 18 CPUs, about 10 % more than version 1 (19.2 seconds).
 Each states its commit and conditions and applies to that commit only.
 
 ### Readings
