@@ -805,6 +805,27 @@ The container has neither `cargo-audit` nor `cargo-llvm-cov`; CI installs both a
 prebuilt binaries. To run them in the container, install them under `/tmp` first, for example
 `cargo install --locked cargo-audit --version 0.22.2 --root /tmp/audit` with `--network`.
 
+## Contributing
+
+Run the gates under "Build and test" before opening a pull request, and add a line to
+`CHANGELOG.md` under `Unreleased`.
+
+### Tests
+
+- **Size classes** (testing standard rule 9). Every integration test file says its class in the
+  first line of its module comment, `//! Size class: small|medium`. Unit tests in `src/` are small.
+  *Small*: in one process, no file, no network, no clock. The renderer's own worker threads are
+  allowed because they are the code under test. *Medium*: spawns the `lumen` process, writes
+  files, or runs real threads at fixed counts. Run one class by file: `cargo test --test cli
+  --test threads` is the medium set; `cargo test --lib --test render --test library --test
+  fixed_point` the small set. There is no large class yet.
+- **Hermetic files** (rule 8). A test that writes files makes a `Scratch` directory (see
+  `crates/lumen/tests/cli.rs`) named for the test and the process id under `CARGO_TARGET_TMPDIR`,
+  runs the command with it as the working directory, passes absolute paths and removes it when
+  done, so the test and release profiles can run at once.
+- **One behaviour per test**, named as a sentence about it, with no platform branch inside the
+  body: a platform difference is a `#[cfg]` on its own test.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
