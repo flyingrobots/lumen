@@ -3,7 +3,7 @@
 /// Where the scanner is: in code, in a `//` comment, in a `/* */` comment (nested to a depth),
 /// in a string, or in a raw string with a number of `#`s.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum State {
+pub(crate) enum State {
     Code,
     LineComment,
     BlockComment(u32),
@@ -37,8 +37,8 @@ pub(crate) fn code_lines(text: &str) -> usize {
 
 /// One step from `state` at the start of `rest` (never at a newline): the next state, how many
 /// characters were taken (at least one, never a newline past the first) and whether they were
-/// code.
-fn step(state: State, rest: &[char]) -> (State, usize, bool) {
+/// code. The nondeterminism scan's tokenizer steps with it too.
+pub(crate) fn step(state: State, rest: &[char]) -> (State, usize, bool) {
     let starts = |s: &str| s.chars().zip(rest).filter(|(a, b)| a == *b).count() == s.len();
     let blank = rest[0].is_whitespace();
     match state {

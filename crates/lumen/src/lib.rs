@@ -40,6 +40,10 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+// No float in the library: `clippy.toml` bans the float types and Bunny's float conversion;
+// this catches arithmetic on a float whose type is only inferred (docs/adr/0006-nondeterminism-gate.md).
+#![deny(clippy::float_arithmetic)]
+
 mod builtin_scene;
 #[cfg(test)]
 #[path = "../tests/generator/mod.rs"]

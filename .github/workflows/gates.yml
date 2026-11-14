@@ -1,7 +1,7 @@
 name: Gates
 
 # Supply-chain, size and coverage checks (Rust standard §19.4, §24, §6.1, §17.14). The job names
-# are stable; the three `Gates / ...` jobs are meant to be required checks. `Signal / coverage`
+# are stable; the four `Gates / ...` jobs are meant to be required checks. `Signal / coverage`
 # reports and never fails: coverage is an inspection instrument, not a gate.
 
 on:
@@ -66,6 +66,20 @@ jobs:
 
       - name: Lines of code per file
         run: cargo run --locked -q -p xtask -- file-length
+
+  # What Clippy's bans in clippy.toml cannot see: floats, code under a cfg that is not built,
+  # macro bodies that are never invoked, and the form of every ban waiver (ADR 0006).
+  nondeterminism:
+    name: Gates / nondeterminism
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Nondeterminism scan
+        run: cargo run --locked -q -p xtask -- nondeterminism
 
   coverage:
     name: Signal / coverage

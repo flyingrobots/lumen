@@ -10,6 +10,12 @@
 //! same radiance bits for every sample (Bunny guarantees the answers do not depend on the tree),
 //! and the example stops if one does not.
 
+#![expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    reason = "time-instant, std-env, float-type: a timing program, outside the deterministic core"
+)]
+
 use std::time::{Duration, Instant};
 
 use bunny_broadphase::{
