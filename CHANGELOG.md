@@ -6,6 +6,15 @@ All notable changes to lumen are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Bunny is pinned to `3c395f9950ac63d5ecfbd2055c306954111daf9d` (was `dcd6bd37613738de93f7084e7c8aa0283de964ea`), a commit of Bunny's main after the 0.7.1
+  release, for every Bunny crate lumen uses (flyingrobots/lumen#27, part of it). Both golden image
+  hashes are unchanged. Of Bunny's 0.7.1 behaviour changes, `ray_intersects_aabb` and
+  `intersect_ray` are not called by lumen, whose traversal uses the compact BVH, and the
+  `try_look_at` correction is not used. The pin move brings no new crate: `Cargo.lock` changes only
+  in the revision and version (0.7.0 to 0.7.1) of each Bunny crate.
+
 ### Added
 
 - Supply-chain, size and coverage checks in CI (flyingrobots/lumen#23), in
@@ -124,7 +133,7 @@ All notable changes to lumen are recorded here. The format follows
   counts and indices). It converts decimals to Q32.32 with integers only by
   `lumen-ascii-ply-q32.32/1`, which follows Bunny's `bunny-decimal-q32-32/1` (the exact value
   times `2^32`, rounded to nearest, ties to even, sign applied after rounding). It is to be
-  replaced by Bunny's ASCII PLY reader (flyingrobots/bunny#247).
+  replaced by Bunny's ASCII PLY reader, now on Bunny's main (flyingrobots/bunny#247).
 - Mesh placement (`crates/lumen/src/mesh/placement.rs`): a half turn about `+Y`, a power-of-two scale, a
   floor to the `2^-16` grid and a whole-step translation; faces with zero area after placement
   are dropped and listed.
