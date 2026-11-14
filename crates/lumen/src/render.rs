@@ -7,29 +7,35 @@
 //! every pixel's samples are accumulated for that pixel alone, by one worker, in its own
 //! `PixelAccumulator`, so no accumulation order exists between threads.
 
-use core::fmt;
 use core::ops::Add;
 
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
-    write_rgba8, PinholeCamera, PixelAccumulator, PixelSampler, ToneCurve, MAX_SAMPLES_PER_PIXEL,
-    SHADING_ID,
+    write_rgba8, PinholeCamera, PixelAccumulator, PixelSampler, ToneCurve, SHADING_ID,
 };
 
 use crate::image::{ImageSize, Rgba8Image};
-use crate::scene::{Scene, Tracer};
+use crate::scene::{CountingTracer, Scene, Tracer};
 use crate::schedule::Schedule;
-use crate::workers::{render_pixels, render_pixels_by_worker, Reservation, WorkerError};
+use crate::workers::{render_pixels, render_pixels_by_worker, Reservation, WorkerError, WorkerRun};
 
 mod error;
+mod probe;
+mod ray_count;
 mod run;
+mod settings;
 mod shade;
 mod statistics;
+mod traversal;
 
 pub use error::{PathError, RenderError};
+use probe::{Closest, Counted, Plain, Probe, Unmeasured};
+pub use ray_count::RayCount;
 pub use run::{RunStatistics, WorkerStatistics};
+pub use settings::{RenderSettings, SettingsError};
 use shade::{direct, Shade};
 pub use statistics::{RayCheckError, RayOutcomes, RayStatistics};
+pub use traversal::{TraversalStatistics, TraversalWork};
 
 /// The stable name and version of [`trace_path`] on a scene with no vertex normal
 /// ([`Integrator::DiffusePath`]).
@@ -127,111 +133,6 @@ pub const CAMERA_PAIR: u32 = 0;
 /// The sampler pair of the bounce direction.
 pub const BOUNCE_PAIR: u32 = 1;
 
-/// Checked render settings: the sample count per pixel and the seed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RenderSettings {
-    samples_per_pixel: u32,
-    seed: u32,
-}
-
-/// Why render settings were refused.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SettingsError {
-    /// The sample count is not a power of two (zero included). Bunny's sampler states its
-    /// stratification for aligned power-of-two blocks only.
-    SamplesNotPowerOfTwo(u32),
-    /// The sample count is above Bunny's `MAX_SAMPLES_PER_PIXEL` (1024).
-    TooManySamples(u32),
-}
-
-impl fmt::Display for SettingsError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::SamplesNotPowerOfTwo(n) => {
-                write!(f, "samples per pixel must be a power of two (1, 2, 4, ..., 1024), not {n}")
-            }
-            Self::TooManySamples(n) => {
-                write!(f, "samples per pixel must be at most {MAX_SAMPLES_PER_PIXEL}, not {n}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for SettingsError {}
-
-impl RenderSettings {
-    /// Settings with `samples_per_pixel` samples, a power of two in `1..=1024`, and `seed`.
-    ///
-    /// The seed is a `u32`, the domain of Geordi's render settings; Bunny's sampler widens it
-    /// to `u64`.
-    ///
-    /// # Errors
-    ///
-    /// [`SettingsError::TooManySamples`] above 1024, then
-    /// [`SettingsError::SamplesNotPowerOfTwo`] for zero or any other count that is not a power
-    /// of two.
-    pub const fn new(samples_per_pixel: u32, seed: u32) -> Result<Self, SettingsError> {
-        if samples_per_pixel > MAX_SAMPLES_PER_PIXEL {
-            return Err(SettingsError::TooManySamples(samples_per_pixel));
-        }
-        if !samples_per_pixel.is_power_of_two() {
-            return Err(SettingsError::SamplesNotPowerOfTwo(samples_per_pixel));
-        }
-        Ok(Self { samples_per_pixel, seed })
-    }
-
-    /// The samples per pixel.
-    #[must_use]
-    pub const fn samples_per_pixel(self) -> u32 {
-        self.samples_per_pixel
-    }
-
-    /// The seed.
-    #[must_use]
-    pub const fn seed(self) -> u32 {
-        self.seed
-    }
-
-    /// Bunny's sampler for pixel `(x, y)` under this seed.
-    #[must_use]
-    pub fn sampler(self, x: u32, y: u32) -> PixelSampler {
-        PixelSampler::new(u64::from(self.seed), x, y)
-    }
-}
-
-/// How many rays were traced.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct RayCount {
-    /// Closest-hit queries: camera rays and bounce rays.
-    pub closest: u64,
-    /// Any-hit queries: shadow rays.
-    pub shadow: u64,
-}
-
-impl RayCount {
-    /// Every ray traced.
-    #[must_use]
-    pub const fn total(self) -> u64 {
-        // At most 2^39 rays in all (see `Add`), so the sum never saturates.
-        self.closest.saturating_add(self.shadow)
-    }
-}
-
-impl Add for RayCount {
-    type Output = Self;
-
-    /// The rays of both. Ray counts of a render stay far below `u64::MAX` (an image has at most
-    /// 2^27 pixels of at most 1024 samples of at most four rays: the camera ray, the bounce ray
-    /// and a shadow ray at each of their hits, so at most 2^39 rays), so the sums never
-    /// saturate.
-    fn add(self, other: Self) -> Self {
-        Self {
-            closest: self.closest.saturating_add(other.closest),
-            shadow: self.shadow.saturating_add(other.shadow),
-        }
-    }
-}
-
 /// The radiance of one sample and the rays it traced.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PathSample {
@@ -291,26 +192,38 @@ pub fn trace_path<T: Tracer + ?Sized>(
     sampler: PixelSampler,
     sample: u32,
 ) -> Result<PathSample, PathError> {
+    path(scene, &Plain(tracer), camera, sampler, sample).map(|(found, Unmeasured)| found)
+}
+
+/// [`trace_path`] with `probe` answering the ray queries, and the traversal work it recorded.
+fn path<P: Probe + ?Sized>(
+    scene: &Scene,
+    probe: &P,
+    camera: &PinholeCamera,
+    sampler: PixelSampler,
+    sample: u32,
+) -> Result<(PathSample, P::Work), PathError> {
     let lighting = scene.lighting();
     // A path adds at most one to each camera and bounce count and two to the shadow counts, so
     // no count saturates.
     let mut found = RayOutcomes::default();
+    let mut work = P::Work::default();
     let point = sampler.camera_sample(sample);
     let ray0 = camera.ray(point).ok_or(PathError::NoRay { sample, point })?;
-    let Some(hit1) = tracer.closest(&ray0)? else {
+    let Some(hit1) = probe.closest(&ray0, Closest::Camera, &mut work)? else {
         found.camera_misses = 1;
-        return Ok(PathSample::new(lighting.sky.radiance(), found));
+        return Ok((PathSample::new(lighting.sky.radiance(), found), work));
     };
     found.camera_hits = 1;
     let h1 = Shade::at(scene, &ray0, &hit1)?;
-    let d1 = direct(scene, tracer, &h1, &mut found)?;
+    let d1 = direct(scene, probe, &h1, &mut found, &mut work)?;
     let Some(ray1) = h1.bounce(sampler.point(sample, BOUNCE_PAIR))? else {
         // Bunny's smooth shading rejected the bounce: no ray, and it contributes zero.
         found.rejected_bounces = 1;
         let radiance = h1.reflect(d1, ZERO)?;
-        return Ok(PathSample::new(radiance, found));
+        return Ok((PathSample::new(radiance, found), work));
     };
-    let b = match tracer.closest(&ray1)? {
+    let b = match probe.closest(&ray1, Closest::Bounce, &mut work)? {
         None => {
             found.bounce_misses = 1;
             lighting.sky.radiance()
@@ -318,12 +231,12 @@ pub fn trace_path<T: Tracer + ?Sized>(
         Some(hit2) => {
             found.bounce_hits = 1;
             let h2 = Shade::at(scene, &ray1, &hit2)?;
-            let d2 = direct(scene, tracer, &h2, &mut found)?;
+            let d2 = direct(scene, probe, &h2, &mut found, &mut work)?;
             h2.reflect(d2, ZERO)?
         }
     };
     let radiance = h1.reflect(d1, b)?;
-    Ok(PathSample::new(radiance, found))
+    Ok((PathSample::new(radiance, found), work))
 }
 
 /// The resolved linear radiance of pixel `(x, y)` and the rays it traced: samples `0` to
@@ -343,7 +256,8 @@ pub fn pixel_radiance(
     x: u32,
     y: u32,
 ) -> Result<([FixedQ32_32; 3], RayCount), PathError> {
-    let (radiance, found) = Frame { scene, tracer: scene, camera, settings }.radiance(x, y)?;
+    let frame = Frame { scene, probe: Plain(scene), camera, settings };
+    let (radiance, found, Unmeasured) = frame.radiance(x, y)?;
     Ok((radiance, found.count()))
 }
 
@@ -358,36 +272,56 @@ pub struct Render {
     pub statistics: RayStatistics,
 }
 
-/// The pixels of one render, shared read-only by every worker: the scene, the tracer that
+/// The pixels of one render, shared read-only by every worker: the scene, the probe whose tracer
 /// answers its ray queries, the camera at the image size and the settings.
-struct Frame<'a, T: ?Sized> {
+struct Frame<'a, P> {
     scene: &'a Scene,
-    tracer: &'a T,
+    probe: P,
     camera: &'a PinholeCamera,
     settings: RenderSettings,
 }
 
-impl<T: Tracer + ?Sized> Frame<'_, T> {
-    /// [`pixel_radiance`] with the frame's tracer.
-    fn radiance(&self, x: u32, y: u32) -> Result<([FixedQ32_32; 3], RayOutcomes), PathError> {
+/// What one pixel of a render that counts traversals adds up: its rays and their traversal work.
+#[derive(Clone, Copy, Debug)]
+struct CountedPixel {
+    rays: RayStatistics,
+    traversal: TraversalStatistics,
+}
+
+impl Add for CountedPixel {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self { rays: self.rays + other.rays, traversal: self.traversal + other.traversal }
+    }
+}
+
+/// A pixel's radiance, what its rays found and the traversal work they recorded.
+type Radiance<W> = ([FixedQ32_32; 3], RayOutcomes, W);
+
+impl<P: Probe> Frame<'_, P> {
+    /// [`pixel_radiance`] with the frame's probe.
+    fn radiance(&self, x: u32, y: u32) -> Result<Radiance<P::Work>, PathError> {
         let sampler = self.settings.sampler(x, y);
         let mut accumulator = PixelAccumulator::new();
         let mut found = RayOutcomes::default();
+        let mut work = P::Work::default();
         for sample in 0..self.settings.samples_per_pixel() {
-            let path = trace_path(self.scene, self.tracer, self.camera, sampler, sample)?;
+            let (path, traversed) = path(self.scene, &self.probe, self.camera, sampler, sample)?;
             accumulator.add_sample(path.radiance)?;
             found = found + path.outcomes;
+            work = work + traversed;
         }
-        Ok((accumulator.resolve()?, found))
+        Ok((accumulator.resolve()?, found, work))
     }
 
     /// The four RGBA8 bytes of pixel `(x, y)`: its radiance through [`TONE_CURVE`] and
-    /// `write_rgba8`.
-    fn rgba(&self, x: u32, y: u32) -> Result<([u8; 4], RayStatistics), PathError> {
-        let (radiance, found) = self.radiance(x, y)?;
+    /// `write_rgba8`; and its ray statistics and traversal work.
+    fn rgba(&self, x: u32, y: u32) -> Result<([u8; 4], RayStatistics, P::Work), PathError> {
+        let (radiance, found, work) = self.radiance(x, y)?;
         let mut rgba = [0_u8; 4];
         write_rgba8(&mut rgba, TONE_CURVE, radiance)?;
-        Ok((rgba, RayStatistics::pixel(found, self.settings.samples_per_pixel())))
+        Ok((rgba, RayStatistics::pixel(found, self.settings.samples_per_pixel()), work))
     }
 }
 
@@ -422,11 +356,13 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
     schedule: Schedule,
 ) -> Result<Render, RenderError> {
     let camera = scene.camera().camera(size.width(), size.height())?;
-    let frame = Frame { scene, tracer, camera: &camera, settings };
-    // `render_pixels` counts nothing per worker: the render pays nothing for run statistics.
-    let (image, statistics) =
-        render_pixels(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y))
-            .map_err(render_error)?;
+    let frame = Frame { scene, probe: Plain(tracer), camera: &camera, settings };
+    // `render_pixels` counts nothing per worker and `Plain` no traversal: the render pays nothing
+    // for run or traversal statistics.
+    let (image, statistics) = render_pixels(size, schedule, RayStatistics::NONE, |x, y| {
+        frame.rgba(x, y).map(|(rgba, rays, Unmeasured)| (rgba, rays))
+    })
+    .map_err(render_error)?;
     Ok(Render { image, rays: statistics.count(), statistics })
 }
 
@@ -444,26 +380,67 @@ pub fn render_traced_with_run<T: Tracer + Sync + ?Sized>(
     schedule: Schedule,
 ) -> Result<(Render, RunStatistics), RenderError> {
     let camera = scene.camera().camera(size.width(), size.height())?;
-    let frame = Frame { scene, tracer, camera: &camera, settings };
-    let done =
-        render_pixels_by_worker(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y))
-            .map_err(render_error)?;
+    let frame = Frame { scene, probe: Plain(tracer), camera: &camera, settings };
+    let done = render_pixels_by_worker(size, schedule, RayStatistics::NONE, |x, y| {
+        frame.rgba(x, y).map(|(rgba, rays, Unmeasured)| (rgba, rays))
+    })
+    .map_err(render_error)?;
+    let run = run_statistics(&done.workers, |rays| rays, size, schedule)?;
+    let statistics = done.total;
+    Ok((Render { image: done.image, rays: statistics.count(), statistics }, run))
+}
+
+/// [`render_traced_with_run`], with the traversal work of every ray by kind
+/// ([`TraversalStatistics`]), through Bunny's counted searches ([`CountingTracer`]). The image,
+/// the ray statistics and the errors are those of [`render_traced`]: the counted searches return
+/// the uncounted ones' answers, and nothing a path decides reads a count.
+///
+/// # Errors
+///
+/// Any error of [`render_traced`].
+pub fn render_traced_with_traversal<T: CountingTracer + Sync + ?Sized>(
+    scene: &Scene,
+    tracer: &T,
+    size: ImageSize,
+    settings: RenderSettings,
+    schedule: Schedule,
+) -> Result<(Render, RunStatistics, TraversalStatistics), RenderError> {
+    let camera = scene.camera().camera(size.width(), size.height())?;
+    let frame = Frame { scene, probe: Counted(tracer), camera: &camera, settings };
+    let zero =
+        CountedPixel { rays: RayStatistics::NONE, traversal: TraversalStatistics::default() };
+    let done = render_pixels_by_worker(size, schedule, zero, |x, y| {
+        frame.rgba(x, y).map(|(rgba, rays, traversal)| (rgba, CountedPixel { rays, traversal }))
+    })
+    .map_err(render_error)?;
+    let run = run_statistics(&done.workers, |pixel| pixel.rays, size, schedule)?;
+    let statistics = done.total.rays;
+    let render = Render { image: done.image, rays: statistics.count(), statistics };
+    Ok((render, run, done.total.traversal))
+}
+
+/// The run statistics of `workers`, each worker's ray statistics read by `rays`.
+fn run_statistics<V: Copy>(
+    workers: &[WorkerRun<V>],
+    rays: impl Fn(V) -> RayStatistics,
+    size: ImageSize,
+    schedule: Schedule,
+) -> Result<RunStatistics, RenderError> {
     // One record per worker, reserved without aborting on failure, as the scheduler's own list.
-    let mut workers = Vec::new();
-    let handles = done.workers.len();
-    workers.try_reserve_exact(handles).map_err(|error| RenderError::OutOfMemory {
+    let mut records = Vec::new();
+    let handles = workers.len();
+    records.try_reserve_exact(handles).map_err(|error| RenderError::OutOfMemory {
         reserving: Reservation::Workers { handles },
         error,
     })?;
-    workers.extend(done.workers.iter().map(|w| WorkerStatistics::of(w, size.width())));
-    let statistics = done.total;
-    let render = Render { image: done.image, rays: statistics.count(), statistics };
-    let run = RunStatistics {
+    records.extend(
+        workers.iter().map(|w| WorkerStatistics::of(w.bands, &rays(w.total), size.width())),
+    );
+    Ok(RunStatistics {
         band_rows: schedule.band().get(),
         bands: schedule.band().count(size),
-        workers,
-    };
-    Ok((render, run))
+        workers: records,
+    })
 }
 
 /// A worker's failure as the render's: the pixel and its path error, or the reservation or

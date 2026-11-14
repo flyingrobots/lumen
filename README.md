@@ -85,6 +85,8 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   test needs is re-exported there: scene building (`Scene`, `SceneSpec`, `CameraPlacement`,
   `Lighting`, `reference_scene`, `fixed_point_scene`, `canyon_scene`, and `BuiltinScene`, the registry of
   named scenes with their identities that the command's `--scene` reads), rendering (`render`, `render_scheduled`, `render_traced`,
+  `render_traced_with_run` and `render_traced_with_traversal`, which also return what the workers
+  did and what Bunny's traversals did per kind of ray,
   `Schedule`, `BandRows`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
   its `hash`), its provenance (`RenderProvenance`), a scene's statistics (`Scene::statistics`,
   `SceneStatistics`, below), PNG encoding into any writer (`write_png`,
