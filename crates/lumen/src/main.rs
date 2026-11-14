@@ -24,9 +24,9 @@ fn main() -> ExitCode {
             println!("lumen {} (bunny {BUNNY_REV})", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        Ok(Command::Render { width, height, settings, threads, tile, out }) => {
+        Ok(Command::Render { width, height, settings, threads, band, out }) => {
             let threads = threads.unwrap_or_else(available_threads);
-            let schedule = match Schedule::new(threads, tile) {
+            let schedule = match Schedule::new(threads, band) {
                 Ok(schedule) => schedule,
                 Err(error) => {
                     eprintln!("lumen: --threads: {error}");
@@ -137,7 +137,7 @@ impl Report {
             "scene {REFERENCE_SCENE_ID}\nintegrator {INTEGRATOR_ID}\nshading {}\nsampler {}\n\
              tone {}\nencoding {}\nbunny {BUNNY_REV}\n\
              size {}x{}\npixels {}\nsamples {}\nseed {}\nbounces {MAX_BOUNCES}\n\
-             threads {workers}\nthreads-asked {}\ntile {}x{}\n\
+             threads {workers}\nthreads-asked {}\nband-rows {}\n\
              rays {} (closest {}, shadow {})\nimage {hash}",
             bunny_optics::SHADING_ID,
             bunny_optics::SAMPLER_ID,
@@ -149,8 +149,7 @@ impl Report {
             settings.samples_per_pixel(),
             settings.seed(),
             schedule.threads(),
-            schedule.tile().width(),
-            schedule.tile().height(),
+            schedule.band().get(),
             rays.total(),
             rays.closest,
             rays.shadow,

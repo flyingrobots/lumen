@@ -1,15 +1,15 @@
 //! Lumen: a deterministic ray tracer built on Bunny's integer math.
 //!
-//! Lumen renders a built-in reference scene ([`reference::reference_scene`]) in tiles on all
-//! cores ([`render::render_scheduled`], [`schedule`], [`workers`]) with a power-of-two number of
+//! Lumen renders a built-in reference scene ([`reference::reference_scene`]) in row bands on
+//! all cores ([`render::render_scheduled`], [`schedule`], [`workers`]) with a power-of-two number of
 //! samples per pixel, each one diffuse path with a shadow-casting directional light, a uniform
 //! sky and one bounce ([`render::trace_path`], `lumen-diffuse-path/1`), and writes it as a PNG
 //! file ([`png::write_png`]). Every number
 //! that decides a pixel comes from Bunny: the sampler, camera rays, the BVH and its traversals,
 //! the triangle test, the shading steps and their order of operations, and the pixel path. So
 //! the same scene, size, sample count and seed give the same RGBA bytes, and the same image hash
-//! ([`image::Rgba8Image::hash`]), on every run and every machine, at every thread count and tile
-//! size.
+//! ([`image::Rgba8Image::hash`]), on every run and every machine, at every thread count and band
+//! height.
 
 pub mod cli;
 pub mod image;
@@ -35,5 +35,5 @@ pub use render::{
     SettingsError, INTEGRATOR_ID,
 };
 pub use scene::{Scene, SceneError, SceneSpec, Tracer};
-pub use schedule::{Schedule, ScheduleError, TileSize, DEFAULT_TILE, MAX_THREADS};
+pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};
 pub use workers::{render_pixels, WorkerError};

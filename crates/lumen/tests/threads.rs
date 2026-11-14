@@ -1,6 +1,6 @@
 //! Rendering on real threads at fixed counts: the image and the ray count do not depend on the
-//! thread count or the tile size; a failing pixel gives the same typed error at every thread
-//! count and tile size; and the workers stop after a failure. Hand-out orders themselves are
+//! thread count or the band height; a failing pixel gives the same typed error at every thread
+//! count and band height; and the workers stop after a failure. Hand-out orders themselves are
 //! explored deterministically in `src/workers/tests.rs`.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -12,9 +12,9 @@ use bunny_query::TraceRay;
 use lumen::render::{pixel_radiance, trace_path, RayCount, TONE_CURVE};
 use lumen::scene::{Hit, TraceError};
 use lumen::{
-    reference_scene, render, render_pixels, render_scheduled, render_traced, ImageSize,
-    RenderError, RenderSettings, Rgba8Image, Scene, Schedule, ScheduleError, TileSize, Tracer,
-    WorkerError, DEFAULT_TILE, MAX_THREADS,
+    reference_scene, render, render_pixels, render_scheduled, render_traced, BandRows, ImageSize,
+    RenderError, RenderSettings, Rgba8Image, Scene, Schedule, ScheduleError, Tracer, WorkerError,
+    DEFAULT_BAND_ROWS, MAX_THREADS,
 };
 
 mod golden;
@@ -28,12 +28,12 @@ fn size(width: u32, height: u32) -> ImageSize {
     ImageSize::new(width, height).expect("valid size")
 }
 
-fn tile(width: u32, height: u32) -> TileSize {
-    TileSize::new(width, height).expect("valid tile")
+fn band(rows: u32) -> BandRows {
+    BandRows::new(rows).expect("valid band")
 }
 
-fn schedule(threads: u32, tile: TileSize) -> Schedule {
-    Schedule::new(threads, tile).expect("valid schedule")
+fn schedule(threads: u32, band: BandRows) -> Schedule {
+    Schedule::new(threads, band).expect("valid schedule")
 }
 
 /// The thread counts every test tries: fixed, so the tests do not depend on the host's cores
@@ -67,25 +67,29 @@ fn raster_order(
 // ---------------------------------------------------------------------------------------------
 // The image does not depend on the schedule.
 
-/// The golden 96 by 54 image at every thread count and at tile sizes that divide the image,
-/// do not divide it, are one pixel, one row, one column or larger than the image.
+/// The golden 96 by 54 image at every thread count and at band heights of one row, heights
+/// that divide the image (2, 6, 27), that leave a partial last band (4, 5, 7, 16), the whole
+/// image and more than the image.
 #[test]
-fn the_golden_hash_holds_at_every_thread_count_and_tile_size() {
+fn the_golden_hash_holds_at_every_thread_count_and_band_height() {
     let scene = reference_scene().expect("builds");
     let (want_image, want_rays) = raster_order(&scene, size(96, 54), settings(4, 0));
     assert_eq!(want_image.hash(), GOLDEN_96X54_4SPP);
-    let tiles = [(1, 1), (7, 5), (16, 16), (32, 32), (96, 1), (1, 54), (13, 54), (200, 200)];
     for threads in THREAD_COUNTS {
-        for (w, h) in tiles {
+        for rows in [1, 2, 4, 5, 6, 7, 16, 27, 54, 200] {
             let render = render_scheduled(
                 &scene,
                 size(96, 54),
                 settings(4, 0),
-                schedule(threads, tile(w, h)),
+                schedule(threads, band(rows)),
             )
             .expect("renders");
-            assert_eq!(render.image.hash(), GOLDEN_96X54_4SPP, "{threads} threads, {w}x{h} tiles");
-            assert_eq!(render.rays, want_rays, "{threads} threads, {w}x{h} tiles");
+            assert_eq!(
+                render.image.hash(),
+                GOLDEN_96X54_4SPP,
+                "{threads} threads, bands of {rows}"
+            );
+            assert_eq!(render.rays, want_rays, "{threads} threads, bands of {rows}");
         }
     }
 }
@@ -100,8 +104,7 @@ fn a_larger_image_is_the_same_on_one_thread_and_on_many() {
     let (oracle, rays) = raster_order(&scene, size, settings);
     assert_eq!(one.image, oracle);
     assert_eq!(one.rays, rays);
-    for schedule in
-        [schedule(18, DEFAULT_TILE), schedule(5, tile(24, 10)), schedule(16, tile(320, 1))]
+    for schedule in [schedule(18, DEFAULT_BAND_ROWS), schedule(5, band(7)), schedule(16, band(32))]
     {
         let many = render_scheduled(&scene, size, settings, schedule).expect("renders");
         assert_eq!(many.image.hash(), one.image.hash(), "{schedule:?}");
@@ -116,21 +119,27 @@ fn a_larger_image_is_the_same_on_one_thread_and_on_many() {
 
 #[test]
 fn schedules_are_checked() {
-    assert_eq!(Schedule::new(0, DEFAULT_TILE), Err(ScheduleError::NoThreads));
+    assert_eq!(Schedule::new(0, DEFAULT_BAND_ROWS), Err(ScheduleError::NoThreads));
     assert_eq!(
-        Schedule::new(MAX_THREADS + 1, DEFAULT_TILE),
+        Schedule::new(MAX_THREADS + 1, DEFAULT_BAND_ROWS),
         Err(ScheduleError::TooManyThreads(MAX_THREADS + 1))
     );
-    assert_eq!(Schedule::new(u32::MAX, DEFAULT_TILE), Err(ScheduleError::TooManyThreads(u32::MAX)));
-    assert_eq!(Schedule::new(MAX_THREADS, DEFAULT_TILE).map(Schedule::threads), Ok(MAX_THREADS));
-    assert_eq!(TileSize::new(0, 1), Err(ScheduleError::EmptyTile));
-    assert_eq!(TileSize::new(1, 0), Err(ScheduleError::EmptyTile));
+    assert_eq!(
+        Schedule::new(u32::MAX, DEFAULT_BAND_ROWS),
+        Err(ScheduleError::TooManyThreads(u32::MAX))
+    );
+    assert_eq!(
+        Schedule::new(MAX_THREADS, DEFAULT_BAND_ROWS).map(Schedule::threads),
+        Ok(MAX_THREADS)
+    );
+    assert_eq!(BandRows::new(0), Err(ScheduleError::EmptyBand));
     assert_eq!(Schedule::single().threads(), 1);
-    // Never more workers than tiles.
-    assert_eq!(schedule(18, tile(32, 32)).workers(size(1, 1)), 1);
-    assert_eq!(schedule(18, tile(32, 32)).workers(size(64, 33)), 4);
-    assert_eq!(schedule(3, tile(32, 32)).workers(size(64, 33)), 3);
-    assert_eq!(schedule(MAX_THREADS, tile(1, 1)).workers(size(4096, 4096)), MAX_THREADS);
+    assert_eq!(Schedule::single().band(), DEFAULT_BAND_ROWS);
+    // Never more workers than bands.
+    assert_eq!(schedule(18, band(32)).workers(size(1, 1)), 1);
+    assert_eq!(schedule(18, band(8)).workers(size(64, 33)), 5);
+    assert_eq!(schedule(3, band(8)).workers(size(64, 33)), 3);
+    assert_eq!(schedule(MAX_THREADS, band(1)).workers(size(1, 4096)), MAX_THREADS);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -159,9 +168,9 @@ fn failing_pixels<'a>(
 /// Failing pixels and the one whose error must be reported.
 type Case<'a> = (&'a [(u32, u32)], (u32, u32));
 
-/// Whatever the threads and tiles, the error is that of the first failing pixel in raster
-/// order (top row first), which is not always in the lowest-numbered failing tile: with 32 by 32
-/// tiles, `(40, 0)` is in tile 1 and `(3, 5)` in tile 0, and `(40, 0)` comes first.
+/// Whatever the threads and bands, the error is that of the first failing pixel in raster
+/// order (top row first), which is not the first in column-major order: `(40, 0)` comes before
+/// `(3, 5)`.
 #[test]
 fn the_first_failing_pixel_in_raster_order_is_reported_at_every_schedule() {
     {
@@ -170,24 +179,23 @@ fn the_first_failing_pixel_in_raster_order_is_reported_at_every_schedule() {
             (&[(3, 5), (40, 0)], (40, 0)),
             (&[(63, 47), (0, 47)], (0, 47)),
             (&[(10, 40), (50, 33), (5, 33)], (5, 33)),
-            // Every pixel on a diagonal: many tiles fail at once.
+            // Every pixel on a diagonal: many bands fail at once.
             (&(0..48).map(|y| (50 - y, y)).collect::<Vec<_>>(), (50, 0)),
         ];
-        let tiles = [(1, 1), (5, 3), (32, 32), (64, 1), (1, 48), (200, 200)];
         for (failing, (x, y)) in cases {
             for threads in THREAD_COUNTS.into_iter().chain([16]) {
-                for (w, h) in tiles {
+                for rows in [1, 3, 5, 32, 48, 200] {
                     let asked = AtomicUsize::new(0);
                     let result = render_pixels(
                         size(64, 48),
-                        schedule(threads, tile(w, h)),
+                        schedule(threads, band(rows)),
                         RayCount::default(),
                         failing_pixels(failing, &asked, 64 * 48),
                     );
                     assert_eq!(
                         result,
                         Err(WorkerError::Pixel { x, y, error: RenderError::NoRay { x, y } }),
-                        "{failing:?}, {threads} threads, {w}x{h} tiles"
+                        "{failing:?}, {threads} threads, bands of {rows}"
                     );
                 }
             }
@@ -195,25 +203,27 @@ fn the_first_failing_pixel_in_raster_order_is_reported_at_every_schedule() {
     }
 }
 
-/// After a failure workers take no tile beyond the failing row of tiles. On one thread the count
-/// is exact: a failure at the first pixel of tile 0 abandons that tile and renders the other 15
-/// tiles of the first row of 32 by 32 tiles of a 512 by 512 image, and nothing after them.
+/// After a failure in row `y` no worker begins a row from `y` down. On one thread the count is
+/// exact: a raster-order loop stops at the failing pixel, and so does the one worker, whatever
+/// the band height: every pixel of the rows above, then the failing row up to the failing pixel.
 #[test]
 fn workers_stop_after_a_failure() {
-    {
-        let image = size(512, 512);
-        let asked = AtomicUsize::new(0);
+    let image = size(512, 512);
+    for (fx, fy) in [(0, 0), (37, 20), (511, 300)] {
         let first =
-            Err(WorkerError::Pixel { x: 0, y: 0, error: RenderError::NoRay { x: 0, y: 0 } });
-        let one = schedule(1, tile(32, 32));
-        let result = render_pixels(
-            image,
-            one,
-            RayCount::default(),
-            failing_pixels(&[(0, 0)], &asked, 512 * 512),
-        );
-        assert_eq!(result, first);
-        assert_eq!(asked.load(Ordering::SeqCst), 1 + 15 * 32 * 32);
+            Err(WorkerError::Pixel { x: fx, y: fy, error: RenderError::NoRay { x: fx, y: fy } });
+        for rows in [1, 7, 32, 512] {
+            let asked = AtomicUsize::new(0);
+            let result = render_pixels(
+                image,
+                schedule(1, band(rows)),
+                RayCount::default(),
+                failing_pixels(&[(fx, fy)], &asked, 512 * 512),
+            );
+            assert_eq!(result, first, "bands of {rows}");
+            let want = usize::try_from(fy * 512 + fx + 1).expect("fits");
+            assert_eq!(asked.load(Ordering::SeqCst), want, "({fx}, {fy}), bands of {rows}");
+        }
         // On many threads the same error. How much work runs before the failure is recorded
         // depends on the operating system's scheduling, so it is not bounded here; the stop rule
         // itself is checked exactly, under every hand-out order, in `src/workers/tests.rs`.
@@ -221,11 +231,11 @@ fn workers_stop_after_a_failure() {
             let asked = AtomicUsize::new(0);
             let result = render_pixels(
                 image,
-                schedule(threads, tile(32, 32)),
+                schedule(threads, band(4)),
                 RayCount::default(),
-                failing_pixels(&[(0, 0)], &asked, 512 * 512),
+                failing_pixels(&[(fx, fy)], &asked, 512 * 512),
             );
-            assert_eq!(result, first);
+            assert_eq!(result, first, "{threads} threads");
         }
     }
 }
@@ -264,7 +274,7 @@ impl Tracer for Failing<'_> {
 
 /// A traversal failure in the real integrator surfaces as the typed error of the first failing
 /// pixel in raster order, the one a raster-order loop over `trace_path` meets first, at every
-/// thread count and tile size, within a budget of queries.
+/// thread count and band height, within a budget of queries.
 #[test]
 fn a_traversal_failure_is_the_same_typed_error_at_every_schedule() {
     {
@@ -290,12 +300,12 @@ fn a_traversal_failure_is_the_same_typed_error_at_every_schedule() {
         let want = first.expect("some pixel fails");
         let mut seen = Vec::new();
         for threads in THREAD_COUNTS {
-            for (w, h) in [(1, 1), (8, 8), (32, 32), (64, 1)] {
+            for rows in [1, 5, 8, 36] {
                 let bounded =
                     Failing { scene: &scene, queries: AtomicUsize::new(0), limit: budget };
                 let result =
-                    render_traced(&scene, &bounded, size, settings, schedule(threads, tile(w, h)));
-                assert_eq!(result, Err(want), "{threads} threads, {w}x{h} tiles");
+                    render_traced(&scene, &bounded, size, settings, schedule(threads, band(rows)));
+                assert_eq!(result, Err(want), "{threads} threads, bands of {rows}");
                 seen.push(result);
             }
         }

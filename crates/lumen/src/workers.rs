@@ -1,21 +1,23 @@
-//! This module owns running a pixel function over the tiles of an image on worker threads and
-//! assembling the image.
+//! This module owns running a pixel function over the row bands of an image on worker threads.
 //!
-//! Tiles are handed out one at a time from a shared counter, in row-major order, to whichever
-//! worker asks next, so a slow region or a slow core never holds up the others. A worker renders
-//! a whole tile into its own buffer, then copies it into the image at the tile's place. Each
-//! pixel is written once, by the worker that computed it, at a position fixed by its
-//! coordinates: if the pixel function is a pure function of `(x, y)`, the image is the same
-//! bytes for every thread count, tile size and hand-out order. See
-//! `docs/adr/0001-tile-scheduling.md`.
+//! The image is cut into bands of whole rows by `chunks_mut`, so the bands are contiguous,
+//! disjoint slices of the one image buffer, and the borrow checker proves it. Bands are handed
+//! out one at a time, top to bottom, to whichever worker asks next, so a slow region or a slow
+//! core never holds up the others. A worker that takes a band owns that slice and writes each
+//! pixel straight into it, at the place fixed by the pixel's coordinates: if the pixel function
+//! is a pure function of `(x, y)`, the image is the same bytes for every thread count, band
+//! height and hand-out order. Each worker returns its own sum and its own earliest failure; the
+//! caller combines them after `join`. See `docs/adr/0002-row-bands.md`.
 
 use core::fmt;
-use core::ops::Add;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::iter::{StepBy, Zip};
+use core::ops::{Add, Range};
+use core::slice::ChunksMut;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::image::{ImageSize, Rgba8Image};
-use crate::schedule::{widen, Schedule, TileRect, Tiles};
+use crate::schedule::{widen, Schedule};
 
 /// Why [`render_pixels`] stopped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,13 +31,10 @@ pub enum WorkerError<E> {
         /// The pixel function's error.
         error: E,
     },
-    /// Memory for the image or a tile buffer could not be reserved.
+    /// Memory for the image or the worker handles could not be reserved.
     OutOfMemory,
     /// The operating system refused to start a worker thread.
     Spawn,
-    /// A tile did not fit the image or its buffer. The tile geometry guarantees this never
-    /// happens; it is reported rather than allowed to panic inside a worker.
-    TileGeometry,
 }
 
 impl<E: fmt::Display> fmt::Display for WorkerError<E> {
@@ -44,215 +43,234 @@ impl<E: fmt::Display> fmt::Display for WorkerError<E> {
             Self::Pixel { x, y, error } => write!(f, "pixel ({x}, {y}): {error}"),
             Self::OutOfMemory => f.write_str("not enough memory for the image"),
             Self::Spawn => f.write_str("a worker thread could not be started"),
-            Self::TileGeometry => f.write_str("a tile did not fit the image (a lumen bug)"),
         }
     }
 }
 
 impl<E: fmt::Debug + fmt::Display> std::error::Error for WorkerError<E> {}
 
-/// The first failing pixel found so far.
-#[derive(Clone, Copy)]
+/// One pixel of the image: its four RGBA8 bytes.
+type Rgba = [u8; 4];
+
+/// The bands not yet handed out, top to bottom, each with the index of its first row.
+type Bands<'a> = Zip<StepBy<Range<u32>>, ChunksMut<'a, Rgba>>;
+
+/// The rows of one band, top to bottom, each with its row index.
+type Rows<'a> = Zip<Range<u32>, ChunksMut<'a, Rgba>>;
+
+/// A failing pixel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Failure<E> {
     y: u32,
     x: u32,
     error: E,
 }
 
-/// What the workers record for the end of the render: the first failing pixel, a reason to
-/// stop that is not a pixel's, and the sum of the finished workers' values.
-struct Record<T, E> {
-    first: Option<Failure<E>>,
-    halt: Option<WorkerError<E>>,
+/// The one of two failures that comes first in raster order: the smaller `(y, x)`.
+fn earlier<E>(a: Failure<E>, b: Failure<E>) -> Failure<E> {
+    if (b.y, b.x) < (a.y, a.x) {
+        b
+    } else {
+        a
+    }
+}
+
+/// What one worker found, or what several found together: the sum of the values of the pixels
+/// rendered and the earliest failing pixel among them.
+struct Outcome<T, E> {
     total: T,
+    first: Option<Failure<E>>,
+}
+
+impl<T: Copy + Add<Output = T>, E> Outcome<T, E> {
+    const fn new(zero: T) -> Self {
+        Self { total: zero, first: None }
+    }
+
+    /// Adds another worker's outcome: the sums add, and the earlier failure is kept. Integer
+    /// addition and a minimum do not depend on the order outcomes arrive in.
+    fn merge(&mut self, other: Self) {
+        self.total = self.total + other.total;
+        self.record(other.first);
+    }
+
+    fn record(&mut self, failure: Option<Failure<E>>) {
+        self.first = match (self.first.take(), failure) {
+            (Some(a), Some(b)) => Some(earlier(a, b)),
+            (a, b) => a.or(b),
+        };
+    }
+
+    /// The sum, or the earliest failure as the render's error.
+    fn into_result(self) -> Result<T, WorkerError<E>> {
+        match self.first {
+            Some(Failure { y, x, error }) => Err(WorkerError::Pixel { x, y, error }),
+            None => Ok(self.total),
+        }
+    }
+}
+
+/// The outcomes of all the workers, combined: `zero` plus every sum, and the earliest failure.
+fn combine<T, E>(zero: T, outcomes: impl Iterator<Item = Outcome<T, E>>) -> Outcome<T, E>
+where
+    T: Copy + Add<Output = T>,
+{
+    outcomes.fold(Outcome::new(zero), |mut all, one| {
+        all.merge(one);
+        all
+    })
+}
+
+/// Whether a row was rendered, or the worker is to leave its band: the row is no longer wanted
+/// or one of its pixels failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Row {
+    Done,
+    Leave,
 }
 
 /// What the workers share.
 ///
-/// Locks: `record` and `image`. Each is taken alone, never while the other is held, and held
-/// only to read or replace a few values or to copy one finished tile; no I/O and no call into
-/// the pixel function happens under either lock.
-struct Shared<'a, T, E> {
-    tiles: Tiles,
-    /// The next tile to hand out. It is claimed at most once per tile plus once per worker,
-    /// at most `2^27 + 256` times, so it never wraps.
-    next: AtomicU32,
-    /// The last tile still worth rendering: the last tile, or the end of the row of tiles of
-    /// the earliest failure so far.
-    last: AtomicU32,
-    /// Set when the render stops for a reason that is not a pixel's.
-    halted: AtomicBool,
-    record: Mutex<Record<T, E>>,
-    image: Mutex<&'a mut [u8]>,
+/// Lock: `bands`, the only one. It is held only to take the next band (`Iterator::next` on the
+/// band iterator, a few integer steps): no other lock, no I/O and no call into the pixel function
+/// happens under it. `end` is the only shared value a worker writes after the start.
+struct Shared<'a> {
+    /// The image width in pixels, the length of a row.
+    width: usize,
+    /// The image width, as the bound of the column index.
+    columns: u32,
+    /// The image height.
+    height: u32,
+    bands: Mutex<Bands<'a>>,
+    /// Rows from `end` down are no longer wanted: the image height at the start, then the row of
+    /// the earliest failure recorded so far, or 0 when a worker thread could not be started. It
+    /// only decreases.
+    end: AtomicU32,
 }
 
-/// One tile being rendered: its index and pixels.
-#[derive(Clone, Copy, Debug)]
-struct Job {
-    index: u32,
-    rect: TileRect,
-}
-
-/// A worker's own state: its tile buffer and the sum of its pixels' values.
-struct Lane<T> {
-    buffer: Vec<u8>,
-    total: T,
-}
-
-/// Whether a tile row was rendered or the tile is no longer wanted.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Row {
-    Done,
-    Abandon,
-}
-
-/// A guard on a lock that a panicking worker may have poisoned; the data stays usable because
-/// every update under these locks is a single assignment or a whole-tile copy.
+/// A guard on the band lock. A poisoned lock is still usable: the band iterator is changed only
+/// by `next`, which does not panic, so a panic elsewhere leaves it consistent.
 fn lock<V>(mutex: &Mutex<V>) -> MutexGuard<'_, V> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-impl<'a, T: Copy + Add<Output = T>, E: Copy> Shared<'a, T, E> {
-    fn new(tiles: Tiles, image: &'a mut [u8], zero: T) -> Self {
+impl<'a> Shared<'a> {
+    /// The image `pixels` of `size`, cut into bands of `schedule.band()` rows.
+    fn new(size: ImageSize, schedule: Schedule, pixels: &'a mut [Rgba]) -> Self {
+        // `ImageSize` refuses a zero width; `max(1)` states it to `chunks_mut`, which needs it.
+        let width = widen(size.width()).max(1);
+        let band = schedule.band();
+        let starts = (0..size.height()).step_by(widen(band.get()));
         Self {
-            tiles,
-            next: AtomicU32::new(0),
-            last: AtomicU32::new(tiles.last_index()),
-            halted: AtomicBool::new(false),
-            record: Mutex::new(Record { first: None, halt: None, total: zero }),
-            image: Mutex::new(image),
+            width,
+            columns: size.width(),
+            height: size.height(),
+            bands: Mutex::new(starts.zip(pixels.chunks_mut(band.pixels(width)))),
+            end: AtomicU32::new(size.height()),
         }
     }
 
-    /// Whether tile `index` still matters: no failure in an earlier row of tiles, no halt.
-    fn wanted(&self, index: u32) -> bool {
-        index <= self.last.load(Ordering::SeqCst) && !self.halted.load(Ordering::SeqCst)
+    /// The next band and its first row, or `None` when none is left or the next one is not
+    /// wanted. Bands are handed out top to bottom and `end` only decreases, so once a band is
+    /// not wanted no later band is.
+    fn take(&self) -> Option<(u32, Rows<'a>)> {
+        let (first, band) = lock(&self.bands).next()?;
+        let rows = (first..self.height).zip(band.chunks_mut(self.width));
+        (first < self.wanted_end()).then_some((first, rows))
     }
 
-    /// The next tile to render, or `None` when there is none left or none is wanted. Indices
-    /// only grow, so once one is unwanted every later one is too.
-    fn claim(&self) -> Option<Job> {
-        let index = self.next.fetch_add(1, Ordering::SeqCst);
-        let rect = self.tiles.rect(index)?;
-        self.wanted(index).then_some(Job { index, rect })
+    /// `end` with relaxed ordering: it is only a hint to stop early. Every value it takes is a
+    /// failing row or 0 (a halt), never below the raster-first failing row, so a late view of it
+    /// costs extra work at most, never a different result. The workers' results reach the
+    /// caller through `join`, which orders them.
+    fn wanted_end(&self) -> u32 {
+        self.end.load(Ordering::Relaxed)
     }
 
-    /// Renders row `y` of `job` into the lane, or records the row's first failing pixel.
-    fn render_row<F>(&self, job: Job, y: u32, pixel: &F, lane: &mut Lane<T>) -> Row
+    /// Renders row `y` into `row`, adding each pixel's value to `outcome`; or leaves, without a
+    /// pixel, if the row is no longer wanted; or stops at the row's first failing pixel and
+    /// records it.
+    fn render_row<T, E, F>(
+        &self,
+        y: u32,
+        row: &mut [Rgba],
+        pixel: &F,
+        outcome: &mut Outcome<T, E>,
+    ) -> Row
     where
-        F: Fn(u32, u32) -> Result<([u8; 4], T), E>,
+        T: Copy + Add<Output = T>,
+        F: Fn(u32, u32) -> Result<(Rgba, T), E>,
     {
-        if !self.wanted(job.index) {
-            return Row::Abandon;
+        if y >= self.wanted_end() {
+            return Row::Leave;
         }
-        for x in job.rect.x0..job.rect.x1 {
+        for (x, out) in (0..self.columns).zip(row.iter_mut()) {
             match pixel(x, y) {
                 Ok((rgba, value)) => {
-                    lane.buffer.extend_from_slice(&rgba);
-                    lane.total = lane.total + value;
+                    *out = rgba;
+                    outcome.total = outcome.total + value;
                 }
                 Err(error) => {
-                    self.fail(job.index, Failure { y, x, error });
-                    return Row::Abandon;
+                    self.fail(y);
+                    outcome.record(Some(Failure { y, x, error }));
+                    return Row::Leave;
                 }
             }
         }
         Row::Done
     }
 
-    /// Records a failure in tile `index`. Every pixel before it in raster order lies in this
-    /// row of tiles or an earlier one, so no tile after this row's end is needed any more, and
-    /// the earliest failure among the rest is the one a raster-order render meets first.
-    fn fail(&self, index: u32, failure: Failure<E>) {
-        self.last.fetch_min(self.tiles.row_end(index), Ordering::SeqCst);
-        let mut record = lock(&self.record);
-        if record.first.is_none_or(|f| (failure.y, failure.x) < (f.y, f.x)) {
-            record.first = Some(failure);
-        }
+    /// Marks rows from `y` down as no longer wanted, after a failure in row `y`. Every pixel
+    /// before the failing one in raster order is in an earlier row, or earlier in row `y`,
+    /// which only this worker renders and already has; so no row from `y` down is needed.
+    fn fail(&self, y: u32) {
+        self.end.fetch_min(y, Ordering::Relaxed);
     }
 
-    /// Stops every worker for a reason that is not a pixel's; the first reason is kept.
-    fn halt(&self, error: WorkerError<E>) {
-        lock(&self.record).halt.get_or_insert(error);
-        self.halted.store(true, Ordering::SeqCst);
-    }
-
-    /// Copies a finished tile from the lane into the image, row by row, with every offset
-    /// checked; `None` if a row does not fit (never, for a tile of [`Tiles`]).
-    fn store(&self, job: Job, lane: &Lane<T>) -> Option<()> {
-        let stride = widen(self.tiles.size().width()).checked_mul(4)?;
-        let row_bytes = widen(job.rect.width()).checked_mul(4)?;
-        let start = widen(job.rect.x0).checked_mul(4)?;
-        let mut image = lock(&self.image);
-        for (row, y) in (job.rect.y0..job.rect.y1).enumerate() {
-            let from = row.checked_mul(row_bytes)?;
-            let source = lane.buffer.get(from..from.checked_add(row_bytes)?)?;
-            let at = widen(y).checked_mul(stride)?.checked_add(start)?;
-            image.get_mut(at..at.checked_add(row_bytes)?)?.copy_from_slice(source);
-        }
-        Some(())
-    }
-
-    /// Adds a finished worker's sum to the total.
-    fn add(&self, value: T) {
-        let mut record = lock(&self.record);
-        record.total = record.total + value;
-    }
-
-    /// Renders one claimed tile into the lane and stores it, unless it is abandoned.
-    fn run_job<F>(&self, job: Job, pixel: &F, lane: &mut Lane<T>)
-    where
-        F: Fn(u32, u32) -> Result<([u8; 4], T), E>,
-    {
-        lane.buffer.clear();
-        let done =
-            (job.rect.y0..job.rect.y1).all(|y| self.render_row(job, y, pixel, lane) == Row::Done);
-        if done && self.store(job, lane).is_none() {
-            self.halt(WorkerError::TileGeometry);
-        }
+    /// Stops every worker at its next row, because a worker thread could not be started.
+    fn halt(&self) {
+        self.end.store(0, Ordering::Relaxed);
     }
 }
 
-/// One worker: claims tiles until none is left or wanted and renders each.
-fn work<T, E, F>(shared: &Shared<'_, T, E>, pixel: &F, zero: T)
+/// One worker: takes bands until none is left or wanted, renders each row by row, and returns
+/// its sum and its earliest failure.
+fn work<T, E, F>(shared: &Shared<'_>, pixel: &F, zero: T) -> Outcome<T, E>
 where
     T: Copy + Add<Output = T>,
-    E: Copy,
-    F: Fn(u32, u32) -> Result<([u8; 4], T), E>,
+    F: Fn(u32, u32) -> Result<(Rgba, T), E>,
 {
-    let mut lane = Lane { buffer: Vec::new(), total: zero };
-    let Some(capacity) = shared.tiles.max_tile_bytes() else {
-        shared.halt(WorkerError::TileGeometry);
-        return;
-    };
-    if lane.buffer.try_reserve_exact(capacity).is_err() {
-        shared.halt(WorkerError::OutOfMemory);
-        return;
+    let mut outcome = Outcome::new(zero);
+    while let Some((_, rows)) = shared.take() {
+        for (y, row) in rows {
+            if shared.render_row(y, row, pixel, &mut outcome) == Row::Leave {
+                break;
+            }
+        }
     }
-    while let Some(job) = shared.claim() {
-        shared.run_job(job, pixel, &mut lane);
-    }
-    shared.add(lane.total);
+    outcome
 }
 
 /// Renders every pixel of `size` with `pixel` on `schedule.workers(size)` workers, the calling
 /// thread being one of them, and returns the image and the sum of the pixels' values (`zero`
 /// plus each pixel's `T`; lumen counts rays this way).
 ///
-/// `pixel(x, y)` gives the four RGBA8 bytes of pixel `(x, y)` and its value. Tiles of
-/// `schedule.tile()` are handed out from a shared counter to whichever worker asks next. With
-/// one thread no thread is started and the calling thread renders every tile in order: the same
-/// code path with one worker. The image is the same bytes for every schedule whenever `pixel` is
-/// a pure function of its coordinates, and the sum is the same whenever `+` is associative and
-/// commutative on the values (as integer addition is).
+/// `pixel(x, y)` gives the four RGBA8 bytes of pixel `(x, y)` and its value. Bands of
+/// `schedule.band()` whole rows are handed out top to bottom to whichever worker asks next, and
+/// the worker writes the band's pixels straight into the image. With one thread no thread is
+/// started and the calling thread renders every band in order: the same code path with one
+/// worker. The image is the same bytes for every schedule whenever `pixel` is a pure function of
+/// its coordinates, and the sum is the same whenever `+` is associative and commutative on the
+/// values (as integer addition is).
+///
+/// A panic in `pixel` is passed on to the caller once every worker has stopped.
 ///
 /// # Errors
 ///
 /// [`WorkerError::Pixel`] for the first failing pixel in raster order (top row first, left to
-/// right), the same at every thread count, tile size and hand-out order. After a failure,
-/// workers take no tile past the end of that row of tiles and abandon such a tile at its next
-/// row. [`WorkerError::OutOfMemory`] if a buffer cannot be reserved, [`WorkerError::Spawn`] if a
-/// worker thread cannot be started, [`WorkerError::TileGeometry`] if a tile does not fit.
+/// right), the same at every thread count, band height and hand-out order. After a failure in
+/// row `y`, workers begin no row from `y` down. [`WorkerError::OutOfMemory`] if the image cannot
+/// be reserved, [`WorkerError::Spawn`] if a worker thread cannot be started.
 pub fn render_pixels<T, E, F>(
     size: ImageSize,
     schedule: Schedule,
@@ -261,27 +279,38 @@ pub fn render_pixels<T, E, F>(
 ) -> Result<(Rgba8Image, T), WorkerError<E>>
 where
     T: Copy + Add<Output = T> + Send,
-    E: Copy + Send,
-    F: Fn(u32, u32) -> Result<([u8; 4], T), E> + Sync,
+    E: Send,
+    F: Fn(u32, u32) -> Result<(Rgba, T), E> + Sync,
 {
-    let tiles = Tiles::new(size, schedule.tile()).ok_or(WorkerError::TileGeometry)?;
     let mut bytes = blank(size)?;
-    let shared = Shared::new(tiles, &mut bytes, zero);
-    let (shared_ref, pixel_ref) = (&shared, &pixel);
-    std::thread::scope(|scope| {
-        for n in 1..schedule.workers(size) {
-            let spawned = std::thread::Builder::new()
-                .name(format!("lumen-worker-{n}"))
-                .spawn_scoped(scope, move || work(shared_ref, pixel_ref, zero));
-            if spawned.is_err() {
-                shared.halt(WorkerError::Spawn);
-                return;
+    let helpers = widen(schedule.workers(size)).saturating_sub(1);
+    let outcome = {
+        let (pixels, _) = bytes.as_chunks_mut::<4>();
+        let shared = &Shared::new(size, schedule, pixels);
+        let pixel = &pixel;
+        std::thread::scope(|scope| {
+            let mut handles = Vec::new();
+            handles.try_reserve_exact(helpers).map_err(|_| WorkerError::OutOfMemory)?;
+            for n in 1..=helpers {
+                let spawned = std::thread::Builder::new()
+                    .name(format!("lumen-worker-{n}"))
+                    .spawn_scoped(scope, move || work(shared, pixel, zero));
+                let Ok(handle) = spawned else {
+                    // The scope joins the workers already started; they stop at their next row.
+                    shared.halt();
+                    return Err(WorkerError::Spawn);
+                };
+                handles.push(handle);
             }
-        }
-        work(&shared, &pixel, zero);
-    });
-    let total = finish(shared)?;
-    let image = Rgba8Image::from_bytes(size, bytes).ok_or(WorkerError::TileGeometry)?;
+            let mine = work(shared, pixel, zero);
+            let theirs = handles.into_iter().map(|handle| {
+                handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            });
+            Ok(combine(zero, core::iter::once(mine).chain(theirs)))
+        })?
+    };
+    let total = outcome.into_result()?;
+    let image = Rgba8Image::from_bytes(size, bytes).ok_or(WorkerError::OutOfMemory)?;
     Ok((image, total))
 }
 
@@ -292,18 +321,6 @@ fn blank<E>(size: ImageSize) -> Result<Vec<u8>, WorkerError<E>> {
     bytes.try_reserve_exact(len).map_err(|_| WorkerError::OutOfMemory)?;
     bytes.resize(len, 0);
     Ok(bytes)
-}
-
-/// What the workers recorded: a halt, else the first failing pixel, else the total.
-fn finish<T, E>(shared: Shared<'_, T, E>) -> Result<T, WorkerError<E>> {
-    let record = shared.record.into_inner().unwrap_or_else(PoisonError::into_inner);
-    if let Some(error) = record.halt {
-        return Err(error);
-    }
-    if let Some(f) = record.first {
-        return Err(WorkerError::Pixel { x: f.x, y: f.y, error: f.error });
-    }
-    Ok(record.total)
 }
 
 #[cfg(test)]
