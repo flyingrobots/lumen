@@ -57,6 +57,7 @@ pixels 230400
 samples 64
 seed 0
 bounces 1
+scene-content sha256:84541be146ebac194b43dfc91f9205356818d517c71f52d947a3ca417178d356
 threads <workers used>
 threads-asked <--threads, or what the system reports available>
 band-rows 1
@@ -113,10 +114,11 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   thread count and the writer. It builds for `wasm32-unknown-unknown`. Threads are started only
   by `render_pixels`, at the count the caller gave, and never for one thread.
 - **Provenance is a fact about the image; timing is a fact about the run.**
-  `RenderProvenance::new(scene, size, settings)` gives every field that decides the image's bytes,
-  and `fields()` lists them by name in a fixed order: `scene`, `integrator`, `shading`, `sampler`,
-  `tone`, `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed`, `bounces`. New fields are
-  added at the end. Equal provenance means equal bytes. The thread count, the band height, the
+  `RenderProvenance::named(name, &scene, size, settings)` (or `new(&scene, size, settings)` for
+  a scene without a name) gives every field that decides the image's bytes, and `fields()` lists
+  them by name in a fixed order: `scene` (the name), `integrator`, `shading`, `sampler`, `tone`,
+  `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed`, `bounces`, `scene-content` (the
+  scene's content identity, below). New fields are added at the end. Equal provenance means equal bytes. The thread count, the band height, the
   output file and the wall-clock times do not change a pixel, so they are not provenance. The
   command prints them from its own report (`crates/lumen/src/bin/lumen/report.rs`), after the
   provenance, the ray count and the image hash.
@@ -129,7 +131,10 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   is a label beside it, not part of it. It identifies the input, not the picture: moving a
   triangle no ray reaches changes the identity and no pixel. The encoding is specified byte by
   byte in [ADR 0005](docs/adr/0005-scene-content-identity.md), and a test rebuilds it by hand
-  from that table. `RenderProvenance` does not carry it yet (flyingrobots/lumen#38).
+  from that table. `RenderProvenance` takes it from the scene, so provenance can no longer
+  describe a different scene under the same name. The built-in scenes' digests are golden
+  values in `crates/lumen/tests/golden/mod.rs`, beside their image hashes, and one more, for a
+  one-triangle scene, was computed outside lumen with Python's `hashlib`.
 - **The command owns everything at the edge**: argument parsing and the usage text (`cli.rs`,
   `cli/usage_error.rs`, with its tests in `cli/tests.rs`), the default thread count from
   `available_parallelism`, the clock, the output file and the terminal (`main.rs`, `report.rs`).

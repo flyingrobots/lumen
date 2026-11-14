@@ -14,8 +14,9 @@ use crate::scenes::fixed_point::{fixed_point_scene, FixedPointError, FIXED_POINT
 /// A scene that ships with lumen.
 ///
 /// Each one has a name (`reference`, `fixed-point`) that [`FromStr`] reads and [`name`] gives
-/// back, a stable identity (the string [`RenderProvenance`] records) and its own camera and
-/// lighting, which [`build`] returns inside the [`Scene`].
+/// back, a stable versioned name (the name [`RenderProvenance`] records beside the scene's
+/// content identity) and its own camera and lighting, which [`build`] returns inside the
+/// [`Scene`].
 ///
 /// [`name`]: BuiltinScene::name
 /// [`build`]: BuiltinScene::build
@@ -53,9 +54,10 @@ impl BuiltinScene {
         }
     }
 
-    /// The scene's identity: the stable name and version that [`RenderProvenance`] records.
+    /// The scene's stable name and version, which [`RenderProvenance::named`] records beside
+    /// the scene's content identity ([`Scene::content_id`]).
     ///
-    /// [`RenderProvenance`]: crate::RenderProvenance
+    /// [`RenderProvenance::named`]: crate::RenderProvenance::named
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {

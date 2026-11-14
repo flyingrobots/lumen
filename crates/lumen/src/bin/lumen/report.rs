@@ -34,6 +34,8 @@ impl Report {
         for (name, value) in provenance.fields() {
             match value {
                 ProvenanceValue::Identity(identity) => writeln!(out, "{name} {identity}")?,
+                ProvenanceValue::Unnamed => writeln!(out, "{name} (unnamed)")?,
+                ProvenanceValue::Content(content) => writeln!(out, "{name} {content}")?,
                 ProvenanceValue::Size(size) => {
                     writeln!(out, "{name} {}x{}", size.width(), size.height())?;
                 }

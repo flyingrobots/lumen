@@ -32,11 +32,12 @@ second front end would have had to rebuild that list by hand.
   terminal output or host probe. The caller passes the thread count and the writer. The command
   (`src/bin/lumen/`) owns all of that. The one host resource the library uses is threads, started
   by `render_pixels` at the count the caller gave (ADR 0003).
-- **`RenderProvenance` is the render's identity.** It holds the scene's identity, the size and
-  the settings. With the identities fixed in this build, `fields()` returns twelve named fields in
-  a stable order: `scene`, `integrator`, `shading`, `sampler`, `tone`, `encoding`, `bunny`,
-  `size`, `pixels`, `samples`, `seed`, `bounces`. New fields go at the end. Equal provenance
-  means equal RGBA8 bytes.
+- **`RenderProvenance` is the render's identity.** It holds the scene's content identity and
+  optional name (ADR 0005), the size and the settings. With the identities fixed in this build,
+  `fields()` returns thirteen named fields in a stable order: `scene`, `integrator`, `shading`,
+  `sampler`, `tone`, `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed`, `bounces`,
+  `scene-content` (the last added by flyingrobots/lumen#38). New fields go at the end. Equal
+  provenance means equal RGBA8 bytes.
 - **The scene errors can grow.** `SceneError` and `TraceError` are `#[non_exhaustive]`
   (flyingrobots/lumen#20): a new reason to refuse a scene or a ray is not a breaking change, and
   a `match` on either outside the crate needs a wildcard arm. Code outside the crate may still
@@ -60,10 +61,10 @@ second front end would have had to rebuild that list by hand.
 
 - Moving an item between private modules does not change the API. Removing or renaming a root
   re-export does.
-- The caller names the scene in `RenderProvenance::new`, because a `Scene` does not carry its
-  identity yet. For lumen's own scenes `BuiltinScene::id()` gives it, so the `lumen` command takes
-  it from the scene it chose. When scenes are read from Geordi artifacts (flyingrobots/lumen#6), the identity
-  should come from the scene. The `&'static str` type of identities will then need revisiting.
+- `RenderProvenance` takes the scene itself, and its content identity from it (ADR 0005); the
+  caller may add a name. For lumen's own scenes `BuiltinScene::id()` gives the name, so the
+  `lumen` command takes it from the scene it chose. The `&'static str` type of names may need
+  revisiting when scenes are read from Geordi artifacts (flyingrobots/lumen#6).
 - A branch written against the old module paths (`lumen::render::trace_path`,
   `lumen::scene::SceneSpec`, `lumen::png::write_png`) must import from the root instead.
 
