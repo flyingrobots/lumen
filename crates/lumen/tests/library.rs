@@ -12,7 +12,9 @@ use lumen::{
 };
 
 mod golden;
-use golden::{GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_CONTENT, GOLDEN_REFERENCE_CONTENT};
+use golden::{
+    GOLDEN_96X54_4SPP, GOLDEN_CANYON_CONTENT, GOLDEN_FIXED_POINT_CONTENT, GOLDEN_REFERENCE_CONTENT,
+};
 
 /// The PNG `lumen render --width 5 --height 3 --samples 1 --seed 4294967295` wrote at commit
 /// d8deec4 (before flyingrobots/lumen#19), in hex: 131 bytes, SHA-256
@@ -151,6 +153,7 @@ fn every_builtin_scene_builds_renders_and_has_its_own_identity() {
         let golden = match scene {
             BuiltinScene::Reference => GOLDEN_REFERENCE_CONTENT,
             BuiltinScene::FixedPoint => GOLDEN_FIXED_POINT_CONTENT,
+            BuiltinScene::Canyon => GOLDEN_CANYON_CONTENT,
         };
         assert_eq!(provenance.scene_content().to_string(), golden, "{}", scene.name());
         ids.insert(scene.id());

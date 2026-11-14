@@ -4,7 +4,7 @@ Every page, by what you want to do. The [README](../README.md) is the short vers
 
 ## Start here
 
-- [Render your first image](tutorial.md): build Lumen with Cargo, render both scenes, and see
+- [Render your first image](tutorial.md): build Lumen with Cargo, render two of its scenes, and see
   the image hash stay the same at another thread count.
 
 ## Look up
@@ -13,7 +13,7 @@ Every page, by what you want to do. The [README](../README.md) is the short vers
   the output file, exit statuses and every statistics key.
 - [The `lumen` library](reference/library.md): the crate root by family, its rules and its
   errors; the rustdoc (`cargo doc --no-deps -p lumen --open`) is the full API reference.
-- [The built-in scenes](reference/scenes.md): both scenes object by object, with their tests.
+- [The built-in scenes](reference/scenes.md): the three scenes object by object, with their tests.
 
 ## Understand
 
@@ -57,6 +57,7 @@ Dated readings, each true of its commit only.
 - [The 4K reference scene with row bands and whole-program builds, 2026-11-13](measurements/2026-11-13-4k-row-bands.md)
 - [The readings the README held, 2026-11-13](measurements/2026-11-13-readme-readings.md)
 - [Fixed Point version 2 at 4K and 64 samples per pixel, 2026-11-14](measurements/2026-11-14-4k-fixed-point-v2.md)
+- [The canyon scene at 4K and 16 samples per pixel, 2026-11-14](measurements/2026-11-14-canyon.md)
 
 ## Coverage
 
