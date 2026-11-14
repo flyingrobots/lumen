@@ -18,6 +18,19 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- The canyon heightfield's public helpers no longer wrap or panic on a spec the generator
+  would refuse (flyingrobots/lumen#160, the heightfield half). `HeightfieldSpec::bounds` and
+  `HeightfieldSpec::centre_256` now return `Result`, refusing with `generate`'s own
+  `HeightfieldError`: before, `bounds` of a layer of amplitude `i64::MAX` wrapped to a wrong
+  range in release and panicked in debug, and `centre_256` read a meander spacing of 0 as 1 and
+  overflowed past an amplitude of about `2^48`. `terrain::stratum_material` sums the corners in
+  `i128`, so extreme heights no longer overflow. Tests reach every refusal and accept each limit
+  (`tests/canyon/limits.rs`), and kill three generator mutations that survived (the plateau's
+  weight dropped from the bounds, the spread truncated instead of floored, the grid's column
+  check deleted). The scene's bytes are unchanged: the golden image hash, the 4K hash, the
+  content identity and the generator's heights for the scene's spec are the same before and
+  after.
+
 - Documentation no longer claims more than the code does (flyingrobots/lumen#57, the
   documentation half). "Equal provenance means equal bytes" is scoped to a render of the scene as
   its own tracer: `RenderProvenance`, `render_traced`, the README and ADRs 0002, 0005 and 0007
