@@ -27,6 +27,13 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- Bunny is pinned to `d4fe51d38fa10f8d6496bd110955314edac30bbf` (was
+  `3c0dab3e77c0d45de8904906a134e846dfe5ec6c`), Bunny's main after its smooth-shading work
+  (flyingrobots/bunny#289: `VertexNormals`, `smooth_normal`, `SmoothHit`, and
+  `TriangleHit::barycentric_numerators`) and the traversal visit guard (a traversal that
+  would visit more interior nodes than the tree holds, which only a tree with a cycle can, now
+  fails with `TraversalError::InvalidNodeIndex`; a tree built by `Scene::new` has none). Part of flyingrobots/lumen#39. Lumen calls none of the new
+  APIs yet; both golden image hashes and both golden content digests are unchanged.
 - A failed path says what failed (part of flyingrobots/lumen#21). `trace_path` and
   `pixel_radiance` return the new `PathError`, and `RenderError::Shading`, which merged four
   causes and carried nothing, is gone: `PathError::UnknownPrimitive` (the index and the scene's
