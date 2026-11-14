@@ -53,13 +53,16 @@ impl Drop for Scratch {
     }
 }
 
-/// The lines of the `text` block that follows the tutorial's `sh` block holding `command`.
-fn shown_after(command: &str) -> Vec<&'static str> {
-    let at = TUTORIAL.find(&format!("```sh\n{command}\n```")).expect("the tutorial runs it");
-    let rest = &TUTORIAL[at..];
+/// The lines of the `text` block that follows the tutorial's `sh` block holding `command`. The
+/// tutorial is read with `\n` line ends, however the checkout wrote them (Git on Windows checks
+/// text out with `\r\n`).
+fn shown_after(command: &str) -> Vec<String> {
+    let tutorial = TUTORIAL.replace("\r\n", "\n");
+    let at = tutorial.find(&format!("```sh\n{command}\n```")).expect("the tutorial runs it");
+    let rest = &tutorial[at..];
     let start = rest.find("```text\n").expect("an output block follows") + "```text\n".len();
     let end = rest[start..].find("```").expect("the block ends");
-    rest[start..start + end].lines().collect()
+    rest[start..start + end].lines().map(str::to_owned).collect()
 }
 
 /// Oracle: the program's own report. Every line the tutorial shows after `command` is a line
@@ -74,7 +77,8 @@ fn the_tutorial_shows_what(command: &str, name: &str) -> usize {
     let report = Scratch::new(name).lumen(&args);
     let printed: Vec<&str> = report.lines().collect();
     let shown = shown_after(command);
-    let missing: Vec<&&str> = shown.iter().filter(|line| !printed.contains(line)).collect();
+    let missing: Vec<&String> =
+        shown.iter().filter(|line| !printed.contains(&line.as_str())).collect();
     assert!(
         missing.is_empty(),
         "{command}: the tutorial shows {missing:?}; lumen printed:\n{report}"
