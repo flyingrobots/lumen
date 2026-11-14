@@ -3,7 +3,7 @@
 //! Generated evidence for "for all" claims about the renderer (testing standard rule 5), with a
 //! fixed seed, one derived seed per case, and both in every failure message.
 
-use lumen::{pixel_radiance, reference_scene, trace_path, RenderSettings};
+use lumen::{pixel_radiance, reference_scene, trace_path, BuiltinScene, RenderSettings};
 
 use bunny_num::FixedQ32_32;
 use bunny_optics::PixelAccumulator;
@@ -95,5 +95,45 @@ fn a_pixel_does_not_depend_on_the_order_its_samples_are_evaluated_accumulated_or
             assert_eq!(merged.count(), 16, "merged count, round {round}, {at}");
             assert_eq!(merged.resolve(), Ok(want), "merged resolve, round {round}, {at}");
         }
+    }
+}
+
+/// For all pixels, sizes, seeds and sample indices of both built-in scenes: `trace_path` with
+/// the scene as its own tracer returns no error. `PathError::BounceRay`,
+/// `PathError::RadianceOverflow` and `PathError::Pixel` are in the API for a refusal no input is
+/// known to reach; this counts that none occurs, and that the paths counted reached the shading
+/// steps (a camera hit and its bounce). Oracle: the absence of any error, with a witness count.
+/// 2 scenes, 40 cases of 8 samples each.
+#[test]
+fn no_path_of_the_built_in_scenes_fails() {
+    for scene_kind in BuiltinScene::ALL {
+        let scene = scene_kind.build().expect("builds");
+        let mut shaded = 0_u32;
+        for case in 0..40_u64 {
+            let case_seed = Gen::case_seed(SEED ^ 0xE77, case);
+            let mut rng = Gen::new(case_seed);
+            let width = u32::try_from(rng.below(64) + 1).expect("a width");
+            let height = u32::try_from(rng.below(36) + 1).expect("a height");
+            let camera = scene.camera().camera(width, height).expect("the camera accepts it");
+            let (x, y) = (
+                u32::try_from(rng.below(width.into())).expect("a column"),
+                u32::try_from(rng.below(height.into())).expect("a row"),
+            );
+            let seed = u32::try_from(rng.below(1 << 32)).expect("a seed");
+            let sampler = RenderSettings::new(1, seed).expect("valid settings").sampler(x, y);
+            for _ in 0..8 {
+                let sample = u32::try_from(rng.below(1024)).expect("a sample");
+                let at = format!(
+                    "{scene_kind:?} {width}x{height} pixel ({x}, {y}) seed {seed} sample \
+                     {sample}, case {case}, case seed {case_seed:#x}"
+                );
+                let path = trace_path(&scene, &scene, &camera, sampler, sample);
+                let path = path.unwrap_or_else(|error| panic!("{error}: {at}"));
+                if path.rays.closest == 2 {
+                    shaded += 1;
+                }
+            }
+        }
+        assert!(shaded > 0, "{scene_kind:?}: no path reached the shading steps");
     }
 }
