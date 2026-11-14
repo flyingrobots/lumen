@@ -8,6 +8,19 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- A panic in the pixel function now halts the other workers (flyingrobots/lumen#56). Each worker
+  owns a guard that calls the halt when dropped while unwinding, so every other worker begins no
+  row after it has seen the halt; the panic still reaches the caller through `resume_unwind` once
+  every worker has stopped, with no image. Before, on a 64 by 512 image with one-row bands and a
+  panic at `(0, 0)`, 32 705 of 32 768 pixels were computed at 2 and 4 workers before the panic
+  reached the caller; now, in the simulation, none after the panic. The worker loop is
+  `Worker::step` and the spawn sequence `start_helpers`, which the unit tests' simulated workers
+  now run themselves: they model a panic (under `catch_unwind`) and a refused spawn after some
+  helpers have run, so removing the guard's halt or the halt on a refused spawn each fails a test
+  deterministically. `tests/threads.rs` checks on real threads that the panic reaches the caller,
+  at 1, 2 and 4 threads. The README no longer says the real-thread error tests bound the stop
+  rule: their limit is the whole image, and only the simulation checks the stop rule.
+
 - `lumen render --out` publishes the PNG atomically (flyingrobots/lumen#54): it writes a uniquely
   named temporary file next to the destination, syncs it, renames it into place and syncs the
   directory (Unix), and on any failure removes the temporary file and leaves the destination as it

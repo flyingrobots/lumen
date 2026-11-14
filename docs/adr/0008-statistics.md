@@ -123,13 +123,13 @@ derived from it. Otherwise the path is generic over a counter, a zero-sized one 
 for the uncounted render and the record for `--stats`, so the uncounted render is today's code.
 The numbers go in the pull request and the README either way.
 
-### Run statistics (decided, not yet built; after flyingrobots/lumen#131)
+### Run statistics (decided, not yet built)
 
 Per worker: bands and rows taken, pixels and rays. In all: the band count and the band height.
 The split between workers differs from run to run, so every per-worker line is
 `(information only)`; the totals do not, and the tests check that the per-worker figures sum to
-them at 1, 2, 4 and 18 workers. Each worker's tally rides in the outcome it already returns at
-`join`.
+them at 1, 2, 4 and 18 workers. Each worker's tally rides in the `Outcome` it already returns
+at `join` (`workers/outcome.rs`).
 
 There is no per-worker busy time. The library reads no clock (ADR 0006), and the honest simple
 measure is the one the command already takes: the wall time of the whole render. An injected
