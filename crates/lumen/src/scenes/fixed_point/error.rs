@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use bunny_optics::ShadingError;
+use bunny_optics::{ShadingError, VertexNormalError};
 
 use crate::mesh::PlaceError;
 use crate::scene::SceneError;
@@ -21,6 +21,9 @@ pub enum FixedPointError {
     EmptyBunny,
     /// A posed coordinate of the bunny or its sunglasses overflows.
     Overflow,
+    /// Bunny's `VertexNormals::new` refused the posed bunny: a position outside the trace
+    /// domain or a face naming a missing vertex, with Bunny's values.
+    Normals(VertexNormalError),
     /// A die's rational turn does not map one of its vertices to whole grid steps.
     InexactTurn,
     /// A constant of the scene's lighting or materials is outside Bunny's accepted range.
@@ -35,6 +38,7 @@ impl fmt::Display for FixedPointError {
             Self::Bunny(error) => write!(f, "the bunny could not be placed: {error}"),
             Self::EmptyBunny => f.write_str("the placed bunny has no triangles"),
             Self::Overflow => f.write_str("a posed coordinate overflows"),
+            Self::Normals(error) => write!(f, "the bunny's vertex normals were refused: {error}"),
             Self::InexactTurn => f.write_str("a die's turn is not exact on the grid"),
             Self::Constant(error) => {
                 write!(f, "a lighting or material constant was refused: {error}")
@@ -50,6 +54,7 @@ impl std::error::Error for FixedPointError {
             Self::Bunny(error) => Some(error),
             Self::Constant(error) => Some(error),
             Self::Scene(error) => Some(error),
+            Self::Normals(error) => Some(error),
             Self::EmptyBunny | Self::Overflow | Self::InexactTurn => None,
         }
     }
