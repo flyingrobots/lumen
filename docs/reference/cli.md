@@ -2,7 +2,7 @@
 
 Reference for every command and option of `lumen`, what it prints and how it exits. To render a
 first image step by step, see the [tutorial](../../README.md#render-an-image); for how the
-renderer works, see the [README](../../README.md).
+renderer works, see [how Lumen renders](../explanation.md).
 
 `lumen` is the crate's binary. From a checkout, run it through Cargo, for example
 `cargo run --release -p lumen -- render --out image.png`, or build it once with
@@ -64,7 +64,7 @@ built against (`BUNNY_REV`), and exits 0.
 
 | Option | Value | Default | Refused |
 | --- | --- | --- | --- |
-| `--scene NAME` | `reference` (`lumen-reference-scene/3`) or `fixed-point` (`lumen-fixed-point-scene/2`); see [the scenes](../../README.md#the-reference-scene) | `reference` | any other name: exit 2, the message lists the scenes |
+| `--scene NAME` | `reference` (`lumen-reference-scene/3`) or `fixed-point` (`lumen-fixed-point-scene/2`); see [the scenes](scenes.md) | `reference` | any other name: exit 2, the message lists the scenes |
 | `--out FILE` | the PNG file to write; any path, kept byte for byte if it is not Unicode | none: nothing is written | a destination that cannot be written: exit 1, before the render ([below](#the-output-file)) |
 | `--width W` | the width in pixels, `1..=32768` (the limit of Bunny's camera), with at most `2^27` pixels in all (a 512 MiB RGBA8 buffer, enough for 16K at 15360 by 8640) | 320 | 0, more than 32768, or too many pixels with the height: exit 2 |
 | `--height H` | the height in pixels, on the same terms | 180 | as for the width |
@@ -204,7 +204,7 @@ lumen stats --scene reference
 
 The library computes the counts (`Scene::statistics()`, a `SceneStatistics`) and the command
 formats them; nothing is counted while a ray is traced, and nothing in the scene changes.
-`Scene::statistics` is described in the [README](../../README.md#library-and-command);
+`Scene::statistics` is described in the [library reference](library.md#a-scene-can-be-counted);
 [ADR 0008](../adr/0008-statistics.md) records what is counted and why it cannot change a pixel.
 Traversal statistics (nodes visited and triangles tested per ray) are decided there and wait for
 flyingrobots/bunny#335.
