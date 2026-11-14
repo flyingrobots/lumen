@@ -195,12 +195,23 @@ through the public API and checks its values and its chain.
   checks once that its tree names only its own triangles (`SceneError::TreeNamesUnknownPrimitive`
   otherwise, which no input reaches), so its traversal callbacks never meet a missing triangle,
   and a generated test over random scenes counts that neither of the other two occurs.
+- **A scene** (`Scene::new`) is refused with a `SceneError` that carries what it saw: the
+  triangle count and the limit (`TooManyTriangles`); the triangle, the vertex and its
+  coordinates (`OutsideTraceDomain`, found by repeating Bunny's one documented check of
+  `TraceTriangle::new` on the failure path, since Bunny returns no reason); both lengths
+  (`MaterialCount`); the triangle, its material index and the material count
+  (`UnknownMaterial`); the buffer, the item count and the allocator's error (`OutOfMemory`,
+  with a `SceneBuffer`); Bunny's `CompactError` (`BvhCompact`, named in words, since Bunny's has
+  no text) or the room given when `build_bvh_sah` refuses (`BvhBuild`); and the camera, mesh and
+  constant errors as sources. `FixedPointError`, `BuiltinSceneError` and `PlaceError` return
+  theirs from `source()` too.
 - **A size** is refused with a `SizeError` carrying the width and height (or the pixel count)
   asked for and the limit; a buffer of the wrong length for `Rgba8Image::from_bytes` with a
   `LengthError` carrying both lengths. `ImageSize::byte_len` cannot fail: `ImageSize::new`
   computes and checks it once, at most `2^29`.
-- `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError` and
-  `TraceError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
+- `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
+  `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError` and `BuiltinSceneError` are
+  `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
 
 ## The reference scene
 

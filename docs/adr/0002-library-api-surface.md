@@ -39,9 +39,10 @@ second front end would have had to rebuild that list by hand.
   `scene-content` (the last added by flyingrobots/lumen#38). New fields go at the end. Equal
   provenance means equal RGBA8 bytes.
 - **The errors can grow.** `SceneError` and `TraceError` (flyingrobots/lumen#20), `RenderError`,
-  `PathError`, `WorkerError`, `Reservation` and `SizeError` (flyingrobots/lumen#21) are
-  `#[non_exhaustive]`: a new reason to refuse a scene, a ray, a path, a size or a render is not
-  a breaking change, and a `match` on any of them outside the crate needs a wildcard arm. Code outside the crate may still construct their
+  `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneBuffer`, `PlaceError`,
+  `FixedPointError` and `BuiltinSceneError` (flyingrobots/lumen#21) are `#[non_exhaustive]`: a
+  new reason to refuse a scene, a mesh, a ray, a path, a size or a render is not a breaking
+  change, and a `match` on any of them outside the crate needs a wildcard arm. Code outside the crate may still construct their
   variants, as a custom `Tracer` does.
 - **An error says what failed and keeps its cause** (flyingrobots/lumen#21). Each variant carries
   the values it saw (an index and a count, Bunny's reason, a pixel's coordinates), not a bare

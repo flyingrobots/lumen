@@ -12,7 +12,9 @@ use bunny_query::{TraceRay, TraceTriangle};
 
 use crate::schedule::widen;
 
-use super::{reserved, Hit, PrimitiveIndex, Scene, SceneError, TraceError, Tracer, FAR};
+use super::{
+    reserved, Hit, PrimitiveIndex, Scene, SceneBuffer, SceneError, TraceError, Tracer, FAR,
+};
 
 /// A compact BVH: its root, its nodes and the primitive-index buffer its leaves refer to.
 #[derive(Clone, Debug)]
@@ -78,14 +80,16 @@ impl Tracer for Scene {
 /// compact nodes and the primitive-index buffer.
 pub(super) fn build_tree(boxes: &[FixedAabb3]) -> Result<Tree, SceneError> {
     let count = boxes.len();
-    let node_count = count.checked_mul(2).ok_or(SceneError::TooManyTriangles)?;
+    let node_count =
+        count.checked_mul(2).ok_or(SceneError::NodeCountOverflow { triangles: count })?;
     let empty_box = FixedAabb3::new(ZERO_VEC, ZERO_VEC);
     let empty = BvhNode { bounds: empty_box, first_child_or_prim_idx: 0, prim_count: 0 };
-    let mut nodes = reserved(node_count)?;
+    let mut nodes = reserved(SceneBuffer::Nodes, node_count)?;
     nodes.resize(node_count, empty);
-    let mut prim_indices = reserved(count)?;
+    let mut prim_indices = reserved(SceneBuffer::PrimitiveIndices, count)?;
     prim_indices.resize(count, 0_u32);
-    let used = build_bvh_sah(&mut nodes, &mut prim_indices, boxes).ok_or(SceneError::BvhBuild)?;
+    let used = build_bvh_sah(&mut nodes, &mut prim_indices, boxes)
+        .ok_or(SceneError::BvhBuild { triangles: count, nodes: node_count })?;
     // Checked once here, so the traversal callbacks below never meet an index past the
     // triangles: their `None` for a missing triangle is unreachable for a built scene.
     if let Some(&index) = prim_indices.iter().find(|&&index| widen(index) >= count) {
@@ -98,9 +102,9 @@ pub(super) fn build_tree(boxes: &[FixedAabb3]) -> Result<Tree, SceneError> {
         bounds: [empty_box, empty_box],
         children: [CompactChild::default(), CompactChild::default()],
     };
-    let mut compact = reserved(interior)?;
+    let mut compact = reserved(SceneBuffer::CompactNodes, interior)?;
     compact.resize(interior, blank);
-    let converted = compact_bvh(&nodes, &mut compact).map_err(|_| SceneError::BvhBuild)?;
+    let converted = compact_bvh(&nodes, &mut compact).map_err(SceneError::BvhCompact)?;
     let root = converted.map(|(root, written)| {
         compact.truncate(written);
         root

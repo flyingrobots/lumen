@@ -14,7 +14,7 @@ use bunny_num::FixedQ32_32;
 use bunny_optics::{
     Albedo, CameraError, CameraSpec, DirectionalLight, PinholeCamera, SkyLight, TriangleSurface,
 };
-use bunny_query::TraceTriangle;
+use bunny_query::{TraceTriangle, TRACE_COORD_LIMIT_RAW};
 
 use crate::schedule::widen;
 
@@ -28,7 +28,7 @@ mod tree;
 mod tests;
 
 pub use content_id::{SceneContentId, SCENE_CONTENT_ENCODING};
-pub use error::SceneError;
+pub use error::{SceneBuffer, SceneError};
 pub use primitive_index::PrimitiveIndex;
 pub use tracer::{Hit, TraceError, Tracer, FAR};
 use tree::{build_tree, Tree};
@@ -175,26 +175,28 @@ impl Scene {
             return Err(SceneError::Empty);
         }
         if u32::try_from(count).is_err() {
-            return Err(SceneError::TooManyTriangles);
+            return Err(SceneError::TooManyTriangles { triangles: count, limit: u32::MAX });
         }
-        if spec.material_of.len() != count {
-            return Err(SceneError::MaterialCount);
+        let material_indices = spec.material_of.len();
+        if material_indices != count {
+            return Err(SceneError::MaterialCount { triangles: count, material_indices });
         }
         spec.camera.camera(PROBE_SIZE, PROBE_SIZE).map_err(SceneError::Camera)?;
-        let mut triangles = reserved(count)?;
-        let mut surfaces = reserved(count)?;
-        let mut boxes: Vec<FixedAabb3> = reserved(count)?;
+        let mut triangles = reserved(SceneBuffer::Triangles, count)?;
+        let mut surfaces = reserved(SceneBuffer::Surfaces, count)?;
+        let mut boxes: Vec<FixedAabb3> = reserved(SceneBuffer::Boxes, count)?;
         // `count <= u32::MAX`, so every triangle gets its index; the inclusive range cannot
         // overflow while it is zipped.
         let indices = (0..=u32::MAX).map(PrimitiveIndex::new);
         for ((&[v0, v1, v2], &material), primitive) in
             spec.triangles.iter().zip(spec.material_of).zip(indices)
         {
-            let triangle = TraceTriangle::new(v0, v1, v2)
-                .ok_or(SceneError::OutsideTraceDomain { primitive })?;
-            let known = widen(material) < spec.materials.len();
-            if !known {
-                return Err(SceneError::UnknownMaterial { primitive });
+            let Some(triangle) = TraceTriangle::new(v0, v1, v2) else {
+                return Err(outside_trace_domain(primitive, [v0, v1, v2]));
+            };
+            let materials = spec.materials.len();
+            if widen(material) >= materials {
+                return Err(SceneError::UnknownMaterial { primitive, material, materials });
             }
             boxes.push(triangle.bounds());
             surfaces.push(TriangleSurface::new(&triangle));
@@ -203,9 +205,9 @@ impl Scene {
         // The identity reads only the admitted spec; the tree is built after it and is no input.
         let content = content_id::content_id(spec);
         let tree = build_tree(&boxes)?;
-        let mut material_of = reserved(count)?;
+        let mut material_of = reserved(SceneBuffer::MaterialIndices, count)?;
         material_of.extend_from_slice(spec.material_of);
-        let mut materials = reserved(spec.materials.len())?;
+        let mut materials = reserved(SceneBuffer::Materials, spec.materials.len())?;
         materials.extend_from_slice(spec.materials);
         Ok(Self {
             content,
@@ -270,9 +272,26 @@ impl Scene {
     }
 }
 
-/// An empty vector with room for `count` items, or [`SceneError::OutOfMemory`].
-fn reserved<T>(count: usize) -> Result<Vec<T>, SceneError> {
-    let mut items = Vec::new();
-    items.try_reserve_exact(count).map_err(|_| SceneError::OutOfMemory)?;
-    Ok(items)
+/// An empty vector with room for `items` items of `buffer`, or [`SceneError::OutOfMemory`] with
+/// both and the allocator's error.
+fn reserved<T>(buffer: SceneBuffer, items: usize) -> Result<Vec<T>, SceneError> {
+    let mut vector = Vec::new();
+    vector.try_reserve_exact(items).map_err(|error| SceneError::OutOfMemory {
+        buffer,
+        items,
+        error,
+    })?;
+    Ok(vector)
+}
+
+/// Why Bunny's `TraceTriangle::new` refused `vertices`: its one documented check repeated, on
+/// the failure path only, to name the first vertex with a coordinate outside the trace domain.
+fn outside_trace_domain(primitive: PrimitiveIndex, vertices: [FixedVec3; 3]) -> SceneError {
+    let limit = TRACE_COORD_LIMIT_RAW.unsigned_abs();
+    let outside = |v: &FixedVec3| [v.x, v.y, v.z].iter().any(|c| c.raw().unsigned_abs() >= limit);
+    let first = vertices.iter().zip(0_u8..).find(|(v, _)| outside(v));
+    match first {
+        Some((&point, vertex)) => SceneError::OutsideTraceDomain { primitive, vertex, point },
+        None => SceneError::TriangleRefused { primitive },
+    }
 }

@@ -8,6 +8,21 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- A refused scene says what was wrong (part of flyingrobots/lumen#21). `SceneError` variants
+  carry their values: `TooManyTriangles { triangles, limit }`, `OutsideTraceDomain { primitive,
+  vertex, point }` (lumen repeats Bunny's documented check of `TraceTriangle::new` after a
+  refusal to name the vertex; `TriangleRefused` if every coordinate is inside),
+  `MaterialCount { triangles, material_indices }`, `UnknownMaterial { primitive, material,
+  materials }` and `OutOfMemory { buffer, items, error }` with a new `SceneBuffer` and the
+  allocator's `TryReserveError`. `BvhBuild` is split into `NodeCountOverflow { triangles }`
+  (formerly reported as `TooManyTriangles`), `BvhBuild { triangles, nodes }` and
+  `BvhCompact(CompactError)`, which keeps Bunny's conversion error. `SceneError`,
+  `FixedPointError`, `BuiltinSceneError` and `PlaceError` implement `source()`;
+  `FixedPointError`'s text no longer prints a `Debug` form. `SceneError`, `FixedPointError` and
+  `BuiltinSceneError` are no longer `Copy`; they, `SceneBuffer` and `PlaceError` are
+  `#[non_exhaustive]`. No pixel, hash, digest, line of the command's output or message it
+  prints changes.
+
 - A ray query says what failed (part of flyingrobots/lumen#21). `TraceError::InconsistentHit`
   is split into `UnknownPrimitive { primitive, triangles }` and `HitNotRepeatable { primitive,
   distance }`, and `Display` names Bunny's `TraversalError` kinds in words instead of printing

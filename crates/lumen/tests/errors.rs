@@ -264,3 +264,101 @@ fn trace_errors_state_what_the_traversal_did() {
     let text = "the bounding volume hierarchy names triangle 12, but the scene has 5 triangles";
     assert_eq!(tree.to_string(), text);
 }
+
+/// Oracle: the text written out by hand. The scene refusals no input reaches (Bunny's tree
+/// builders refusing, a count past `u32::MAX`, a node count past `usize`), built directly; the
+/// reachable ones are produced by `Scene::new` in `src/scene/tests.rs`. Bunny's `CompactError`
+/// has no `Display`, so lumen names each kind.
+#[test]
+fn unreachable_scene_errors_state_their_values() {
+    use bunny_broadphase::CompactError;
+    use lumen::{SceneBuffer, SceneError};
+    let primitive = PrimitiveIndex::new(4);
+    let cases = [
+        (
+            SceneError::TooManyTriangles { triangles: 1 << 33, limit: u32::MAX },
+            "scene has 8589934592 triangles, more than 4294967295",
+        ),
+        (
+            SceneError::TriangleRefused { primitive },
+            "triangle 4 was refused, with every coordinate in the domain",
+        ),
+        (
+            SceneError::NodeCountOverflow { triangles: 1 << 31 },
+            "a tree over 2147483648 triangles has more nodes than a usize counts",
+        ),
+        (
+            SceneError::BvhBuild { triangles: 3, nodes: 6 },
+            "the bounding volume hierarchy over 3 triangles could not be built in 6 nodes",
+        ),
+        (
+            SceneError::BvhCompact(CompactError::InvalidNodeIndex),
+            "the bounding volume hierarchy could not be converted: a node names a child outside \
+             the tree",
+        ),
+        (
+            SceneError::BvhCompact(CompactError::OutputTooSmall),
+            "the bounding volume hierarchy could not be converted: the output holds fewer nodes \
+             than the tree has",
+        ),
+        (
+            SceneError::BvhCompact(CompactError::NotATree),
+            "the bounding volume hierarchy could not be converted: a node is reached twice",
+        ),
+        (
+            SceneError::BvhCompact(CompactError::TooDeep),
+            "the bounding volume hierarchy could not be converted: the tree is deeper than 64 \
+             levels",
+        ),
+    ];
+    for (error, text) in cases {
+        assert_eq!(error.to_string(), text);
+        assert!(error.source().is_none(), "{error:?}");
+    }
+    let refusal = Vec::<u8>::new().try_reserve_exact(usize::MAX).expect_err("too large");
+    let memory = SceneError::OutOfMemory {
+        buffer: SceneBuffer::CompactNodes,
+        items: 9,
+        error: refusal.clone(),
+    };
+    assert_eq!(
+        memory.to_string(),
+        format!("not enough memory for the scene's 9 compact tree nodes: {refusal}")
+    );
+    assert_eq!(memory.source().map(ToString::to_string), Some(refusal.to_string()));
+}
+
+/// Oracle: the camera Bunny refuses, by hand (a zero look direction), and each layer's text.
+/// A refused scene inside a built-in scene's error chains down to Bunny's camera error, every
+/// layer including the next one's message.
+#[test]
+fn a_scene_refusal_chains_from_the_built_in_scene_to_bunny() {
+    use lumen::scenes::fixed_point::FixedPointError;
+    use lumen::{BuiltinSceneError, SceneError};
+    let mut camera = ground_scene().camera();
+    camera.look = point(0, 0, 0);
+    let triangles = [[point(-1, 0, 1), point(1, 0, 1), point(0, 0, -1)]];
+    let refused = Scene::new(&SceneSpec {
+        triangles: &triangles,
+        material_of: &[0],
+        materials: &reference_materials().expect("the reference materials")[..1],
+        lighting: reference_lighting().expect("the reference lighting"),
+        camera,
+    })
+    .expect_err("a zero look direction is refused");
+    assert!(matches!(refused, SceneError::Camera(_)), "{refused:?}");
+    let error = BuiltinSceneError::FixedPoint(FixedPointError::Scene(refused));
+    let mut chain = vec![error.to_string()];
+    let mut cause = error.source();
+    while let Some(next) = cause {
+        chain.push(next.to_string());
+        cause = next.source();
+    }
+    assert_eq!(chain.len(), 4, "{chain:?}");
+    for pair in chain.windows(2) {
+        assert!(pair[0].ends_with(&pair[1]), "{pair:?}");
+    }
+    assert!(chain[0].starts_with(
+        "the Fixed Point scene: the scene could not be built: invalid camera placement: "
+    ));
+}
