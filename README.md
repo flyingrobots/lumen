@@ -216,6 +216,10 @@ through the public API and checks its values and its chain.
   asked for and the limit; a buffer of the wrong length for `Rgba8Image::from_bytes` with a
   `LengthError` carrying both lengths. `ImageSize::byte_len` cannot fail: `ImageSize::new`
   computes and checks it once, at most `2^29`.
+- **Arithmetic** on sizes, sample counts, band heights and ray counts is checked or
+  saturating, each with the bound that keeps it exact stated beside it, and values reach wider
+  types through `From` or `try_from`, not `as`; the one `as` left on such a value is `widen`
+  (`u32` to `usize`, lossless under a compile-time assertion, behind a scoped lint exception).
 - `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
   `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `BuiltinSceneError` and
   `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).

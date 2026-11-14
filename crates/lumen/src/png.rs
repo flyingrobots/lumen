@@ -13,6 +13,7 @@
 use std::io::Write;
 
 use crate::image::Rgba8Image;
+use crate::schedule::widen;
 
 mod error;
 
@@ -23,6 +24,9 @@ pub(crate) const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1
 
 /// The largest stored deflate block, in bytes.
 const MAX_STORED: usize = 65_535;
+
+/// [`MAX_STORED`] as a `u64`, for lengths counted in `u64`.
+const MAX_STORED_U64: u64 = 65_535;
 
 /// The zlib header: deflate with a 32 KiB window (`0x78`), no dictionary, fastest level
 /// (`0x01`); `0x7801` is a multiple of 31 as the header check requires.
@@ -66,10 +70,10 @@ impl Crc32 {
     }
 
     /// Adds bytes.
-    #[allow(clippy::cast_possible_truncation, reason = "the low byte of the CRC indexes the table")]
     pub(crate) fn update(&mut self, bytes: &[u8]) {
         for &byte in bytes {
-            self.0 = CRC_TABLE[usize::from((self.0 as u8) ^ byte)] ^ (self.0 >> 8);
+            let [low, ..] = self.0.to_le_bytes();
+            self.0 = CRC_TABLE[usize::from(low ^ byte)] ^ (self.0 >> 8);
         }
     }
 
@@ -150,7 +154,8 @@ impl<W: Write> StoredBlocks<'_, W> {
     fn push(&mut self, mut bytes: &[u8]) -> Result<(), PngError> {
         self.adler.update(bytes);
         while !bytes.is_empty() {
-            let take = (MAX_STORED - self.block.len()).min(bytes.len());
+            // `block` never holds more than `MAX_STORED`: it is flushed when full.
+            let take = MAX_STORED.saturating_sub(self.block.len()).min(bytes.len());
             let (head, rest) = bytes.split_at(take);
             self.block.extend_from_slice(head);
             bytes = rest;
@@ -184,18 +189,23 @@ impl<W: Write> StoredBlocks<'_, W> {
 }
 
 /// The length of the uncompressed PNG data: one filter byte and `width * 4` bytes per row.
+///
+/// At most `2^15 * (1 + 2^17)` bytes for any `ImageSize`, so no step saturates.
 fn filtered_len(image: &Rgba8Image) -> u64 {
-    u64::from(image.height()) * (1 + 4 * u64::from(image.width()))
+    let row = u64::from(image.width()).saturating_mul(4).saturating_add(1);
+    u64::from(image.height()).saturating_mul(row)
 }
 
 /// The length of the PNG file [`write_png`] writes for `image`.
 #[must_use]
 pub fn png_len(image: &Rgba8Image) -> u64 {
     let data = filtered_len(image);
-    let blocks = data.div_ceil(MAX_STORED as u64);
+    let blocks = data.div_ceil(MAX_STORED_U64);
     // Signature, IHDR (12 + 13), IEND (12); per IDAT chunk 12 bytes of framing and 5 of block
-    // header; the zlib header and the Adler-32 once.
-    8 + 25 + 12 + blocks * 17 + data + 2 + 4
+    // header; the zlib header and the Adler-32 once. Every term is far below `u64::MAX` (see
+    // `filtered_len`), so no step saturates.
+    let framing = blocks.saturating_mul(17);
+    (8 + 25 + 12 + 2 + 4_u64).saturating_add(framing).saturating_add(data)
 }
 
 /// Writes `image` as a PNG file to `out`.
@@ -235,7 +245,8 @@ pub fn write_png<W: Write>(out: &mut W, image: &Rgba8Image) -> Result<(), PngErr
         remaining: filtered_len(image),
         first: true,
     };
-    let row_len = image.bytes().len() / usize::try_from(image.height()).unwrap_or(usize::MAX);
+    // Four bytes a pixel; `ImageSize` bounds a row to 2^17 bytes and refuses a zero width.
+    let row_len = widen(image.width()).saturating_mul(4);
     for row in image.bytes().chunks_exact(row_len.max(1)) {
         blocks.push(&[0])?;
         blocks.push(row)?;

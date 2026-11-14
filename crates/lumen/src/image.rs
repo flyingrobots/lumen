@@ -207,10 +207,11 @@ impl Rgba8Image {
         if x >= self.size.width || y >= self.size.height {
             return None;
         }
-        let index = (usize::try_from(y).ok()? * usize::try_from(self.size.width).ok()?
-            + usize::try_from(x).ok()?)
-            * 4;
-        self.bytes.get(index..index + 4)?.try_into().ok()
+        // Inside the image, `(y * width + x) * 4 + 4` is at most the byte length, `2^29`, so
+        // no step overflows a `u32`; the checks only state it.
+        let pixel = y.checked_mul(self.size.width)?.checked_add(x)?;
+        let start = widen(pixel.checked_mul(4)?);
+        self.bytes.get(start..start.checked_add(4)?)?.try_into().ok()
     }
 
     /// `sha256:` and the lowercase hex SHA-256 of the RGBA8 bytes: Geordi's image hash.
