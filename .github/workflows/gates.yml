@@ -1,0 +1,99 @@
+name: Gates
+
+# Supply-chain, size and coverage checks (Rust standard §19.4, §24, §6.1, §17.14). The job names
+# are stable; the three `Gates / ...` jobs are meant to be required checks. `Signal / coverage`
+# reports and never fails: coverage is an inspection instrument, not a gate.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deny:
+    name: Gates / cargo-deny
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Prebuilt release binary, checksum-verified by the action.
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: cargo deny check
+        run: cargo deny --locked check
+
+  audit:
+    name: Gates / cargo-audit
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-audit@0.22.2
+
+      - name: cargo audit
+        run: cargo audit --deny warnings
+
+  file-length:
+    name: Gates / file length
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Lines of code per file
+        run: cargo run --locked -q -p xtask -- file-length
+
+  coverage:
+    name: Signal / coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Add llvm-tools
+        run: rustup component add llvm-tools
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-llvm-cov@0.9.1
+
+      # A signal, never a gate (testing standard rule 11): a failure to measure is reported in
+      # the summary and the step still succeeds. The tests themselves are gated in CI.
+      - name: Line coverage
+        shell: bash
+        run: |
+          {
+            echo '## Line coverage (a signal, not a gate)'
+            echo
+            echo '```'
+            cargo llvm-cov --locked --workspace --summary-only \
+              || echo "coverage was not measured: cargo llvm-cov exited $?"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

@@ -759,6 +759,34 @@ commit.
 Lint posture mirrors Bunny: `unsafe` is forbidden, clippy `all` is denied and
 `pedantic` warns, and CI runs with warnings denied.
 
+### Supply-chain, size and coverage checks
+
+`.github/workflows/gates.yml` runs four jobs on every pull request:
+
+| Job | What it checks | Fails when |
+|---|---|---|
+| `Gates / cargo-deny` | `cargo deny --locked check` against `deny.toml` | an advisory, a yanked crate, a licence other than Apache-2.0, a second version of a crate, a wildcard version, a registry other than crates.io, a git repository other than `https://github.com/flyingrobots/bunny`, or a git dependency not pinned by `rev` |
+| `Gates / cargo-audit` | `cargo audit --deny warnings` on `Cargo.lock` | a RustSec advisory or warning for a locked crate |
+| `Gates / file length` | `cargo run -p xtask -- file-length` | a source file over 300 lines of code without a listed exception, or over 500 at all; a test file (under `tests/` or named `tests.rs`) over 750; a listed file grown past its exception; an exception no longer needed |
+| `Signal / coverage` | `cargo llvm-cov --workspace --summary-only`, in the job summary | never: coverage is reported, not gated |
+
+A line of code is a line with a character outside a comment; doc comments are comments. The
+exceptions live in `xtask/src/file_length/exceptions.rs`, each with the count it was granted at,
+the date and the issue that splits the file.
+
+Locally, in the container (it has `cargo-deny`; the advisory database needs the network and a
+writable `CARGO_HOME`):
+
+```sh
+python3 $D lumen ~/git/lumen --worktree -- cargo run --locked -q -p xtask -- file-length
+python3 $D lumen ~/git/lumen --worktree --network -- \
+  bash -c 'mkdir -p /tmp/ch && CARGO_HOME=/tmp/ch cargo deny --locked check'
+```
+
+The container has neither `cargo-audit` nor `cargo-llvm-cov`; CI installs both as pinned
+prebuilt binaries. To run them in the container, install them under `/tmp` first, for example
+`cargo install --locked cargo-audit --version 0.22.2 --root /tmp/audit` with `--network`.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).

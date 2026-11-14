@@ -66,3 +66,7 @@ dependencies = [
  "bunny-optics",
  "bunny-query",
 ]
+
+[[package]]
+name = "xtask"
+version = "0.1.0"

@@ -8,6 +8,17 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Supply-chain, size and coverage checks in CI (flyingrobots/lumen#23), in
+  `.github/workflows/gates.yml`: `Gates / cargo-deny` (`deny.toml`: advisories, Apache-2.0 only,
+  no duplicate or wildcard versions, crates.io and Bunny's git repository by `rev` as the only
+  sources), `Gates / cargo-audit`, `Gates / file length` and `Signal / coverage` (line coverage
+  in the job summary; it never fails).
+- `xtask`, a workspace member with the file-length gate: `cargo run --locked -p xtask --
+  file-length` counts lines of code (non-blank, outside comments) in every `.rs` file under
+  `crates/` and `xtask/` and applies the Rust standard's limits (300 for a source file without an
+  exception, 500 at most, 750 for a test file). Two files are listed as dated exceptions:
+  `crates/lumen/src/scene.rs` (327, flyingrobots/lumen#20) and `crates/lumen/src/png.rs` (328,
+  flyingrobots/lumen#34).
 - A determinism matrix in CI (flyingrobots/lumen#23): `Determinism / Linux x86-64`,
   `Determinism / Linux aarch64`, `Determinism / macOS aarch64` and `Determinism / Windows x86-64`
   run the whole test suite in the test and the release profile, each first checking that the
