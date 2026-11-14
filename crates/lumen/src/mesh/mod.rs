@@ -7,6 +7,7 @@
 //! to be replaced by Bunny's ASCII PLY reader (flyingrobots/bunny#247).
 
 pub mod decimal;
+pub mod loaded;
 pub mod placement;
 pub mod ply;
 
