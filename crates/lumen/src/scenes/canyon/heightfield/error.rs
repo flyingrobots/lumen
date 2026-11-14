@@ -96,7 +96,8 @@ pub(super) fn check(spec: &HeightfieldSpec<'_>) -> Result<usize, HeightfieldErro
     if vertices == 0 || vertices > MAX_VERTICES {
         return Err(HeightfieldError::GridSize { columns, rows });
     }
-    if spec.layers.len() > usize::try_from(MAX_SPACING).unwrap_or(usize::MAX) {
+    // A count that does not fit `u64` is more than the limit too, so it is refused as well.
+    if !u64::try_from(spec.layers.len()).is_ok_and(|layers| layers <= u64::from(MAX_SPACING)) {
         return Err(HeightfieldError::TooManyLayers { layers: spec.layers.len() });
     }
     let layers = spec.layers.iter().enumerate().map(|(k, layer)| (Some(k), layer));
@@ -129,5 +130,7 @@ pub(super) fn check(spec: &HeightfieldSpec<'_>) -> Result<usize, HeightfieldErro
             return Err(HeightfieldError::Shelf { shelf });
         }
     }
+    // At most `MAX_VERTICES`, `2^22`, which fits the `usize` of every target lumen builds for
+    // (32 bits or more); a narrower one could not reserve the heights either.
     usize::try_from(vertices).map_err(|_| HeightfieldError::OutOfMemory { vertices: usize::MAX })
 }

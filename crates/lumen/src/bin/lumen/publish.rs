@@ -1,7 +1,8 @@
 //! Publishing the PNG: the destination holds the whole new image or is untouched.
 //!
 //! The image is written to a uniquely named temporary file in the destination's directory, the
-//! same file system, so the final rename is atomic. The order is the one the Rust standard
+//! same file system, so the final rename is atomic. Its name keeps at most 32 bytes of the
+//! destination's, so any name the file system accepts for the destination can be published. The order is the one the Rust standard
 //! (section 13.4) asks for:
 //!
 //! 1. create the temporary file exclusively (`create_new`), so it can neither clobber another
@@ -173,17 +174,33 @@ fn directory_of(destination: &Path) -> &Path {
     }
 }
 
-/// Creates a temporary file next to `destination`: `.NAME.lumen-PID-N.tmp`, with the first `N`
-/// that is free.
+/// The most bytes of the destination's name a temporary name keeps: enough to tell whose file it
+/// is, few enough that the temporary name, at most 57 bytes with a process id of up to 10
+/// digits, stays inside the 255-byte name limit of ext4, APFS and NTFS whatever the
+/// destination's length.
+const NAME_PREFIX: usize = 32;
+
+/// The longest start of `name` of at most [`NAME_PREFIX`] bytes that ends at a character
+/// boundary.
+fn name_prefix(name: &str) -> String {
+    name.char_indices()
+        .take_while(|&(start, c)| start + c.len_utf8() <= NAME_PREFIX)
+        .map(|(_, c)| c)
+        .collect()
+}
+
+/// Creates a temporary file next to `destination`: `.PREFIX.lumen-PID-N.tmp`, where `PREFIX` is
+/// [`name_prefix`] of the destination's name, with the first `N` that is free.
 fn create_temporary<F: Filesystem>(fs: &F, destination: &Path) -> io::Result<(F::File, PathBuf)> {
     let name = destination
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "has no file name"))?
         .to_string_lossy();
+    let prefix = name_prefix(&name);
     let directory = directory_of(destination);
     let unique = fs.unique();
     for attempt in 0..NAME_TRIES {
-        let path = directory.join(format!(".{name}.lumen-{unique}-{attempt}.tmp"));
+        let path = directory.join(format!(".{prefix}.lumen-{unique}-{attempt}.tmp"));
         match fs.create_new(&path) {
             Ok(file) => return Ok((file, path)),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
