@@ -27,6 +27,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- Bunny is pinned to `d4fe51d38fa10f8d6496bd110955314edac30bbf` (was
+  `3c0dab3e77c0d45de8904906a134e846dfe5ec6c`), Bunny's main after its smooth-shading work
+  (flyingrobots/bunny#289: `VertexNormals`, `smooth_normal`, `SmoothHit`, and
+  `TriangleHit::barycentric_numerators`) and the traversal visit guard (a traversal that
+  would visit more interior nodes than the tree holds, which only a tree with a cycle can, now
+  fails with `TraversalError::InvalidNodeIndex`; a tree built by `Scene::new` has none). Part
+  of flyingrobots/lumen#39. Lumen calls none of the new APIs yet; both golden image hashes and
+  both golden content digests are unchanged.
 - The `lumen` command's `main` maps one typed `Failure` to its message and exit code (part of
   flyingrobots/lumen#21), in place of `Result<(), String>` and errors turned into strings as
   they arose. Each variant keeps the library's or the system's error as its `source()`. Every
