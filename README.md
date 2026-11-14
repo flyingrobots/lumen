@@ -398,9 +398,9 @@ counts:
 
 Each of these mutations makes tests fail in the release profile (checked by hand, each mutant's
 test run under a 120-second `timeout` as a guard, sources touched before every build so that no
-stale build is tested): numbering a band's rows from one past its first row (pixels written at the wrong
-row offset); dropping the last partial band; choosing the first failure by `(x, y)` instead of
-`(y, x)`; dropping the calling worker's ray count; and ignoring the stop row after a failure.
+stale build is tested): numbering a band's rows from one past its first row (pixels
+written at the wrong row offset); dropping the last partial band; choosing the first failure by
+`(x, y)` instead of `(y, x)`; dropping the calling worker's ray count; and ignoring the stop row after a failure.
 
 ## Performance
 
@@ -435,13 +435,33 @@ run with `--threads 1`.
 ### Records
 
 Dated measurement records are kept under [`docs/measurements/`](docs/measurements/). The record for
-flyingrobots/lumen#5 is [the 4K reference scene at 16 samples per pixel, 2026-11-13](docs/measurements/2026-11-13-4k-reference.md).
+flyingrobots/lumen#5 is [the 4K reference scene at 16 samples per pixel, 2026-11-13](docs/measurements/2026-11-13-4k-reference.md),
+taken with the tile scheduler. [The 4K reference scene with row bands and whole-program release
+builds](docs/measurements/2026-11-13-4k-row-bands.md) repeats it for flyingrobots/lumen#28.
 Each states its commit and conditions and applies to that commit only.
 
 ### Readings
 
-One session (`lumen-reference-scene/3`, 1280 by 720, 16 samples per pixel, seed 0, 39 479 111
-rays, 32 by 32 tiles; three runs each, render seconds):
+Row bands with whole-program release builds (`lto = "fat"`, `codegen-units = 1`) against the
+tile scheduler on `main` before flyingrobots/lumen#28 (0de5fe7, default release profile), in one
+session, interleaved, six runs each (`lumen-reference-scene/3`, 1280 by 720, 16 samples per
+pixel, seed 0; render seconds, median; the same image hash in every run):
+
+| Threads | main, tiles | row bands, LTO | Difference |
+| ---: | ---: | ---: | ---: |
+| 1 | 8.483 | 7.503 | -11.6 % |
+| 4 | 2.270 | 1.918 | -15.5 % |
+| 18 | 0.661 | 0.623 | -5.8 % |
+
+The gain is fat LTO (Bunny's kernels inline into the render loop), not the change of work unit:
+row bands without LTO measured the same as tiles. That was also the cause of the 8 %
+multi-thread slowdown after the scheduler was split out in 6a816ef. The sessions, the band-height
+sweep and what was ruled out are in [ADR 0003](docs/adr/0003-row-bands.md). Across sessions the 18
+thread gain ranged from 6 to 16 %; runs at 18 threads spread the most.
+
+An earlier session, with the tile scheduler and the default release profile
+(`lumen-reference-scene/3`, 1280 by 720, 16 samples per pixel, seed 0, 39 479 111 rays, 32 by 32
+tiles; three runs each, render seconds), shows how the render scales with threads:
 
 | Threads | Runs | Mean | Speedup | Per thread |
 | ---: | --- | ---: | ---: | ---: |
@@ -456,15 +476,16 @@ rays, 32 by 32 tiles; three runs each, render seconds):
 Scaling is near linear to 4 threads and falls off after 6. The likeliest reason, not proven
 here, is the two core classes: if the VM's busiest threads land on the 6 super cores first, the
 threads beyond 6 run on the slower performance cores. Shared memory bandwidth may add to it; the
-scene and its tree are small (31 511 triangles) and stay in cache, and the image is written once
-per tile.
+scene and its tree are small (31 511 triangles) and stay in cache, and the image is written once.
 
-Tile sizes at 18 threads, same image (render seconds, three runs each): 4 by 4: 0.661; 8 by 8:
-0.661; 16 by 16: 0.646; 32 by 32: 0.648; 64 by 64: 0.661; 128 by 128: 0.832; 256 by 256: 1.761;
-1280 by 1 (one row): 0.637; 1280 by 4: 0.669; 1280 by 16: 0.745. Everything from 4 by 4 to 64
-by 64 and single rows is within the noise; from 128 by 128 there are too few tiles to balance 18
-workers (60 tiles of 128, 15 of 256). The default stays 32 by 32: as fast as any, and 8 160 tiles
-at 4K.
+Band heights at 18 threads, with LTO, same image (render seconds, median of five): 1 row: 0.622;
+2: 0.598; 4: 0.646; 8: 0.635. Without LTO, in another session: 1: 0.662; 2: 0.667; 4: 0.698;
+8: 0.716; 16: 0.746; 45: 1.067. Up to 8 rows the differences are within the noise. From 16 rows
+the last bands leave workers idle at the end of the render: a 16-row band is about 190 ms of
+one core, and 45 rows make 16 bands for 18 workers. The default is one row: as fast as any, and
+the finest grain (2 160 bands at 4K). In the earlier tile session, tiles from 4 by 4 to
+64 by 64 and single rows measured the same (0.637 to 0.661 s at 18 threads), and 128 by 128 and
+larger were slower for the same reason (0.832 and 1.761 s at 128 and 256).
 
 ## Image hash and PNG
 

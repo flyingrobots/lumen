@@ -36,7 +36,7 @@ missing_panics_doc = "deny"
 missing_errors_doc = "deny"
 
 # Release builds link the whole program as one unit, so Bunny's kernels inline into lumen's
-# render loop across the crate boundary: measured 12 to 16 % faster on 1, 4 and 18 threads
+# render loop across the crate boundary: measured 6 to 18 % faster at 1, 4 and 18 threads
 # (docs/adr/0003-row-bands.md). Integer-only arithmetic, so no pixel changes.
 [profile.release]
 codegen-units = 1
