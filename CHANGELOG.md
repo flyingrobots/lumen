@@ -8,6 +8,26 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- The Stanford bunny in the reference scene (flyingrobots/lumen#14): `lumen-reference-scene/3`
+  appends its 3 851 triangles (none dropped; 31 511 triangles in all) after the triangles of
+  version 2, with a green albedo, standing on the ground left of the sphere. The mesh,
+  `assets/stanford-bunny/bun_zipper_res3.ply`, is Geordi's checked-in copy of Stanford's
+  `bun_zipper_res3.ply` (Stanford 3D Scanning Repository, Stanford Computer Graphics
+  Laboratory), byte for byte (SHA-256
+  `975e7f9b160b4ea15b0e225e21b10828ebcf678df020d2f6a46aa408fdcf5cd6`), with its provenance,
+  Stanford's reconstruction README and attribution; `.gitattributes` keeps its bytes intact.
+- An interim, strict ASCII PLY reader for exactly that file's profile
+  (`crates/lumen/src/ply.rs`), with typed errors, converting decimals to Q32.32 with integers
+  only by `lumen-ascii-ply-q32.32/1` (the exact value times `2^32`, rounded to nearest, ties to
+  even). It is to be replaced by Bunny's ASCII PLY reader (flyingrobots/bunny#247).
+- Mesh placement (`crates/lumen/src/mesh.rs`): a half turn about `+Y`, a power-of-two scale, a
+  floor to the `2^-16` grid and a whole-step translation; faces with zero area after placement
+  are dropped and listed.
+- Tests: the asset hash; hand-derived conversions, exact ties and generated decimals; the
+  manifest's bounds; the reader's refusals; the placed bounds; the dropped and kept counts; the
+  winding and holes; brute force over a render that hits the bunny; the bunny's pixels and its
+  shadow; a new golden hash.
+
 - A lit render (flyingrobots/lumen#3): `lumen render` takes `--samples N` (a power of two from 1
   to 1024, default 4) and `--seed S` (`0..=4294967295`, default 0), and renders each sample as
   one diffuse path, `lumen-diffuse-path/1`: Bunny's `bunny-sobol-owen/1` sampler (pair 0 for the
@@ -51,6 +71,10 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The reference camera moves from `(0, 1, 5)` looking along `(0, -0.25, -1)` to `(-1, 2, 5)`
+  looking along `(0.1875, -0.375, -1)`, so the bunny's shadow can be seen; every object of
+  version 2 stays in the picture. The golden hash (96 by 54, 4 samples, seed 0) is updated for
+  the new scene identity.
 - Scenes are traced with a `build_bvh_sah` tree in Bunny's compact layout
   (`compact_closest_hit`, `compact_any_hit`), the fastest of the four combinations measured, and
   each triangle's Bunny `TriangleSurface` is built once with the scene.
@@ -60,6 +84,7 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Removed
 
+- `lumen-reference-scene/2` is retired.
 - `lumen-reference-scene/1` and the normal-colour debugging view `lumen-normal-shading/1` are
   retired; the view is not kept behind a flag.
 

@@ -59,7 +59,7 @@ fn two_processes_write_the_same_file_and_print_the_same_hash() {
         ]);
         assert!(output.status.success(), "{}", text(&output.stderr));
         let stdout = text(&output.stdout);
-        assert_eq!(field(&stdout, "scene"), "lumen-reference-scene/2");
+        assert_eq!(field(&stdout, "scene"), "lumen-reference-scene/3");
         assert_eq!(field(&stdout, "integrator"), "lumen-diffuse-path/1");
         assert_eq!(field(&stdout, "shading"), "bunny-diffuse-shading/1");
         assert_eq!(field(&stdout, "sampler"), "bunny-sobol-owen/1");

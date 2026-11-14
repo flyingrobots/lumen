@@ -11,6 +11,8 @@
 
 pub mod cli;
 pub mod image;
+pub mod mesh;
+pub mod ply;
 pub mod png;
 pub mod render;
 pub mod scene;
