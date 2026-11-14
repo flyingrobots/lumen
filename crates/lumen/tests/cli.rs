@@ -22,8 +22,8 @@ use lumen::{render_reference, write_png, BuiltinScene, RenderSettings};
 
 mod golden;
 use golden::{
-    GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP, GOLDEN_FIXED_POINT_CONTENT,
-    GOLDEN_REFERENCE_CONTENT,
+    GOLDEN_96X54_4SPP, GOLDEN_CANYON_96X54_4SPP, GOLDEN_CANYON_CONTENT,
+    GOLDEN_FIXED_POINT_96X54_4SPP, GOLDEN_FIXED_POINT_CONTENT, GOLDEN_REFERENCE_CONTENT,
 };
 
 fn text(bytes: &[u8]) -> String {
@@ -605,6 +605,7 @@ fn each_scene_renders_its_golden_image() {
     let golden = |scene: BuiltinScene| match scene {
         BuiltinScene::Reference => (GOLDEN_96X54_4SPP, GOLDEN_REFERENCE_CONTENT),
         BuiltinScene::FixedPoint => (GOLDEN_FIXED_POINT_96X54_4SPP, GOLDEN_FIXED_POINT_CONTENT),
+        BuiltinScene::Canyon => (GOLDEN_CANYON_96X54_4SPP, GOLDEN_CANYON_CONTENT),
     };
     for scene in BuiltinScene::ALL {
         let stdout = render_scene(&dir, ["96", "54"], &["--scene", scene.name()]);
@@ -631,7 +632,7 @@ fn an_unknown_scene_is_a_usage_error_listing_the_scenes() {
     assert_refused(
         &output,
         2,
-        "--scene: unknown scene \"bunny\"; the scenes are reference, fixed-point",
+        "--scene: unknown scene \"bunny\"; the scenes are reference, fixed-point, canyon",
     );
     assert!(text(&output.stderr).contains("usage: lumen render"));
 }
@@ -658,6 +659,7 @@ fn stats_prints_the_scenes_statistics_without_rendering() {
         let content = match scene {
             BuiltinScene::Reference => GOLDEN_REFERENCE_CONTENT,
             BuiltinScene::FixedPoint => GOLDEN_FIXED_POINT_CONTENT,
+            BuiltinScene::Canyon => GOLDEN_CANYON_CONTENT,
         };
         let header = format!("scene {}\nscene-content {content}\nintegrator ", scene.id());
         assert!(stdout.starts_with(&header), "{stdout}");

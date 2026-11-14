@@ -110,7 +110,10 @@ fn a_bad_scene_option_is_refused() {
         Err(UsageError::Repeated("--scene"))
     );
     let message = unknown("bunny").to_string();
-    assert_eq!(message, "--scene: unknown scene \"bunny\"; the scenes are reference, fixed-point");
+    assert_eq!(
+        message,
+        "--scene: unknown scene \"bunny\"; the scenes are reference, fixed-point, canyon"
+    );
 }
 
 #[test]

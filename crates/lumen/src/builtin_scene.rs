@@ -9,11 +9,12 @@ use core::str::FromStr;
 
 use crate::reference::{reference_scene, REFERENCE_SCENE_ID};
 use crate::scene::{Scene, SceneError};
+use crate::scenes::canyon::{canyon_scene, CanyonError, CANYON_SCENE_ID};
 use crate::scenes::fixed_point::{fixed_point_scene, FixedPointError, FIXED_POINT_SCENE_ID};
 
 /// A scene that ships with lumen.
 ///
-/// Each one has a name (`reference`, `fixed-point`) that [`FromStr`] reads and [`name`] gives
+/// Each one has a name (`reference`, `fixed-point`, `canyon`) that [`FromStr`] reads and [`name`] gives
 /// back, a stable versioned name (the name [`RenderProvenance`] records beside the scene's
 /// content identity) and its own camera and lighting, which [`build`] returns inside the
 /// [`Scene`].
@@ -39,11 +40,13 @@ pub enum BuiltinScene {
     Reference,
     /// The Fixed Point scene, [`FIXED_POINT_SCENE_ID`].
     FixedPoint,
+    /// The canyon scene, [`CANYON_SCENE_ID`].
+    Canyon,
 }
 
 impl BuiltinScene {
     /// Every built-in scene, in the order the command lists them.
-    pub const ALL: [Self; 2] = [Self::Reference, Self::FixedPoint];
+    pub const ALL: [Self; 3] = [Self::Reference, Self::FixedPoint, Self::Canyon];
 
     /// The name a front end accepts for this scene.
     #[must_use]
@@ -51,6 +54,7 @@ impl BuiltinScene {
         match self {
             Self::Reference => "reference",
             Self::FixedPoint => "fixed-point",
+            Self::Canyon => "canyon",
         }
     }
 
@@ -63,6 +67,7 @@ impl BuiltinScene {
         match self {
             Self::Reference => REFERENCE_SCENE_ID,
             Self::FixedPoint => FIXED_POINT_SCENE_ID,
+            Self::Canyon => CANYON_SCENE_ID,
         }
     }
 
@@ -76,6 +81,7 @@ impl BuiltinScene {
         match self {
             Self::Reference => reference_scene().map_err(BuiltinSceneError::Reference),
             Self::FixedPoint => fixed_point_scene().map_err(BuiltinSceneError::FixedPoint),
+            Self::Canyon => canyon_scene().map_err(BuiltinSceneError::Canyon),
         }
     }
 }
@@ -132,6 +138,8 @@ pub enum BuiltinSceneError {
     Reference(SceneError),
     /// The Fixed Point scene could not be built.
     FixedPoint(FixedPointError),
+    /// The canyon scene could not be built.
+    Canyon(CanyonError),
 }
 
 impl fmt::Display for BuiltinSceneError {
@@ -139,6 +147,7 @@ impl fmt::Display for BuiltinSceneError {
         match self {
             Self::Reference(error) => write!(f, "the reference scene could not be built: {error}"),
             Self::FixedPoint(error) => write!(f, "the Fixed Point scene: {error}"),
+            Self::Canyon(error) => write!(f, "the canyon scene: {error}"),
         }
     }
 }
@@ -148,6 +157,7 @@ impl std::error::Error for BuiltinSceneError {
         match self {
             Self::Reference(error) => Some(error),
             Self::FixedPoint(error) => Some(error),
+            Self::Canyon(error) => Some(error),
         }
     }
 }

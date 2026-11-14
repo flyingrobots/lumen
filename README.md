@@ -16,9 +16,11 @@ See [how Lumen renders](docs/explanation.md).
 The short way, from a checkout:
 
 ```sh
-make demo            # both built-in scenes at 1280x720, opened when done
+make demo            # the three built-in scenes at 1280x720, opened when done
 make fixed-point     # just the Fixed Point scene
+make canyon          # just the canyon scene
 make 4k              # the reference scene at 3840x2160, 16 samples
+make 4k-canyon       # the canyon scene at 3840x2160, 16 samples
 make help            # every target and the variables you can override
 ```
 
@@ -65,13 +67,17 @@ The library's public surface, its errors and the command's edge are in the
 
 ## The reference scene
 
-The two built-in scenes, `lumen-reference-scene/3` and `lumen-fixed-point-scene/2`, triangle by
-triangle, with their materials, lighting, cameras and tests, are in the
+The three built-in scenes, `lumen-reference-scene/3`, `lumen-fixed-point-scene/2` and
+`lumen-canyon-scene/1`, triangle by triangle, with their materials, lighting, cameras and tests, are in the
 [scene reference](docs/reference/scenes.md).
 
 ## The Fixed Point scene
 
 See the [scene reference](docs/reference/scenes.md#the-fixed-point-scene).
+
+## The canyon scene
+
+See the [scene reference](docs/reference/scenes.md#the-canyon-scene).
 
 ## The integrator
 
