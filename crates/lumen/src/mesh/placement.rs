@@ -25,7 +25,7 @@ pub enum MeshTurn {
 }
 
 /// How a mesh is placed in the scene: a [`MeshTurn`], a scale by `2^shift`, a floor to the
-/// `2^-16` grid ([`snap`]) and a translation by whole grid steps.
+/// `2^-16` grid (`snap`) and a translation by whole grid steps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MeshPlacement {
     /// The turn, applied first.
