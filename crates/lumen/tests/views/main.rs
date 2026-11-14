@@ -1,6 +1,6 @@
 //! Size class: medium (real threads at fixed counts; in process, no file, no network).
 //!
-//! The debug views (`render_view`, ADR 0009): `lit` is the lit render and provenance exactly;
+//! The debug views (`render_view`, ADR 0010): `lit` is the lit render and provenance exactly;
 //! every other view is checked against pixels derived by hand on constructed scenes, against its
 //! golden hash for each built-in scene, and against itself at every schedule.
 

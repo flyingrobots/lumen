@@ -1,4 +1,4 @@
-# ADR 0009: Debug views: selection, identity, provenance and stability
+# ADR 0010: Debug views: selection, identity, provenance and stability
 
 Status: accepted (flyingrobots/lumen#16). The mechanism and the `normals` and `shading-normals`
 views are built. The other views the issue lists are not built yet; [Views not yet

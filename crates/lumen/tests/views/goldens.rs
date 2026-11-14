@@ -1,5 +1,5 @@
 //! The golden image hash of each debug view of each built-in scene, at 96 by 54 pixels, one ray
-//! per pixel through its centre (ADR 0009), under the rules of `tests/golden/mod.rs`: one value
+//! per pixel through its centre (ADR 0010), under the rules of `tests/golden/mod.rs`: one value
 //! for every platform and build profile, changed only with the view's identity, the scene's
 //! version or the Bunny commit (`GOLDEN_BUNNY_REV`), as that change's intended effect.
 

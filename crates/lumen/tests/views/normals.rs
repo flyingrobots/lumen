@@ -27,7 +27,7 @@ fn one_triangle(camera_z: i64, look_z: i64, normals: &[[Option<FixedUnitVec3>; 3
     .expect("builds")
 }
 
-/// Oracle: the mapping of ADR 0009 by hand. A 9 by 9 image of the triangle from 8 units in
+/// Oracle: the mapping of ADR 0010 by hand. A 9 by 9 image of the triangle from 8 units in
 /// front: the centre pixel's ray hits it at (0, 0, -4), the corner pixel's passes 7 units off
 /// the axis at the plane and misses. Front face, normal +z: `(128 + 0, 128 + 0, 128 + 127)`.
 /// From behind (a camera at z = -12 looking +z), the same geometric normal on the back face:
@@ -98,7 +98,7 @@ fn lit_is_the_lit_render_and_provenance() {
     assert_eq!(lit[11], ("bounces", ProvenanceValue::Number(1)));
 }
 
-/// Oracle: ADR 0009's provenance rule. A debug view replaces `integrator` with its identity and
+/// Oracle: ADR 0010's provenance rule. A debug view replaces `integrator` with its identity and
 /// `shading` with the contracts it uses, records one sample and no bounce, and keeps every
 /// other field.
 #[test]

@@ -303,7 +303,7 @@ fn stats_is_a_flag_of_render() {
     );
 }
 
-/// Oracle: the view names as `View::name` gives them, and the single-sample rule of ADR 0009: a
+/// Oracle: the view names as `View::name` gives them, and the single-sample rule of ADR 0010: a
 /// debug view defaults to one sample and refuses any other, and refuses `--stats`; `lit` keeps
 /// the lit defaults.
 #[test]

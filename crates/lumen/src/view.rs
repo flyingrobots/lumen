@@ -1,6 +1,6 @@
 //! This module owns the debug views: which pictures of a scene `--view` can render besides the
 //! lit image ([`View`]), their stable identities, and how each one's pixels are computed
-//! ([`render_view`]). See `docs/adr/0009-debug-views.md`.
+//! ([`render_view`]). See `docs/adr/0010-debug-views.md`.
 //!
 //! A view other than [`View::Lit`] is a deterministic function of the scene and the image size,
 //! computed from Bunny results only: lumen's own arithmetic is the mapping of an integer to a

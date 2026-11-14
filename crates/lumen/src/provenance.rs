@@ -121,7 +121,7 @@ impl RenderProvenance {
     /// The same provenance for a render of `view` instead of the lit image ([`render_view`]).
     /// [`View::Lit`] leaves it unchanged. Any other view replaces the `integrator` field with the
     /// view's identity and the `shading` field with the contracts the view uses, and, for a
-    /// single-sample view, records one sample and no bounce (docs/adr/0009-debug-views.md).
+    /// single-sample view, records one sample and no bounce (docs/adr/0010-debug-views.md).
     ///
     /// [`render_view`]: crate::render_view
     #[must_use]

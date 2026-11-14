@@ -8,7 +8,7 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
-- Debug views (part of flyingrobots/lumen#16, ADR 0009): `lumen render --view NAME` and the
+- Debug views (part of flyingrobots/lumen#16, ADR 0010): `lumen render --view NAME` and the
   library's `render_view` draw `normals` (`lumen-view-normals/1`, the first hit's geometric normal
   as colour, back faces at half amplitude) or `shading-normals` (`lumen-view-shading-normals/1`,
   Bunny's `smooth_normal` of a triangle's vertex normals at the hit) through the same scheduler
@@ -19,6 +19,10 @@ All notable changes to lumen are recorded here. The format follows
   Each view has a golden hash for each built-in scene at 96 by 54, checked at 1, 2, 4 and 18
   threads and two band heights, and hand-derived pixels on a constructed triangle (front, back,
   miss, an interpolated normal and the fallback). `make views` renders them.
+
+- ADR 0008 and the README say what `render --stats` costs now: about a tenth longer than a plain
+  render (+10 to 11 %, against +2.5 % recorded before traversal counting); a plain render is
+  within noise.
 
 - `lumen render --stats` prints the traversal work of each kind of ray (closes
   flyingrobots/lumen#29, ADR 0008): after the ray lines and before the run lines, for camera,

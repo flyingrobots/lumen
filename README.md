@@ -323,6 +323,8 @@ without `--stats` the render calls the uncounted ones.
 `lumen stats` after its first three, which the report already gives), then what the rays found,
 then what the traversals did, then how the work was spread over the workers.
 Without `--stats` the output is the report alone, byte for byte as before statistics existed.
+Expect a render with `--stats` to take about a tenth longer (+10 to 11 % measured on the reference
+scene at 1280 by 720; ADR 0008, "Traversal statistics"); a render without it pays nothing.
 The command first checks the ray statistics against the size and settings (one record per pixel,
 `--samples` samples per pixel, exactly one camera ray per sample, at most four rays per sample)
 and fails with exit code 1 if they disagree, which no render the library produced does.
@@ -440,7 +442,7 @@ with a debug view. The report's `integrator` line is the view's identity, `shadi
 contracts it uses (`none` for `normals`), and `samples 1` and `bounces 0`. Every other line is
 as for the lit image. `make views` renders both views of every built-in scene into `out/`. The
 library function is `render_view`, and `RenderProvenance::with_view` gives the provenance.
-[ADR 0009](docs/adr/0009-debug-views.md) records the design and the views not built yet
+[ADR 0010](docs/adr/0010-debug-views.md) records the design and the views not built yet
 (`depth`, the IDs, `wireframe`, `bvh-cost`, `gray-box` and the lighting terms).
 
 ## The reference scene
