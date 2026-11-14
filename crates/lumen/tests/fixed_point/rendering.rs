@@ -50,7 +50,9 @@ impl Checked<'_> {
         let slot = match kind {
             Some(PartKind::Bunny) => 0,
             Some(PartKind::DieBody(_) | PartKind::Pips(_)) => 1,
-            Some(PartKind::Numeral(_) | PartKind::PuckFace | PartKind::PuckRim) => 2,
+            Some(
+                PartKind::Numeral(_) | PartKind::PuckFace | PartKind::PuckRim | PartKind::PuckSide,
+            ) => 2,
             _ => return,
         };
         self.on[slot].set(self.on[slot].get() + 1);
@@ -127,7 +129,7 @@ fn every_traced_ray_of_the_scene_equals_a_test_of_every_triangle() {
 
 #[test]
 fn the_fixed_point_image_has_its_golden_hash() {
-    assert_eq!(lumen::FIXED_POINT_SCENE_ID, "lumen-fixed-point-scene/1");
+    assert_eq!(lumen::FIXED_POINT_SCENE_ID, "lumen-fixed-point-scene/2");
     assert_eq!(lumen::INTEGRATOR_ID, "lumen-diffuse-path/1");
     assert_eq!(bunny_optics::SAMPLER_ID, "bunny-sobol-owen/1");
     assert_eq!(bunny_optics::SHADING_ID, "bunny-diffuse-shading/1");
