@@ -8,6 +8,24 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- The "Fixed Point" scene, `lumen-fixed-point-scene/1` (part of flyingrobots/lumen#15), as
+  library content in `crates/lumen/src/scenes/fixed_point/`: the Stanford bunny in dark
+  sunglasses at a craps table, with two identical dice showing four pips on every face and the
+  ON puck on the 8. 5 975 triangles: felt, padded rail, layout lines and seven-segment numerals
+  for the boxes 4, 5, 6, 8, 9 and 10; the puck; two chamfered dice, the same mesh under two
+  exact rational turns; the bunny scaled by 32 and turned three-quarters toward the camera; and
+  sunglasses fitted to the bunny's measured nose. `lumen::fixed_point_scene()` builds it and
+  `fixed_point_content()` lists every triangle's part and material.
+- `crates/lumen/examples/fixed_point.rs`, which renders the Fixed Point scene to a PNG without
+  the CLI.
+- `MeshTurn::QuarterAboutY`, a quarter turn of a placed mesh, `(x, y, z)` to `(z, y, -x)`.
+- Tests of the Fixed Point scene: four pips on every face of both dice, counted from the
+  geometry; the dice congruent and related by their stated motion; the numerals against a
+  seven-segment truth table; the puck inside the 8 box; the sunglasses within 0.25 units in
+  front of the face and touching nothing; counts, the trace domain, no degenerate triangle and
+  everything resting on the felt; every traced ray against brute force; a golden hash (96 by 54,
+  4 samples, seed 0). The reference scene's golden hash is unchanged.
+
 - The Stanford bunny in the reference scene (flyingrobots/lumen#14): `lumen-reference-scene/3`
   appends its 3 851 triangles (none dropped; 31 511 triangles in all) after the triangles of
   version 2, with a green albedo, standing on the ground left of the sphere. The mesh,

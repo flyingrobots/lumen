@@ -1,6 +1,7 @@
 //! Lumen: a deterministic ray tracer built on Bunny's integer math.
 //!
-//! Lumen renders a built-in reference scene ([`reference::reference_scene`]) on one thread with a
+//! Lumen renders a built-in reference scene ([`reference::reference_scene`]), or the Fixed Point
+//! showpiece ([`scenes::fixed_point::fixed_point_scene`]), on one thread with a
 //! power-of-two number of samples per pixel, each one diffuse path with a shadow-casting
 //! directional light, a uniform sky and one bounce ([`render::trace_path`],
 //! `lumen-diffuse-path/1`), and writes it as a PNG file ([`png::write_png`]). Every number
@@ -16,6 +17,7 @@ pub mod png;
 pub mod reference;
 pub mod render;
 pub mod scene;
+pub mod scenes;
 pub mod sha256;
 mod vertex_grid;
 
@@ -30,3 +32,4 @@ pub use render::{
     render, render_reference, Render, RenderError, RenderSettings, SettingsError, INTEGRATOR_ID,
 };
 pub use scene::{Scene, SceneError, SceneSpec, Tracer};
+pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
