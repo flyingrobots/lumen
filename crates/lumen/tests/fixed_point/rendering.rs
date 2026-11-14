@@ -135,7 +135,7 @@ fn the_fixed_point_image_has_its_golden_hash() {
     assert_eq!(bunny_optics::SHADING_ID, "bunny-diffuse-shading/1");
     assert_eq!(TONE_CURVE.identity(), "bunny-tone-srgb/1");
     assert_eq!(bunny_optics::RGBA8_OPAQUE_IDENTITY, "bunny-rgba8-opaque/1");
-    assert_eq!(BUNNY_REV, "d4fe51d38fa10f8d6496bd110955314edac30bbf");
+    assert_eq!(BUNNY_REV, "2cd551e248d55407a8f27e84dcb26d1b1d8768bd");
     let scene = fixed_point_scene().expect("builds");
     let size = ImageSize::new(96, 54).expect("size");
     let rendered = render(&scene, size, settings(4, 0)).expect("renders");

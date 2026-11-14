@@ -6,6 +6,24 @@ All notable changes to lumen are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Bunny is pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (was
+  `d4fe51d38fa10f8d6496bd110955314edac30bbf`), Bunny's main with the counted compact traversals
+  (`compact_closest_hit_counted`, `compact_any_hit_counted` and `TraversalCounts`,
+  flyingrobots/bunny#335), which part of flyingrobots/lumen#29 waits for. Between the two pins
+  Bunny also stated and tested the BVH depth contract, pinned rounding and guard boundaries in
+  `bunny-optics` with new tests, added `parse_ascii_ply_with_limits`, made `TraceRay::from_ray`
+  accept a unit direction with a component of `2^32 + 1` raw (a `None` becomes a `Some`; neither
+  lumen nor the Bunny functions it calls use `from_ray`) and tightened its own gate; no
+  function lumen calls changed its output. Lumen calls none of the new APIs yet. Both golden
+  image hashes and both golden content digests are unchanged, as is the render time (three
+  alternated runs each at 1280 by 720, 16 samples, 18 threads; the pull request records them).
+  Re-reading Bunny's public API at the new pin for float-typed items (ADR 0006) found nothing
+  new, and one function missed before: `bunny_num::is_finite`, which takes an `f32` and whose
+  name has no float word. It is now a Clippy ban (144, up from 143, each firing on the fixture)
+  and a token-scan path.
+
 ### Fixed
 
 - A panic in the pixel function now halts the other workers (flyingrobots/lumen#56). Each worker

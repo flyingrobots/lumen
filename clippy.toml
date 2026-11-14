@@ -143,6 +143,7 @@ disallowed-methods = [
     { path = "std::time::Duration::mul_f64", reason = "float-type: a float with no float token written" },
     { path = "std::time::Duration::try_from_secs_f32", reason = "float-type: a float with no float token written" },
     { path = "std::time::Duration::try_from_secs_f64", reason = "float-type: a float with no float token written" },
+    { path = "bunny_num::is_finite", reason = "float-type: Bunny's float bridge: no float in the deterministic core" },
     { path = "bunny_num::FixedQ32_32::from_f32", reason = "float-type: Bunny's float bridge: no float in the deterministic core" },
     { path = "bunny_num::FixedQ32_32::to_f32", reason = "float-type: Bunny's float bridge: no float in the deterministic core" },
     { path = "bunny_num::FixedQ32_32::try_from_f32", reason = "float-type: Bunny's float bridge: no float in the deterministic core" },

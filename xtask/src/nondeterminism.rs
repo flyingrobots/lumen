@@ -70,9 +70,10 @@ const NAMES: [(&str, &str); 9] = [
 
 /// Banned path prefixes and their rules. Each is compared segment by segment after the path is
 /// resolved through the file's imports ([`resolve`]); the `sleep` family is listed by name
-/// because `sleep_ms` is not under `sleep`. The Bunny types are its float bridge, whose values
-/// carry floats with no float token (`PlyVertex.x`).
-const PATHS: [(&[&str], &str); 20] = [
+/// because `sleep_ms` is not under `sleep`. The Bunny paths are its float bridge, whose values
+/// carry floats with no float token (`PlyVertex.x`), and `bunny_num::is_finite`, which takes one
+/// and whose name has no float word.
+const PATHS: [(&[&str], &str); 21] = [
     (&["std", "env"], "std-env"),
     (&["std", "fs"], "std-fs"),
     (&["std", "process"], "std-process"),
@@ -83,6 +84,7 @@ const PATHS: [(&[&str], &str); 20] = [
     (&["std", "thread", "park_timeout"], "thread-sleep"),
     (&["std", "thread", "park_timeout_ms"], "thread-sleep"),
     (&["bunny_num", "Scalar"], "float-type"),
+    (&["bunny_num", "is_finite"], "float-type"),
     (&["bunny_linalg", "Vec2"], "float-type"),
     (&["bunny_linalg", "Vec3"], "float-type"),
     (&["bunny_geom", "Ray3"], "float-type"),

@@ -15,7 +15,7 @@ fn reported(source: &str) -> Vec<(usize, &'static str)> {
     core_findings(source).iter().map(|f| (f.line, f.rule)).collect()
 }
 
-const REJECTED: [Form; 67] = [
+const REJECTED: [Form; 68] = [
     ("instant: qualified call", "pub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 1),
     ("instant: use then bare call", "use std::time::Instant;\npub fn f() { let _ = Instant::now(); }", "time-instant", 1),
     ("instant: use group", "use std::time::{Duration, Instant};\npub fn f() -> Duration { Instant::now().elapsed() }", "time-instant", 1),
@@ -83,6 +83,7 @@ const REJECTED: [Form; 67] = [
     ("float: Bunny's into_float", "pub fn f(r: bunny_geom::FixedRay3) -> bool { r.into_float() == r.into_float() }", "float-type", 1),
     ("float: a Bunny float vector by import", "use bunny_linalg::Vec3;\npub fn f(v: Vec3) -> Vec3 { v }", "float-type", 1),
     ("float: a codec vertex's field", "pub fn f(v: bunny_codec::PlyVertex) -> bool { v.x == v.y }", "float-type", 1),
+    ("float: Bunny's is_finite of an inferred float", "pub fn f() -> bool { bunny_num::is_finite(Default::default()) }", "float-type", 1),
 ];
 
 const ACCEPTED: [(&str, &str); 18] = [

@@ -193,6 +193,7 @@ mod bunny_float_bridge {
         let _ = FixedSphere3::try_from_float(s.into_float());
         let _ = (FixedVec2::try_from_float(v.0 .1), FixedVec3::try_from_float(v.0 .2));
         let _ = (bunny_codec::parse_binary_ply(b""), bunny_codec::parse_obj_text(""));
+        let _ = bunny_num::is_finite(v.0 .0);
     }
 }
 
