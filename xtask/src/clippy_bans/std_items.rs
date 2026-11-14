@@ -132,26 +132,45 @@ pub(crate) fn check(items: &[Item], entries: &[Entry]) -> Vec<String> {
     failures
 }
 
-/// The list's items: lines `<kind> <path> stable|unstable`; `#` lines are comments and the
-/// `toolchain` line names the toolchain.
-pub(crate) fn parse(list: &str) -> Vec<Item> {
-    list.lines()
-        .filter(|line| !line.starts_with('#') && !line.starts_with("toolchain "))
-        .filter_map(|line| {
-            let mut words = line.split_whitespace();
-            let (kind, path, stability) = (words.next()?, words.next()?, words.next()?);
-            Some(Item {
-                kind: kind.to_owned(),
-                path: path.to_owned(),
-                stable: stability == "stable",
-            })
-        })
-        .collect()
+/// The kinds of item a list row may name.
+const KINDS: [&str; 9] =
+    ["fn", "struct", "enum", "trait", "type", "constant", "static", "macro", "method"];
+
+/// The list's items, and a failure for each row that is not `<kind> std::<path>
+/// stable|unstable`: a misspelt stability would otherwise make a banned item look unstable and
+/// kept. `#` lines are comments and the `toolchain` line names the toolchain.
+pub(crate) fn parse_list(list: &str) -> (Vec<Item>, Vec<String>) {
+    let (mut items, mut failures) = (Vec::new(), Vec::new());
+    for (n, line) in list.lines().enumerate() {
+        if line.starts_with('#') || line.starts_with("toolchain ") || line.trim().is_empty() {
+            continue;
+        }
+        let words: Vec<&str> = line.split_whitespace().collect();
+        match words.as_slice() {
+            [kind, path, stability @ ("stable" | "unstable")]
+                if KINDS.contains(kind) && path.starts_with("std::") =>
+            {
+                let stable = *stability == "stable";
+                items.push(Item { kind: (*kind).to_owned(), path: (*path).to_owned(), stable });
+            }
+            _ => failures.push(format!(
+                "{}, line {}: `{line}` is not `<kind> std::<path> stable|unstable`",
+                super::STD_ITEMS,
+                n + 1
+            )),
+        }
+    }
+    (items, failures)
 }
 
 /// The items of the banned modules in std's `all.html`, with the stability `page` gives each
-/// (`page` reads a file relative to the std docs), then the float methods of `Duration`.
-pub(crate) fn extract(all_html: &str, page: &dyn Fn(&str) -> Option<String>) -> Vec<Item> {
+/// (`page` reads a file relative to the std docs), then the float methods of `Duration`; an
+/// error naming the first page that cannot be read, since guessing its stability would write a
+/// wrong list.
+pub(crate) fn extract(
+    all_html: &str,
+    page: &dyn Fn(&str) -> Option<String>,
+) -> Result<Vec<Item>, String> {
     let mut hrefs: Vec<&str> = all_html
         .split("href=\"")
         .skip(1)
@@ -160,18 +179,19 @@ pub(crate) fn extract(all_html: &str, page: &dyn Fn(&str) -> Option<String>) -> 
         .collect();
     hrefs.sort_unstable();
     hrefs.dedup();
-    let mut items: Vec<Item> = hrefs
-        .into_iter()
-        .filter_map(|href| {
-            let (dirs, file) = href.rsplit_once('/')?;
-            let (kind, name) = file.strip_suffix(".html")?.split_once('.')?;
-            let path = format!("std::{}::{name}", dirs.replace('/', "::"));
-            let stable = page(href).is_some_and(|p| heading_is_stable(&p));
-            Some(Item { kind: kind.to_owned(), path, stable })
-        })
-        .collect();
-    items.extend(page("time/struct.Duration.html").map_or_else(Vec::new, |p| float_methods(&p)));
-    items
+    let mut items = Vec::new();
+    for href in hrefs {
+        let Some((dirs, file)) = href.rsplit_once('/') else { continue };
+        let Some((kind, name)) = file.strip_suffix(".html").and_then(|f| f.split_once('.')) else {
+            continue;
+        };
+        let text = page(href).ok_or(format!("cannot read the page {href}"))?;
+        let path = format!("std::{}::{name}", dirs.replace('/', "::"));
+        items.push(Item { kind: kind.to_owned(), path, stable: heading_is_stable(&text) });
+    }
+    let duration = "time/struct.Duration.html";
+    items.extend(float_methods(&page(duration).ok_or(format!("cannot read the page {duration}"))?));
+    Ok(items)
 }
 
 /// Whether an item page's main heading says "Stable since".
@@ -215,9 +235,12 @@ pub(crate) fn render(items: &[Item], toolchain: &str) -> String {
     [header].into_iter().chain(lines).collect()
 }
 
-/// A failure when the list was made for another toolchain than `rust-toolchain.toml` pins.
+/// A failure when the list names no toolchain, or another than `rust-toolchain.toml` pins.
 pub(crate) fn toolchain_matches(list: &str, toolchain_toml: &str) -> Option<String> {
-    let listed = list.lines().find_map(|l| l.strip_prefix("toolchain "))?.trim().to_owned();
+    let Some(listed) = list.lines().find_map(|l| l.strip_prefix("toolchain ")) else {
+        return Some(format!("{} has no toolchain line: regenerate it", super::STD_ITEMS));
+    };
+    let listed = listed.trim().to_owned();
     let pinned = toolchain_toml
         .lines()
         .find_map(|l| l.trim().strip_prefix("channel = \""))

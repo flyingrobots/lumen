@@ -6,7 +6,7 @@
 //! the decisions as ADR 0006 states them, written out by hand.
 
 use super::super::Entry;
-use super::{check, decide, extract, parse, render, toolchain_matches, Decision, Item};
+use super::{check, decide, extract, parse_list, render, toolchain_matches, Decision, Item};
 
 const ALL: &str = r#"<li><a href="fs/fn.copy.html">fs::copy</a></li><li><a href="fs/struct.Dir.html">fs::Dir</a></li><li><a href="env/consts/constant.OS.html">env::consts::OS</a></li><li><a href="io/fn.stdin.html">io::stdin</a></li><li><a href="fs/fn.copy.html">fs::copy</a></li>"#;
 
@@ -33,7 +33,7 @@ fn items_are_read_from_all_html_with_the_stability_of_their_pages() {
         _ => None,
     };
     assert_eq!(
-        extract(ALL, &page),
+        extract(ALL, &page).expect("every page is there"),
         [
             item("constant", "std::env::consts::OS", true),
             item("fn", "std::fs::copy", true),
@@ -98,9 +98,23 @@ fn the_check_fails_a_missing_entry_an_entry_under_another_rule_and_an_undecided_
 fn the_list_reads_back_what_it_renders_and_names_its_toolchain() {
     let items = [item("fn", "std::fs::copy", true), item("struct", "std::fs::Dir", false)];
     let list = render(&items, "1.96.0");
-    assert_eq!(parse(&list), items);
+    assert_eq!(parse_list(&list), (items.to_vec(), Vec::new()));
     assert_eq!(toolchain_matches(&list, "[toolchain]\nchannel = \"1.96.0\"\n"), None);
     let moved = toolchain_matches(&list, "[toolchain]\nchannel = \"1.97.0\"\n");
     assert!(moved
         .is_some_and(|m| m.contains("is for toolchain 1.96.0, rust-toolchain.toml pins 1.97.0")));
+}
+
+#[test]
+fn a_malformed_row_a_missing_page_and_a_missing_toolchain_line_fail() {
+    let (_, bad) = parse_list("toolchain 1.96.0\nfn std::fs::copy stabel\nfn std::fs::read\nfn std::fs::write stable extra\n");
+    assert_eq!(bad.len(), 3, "{bad:?}");
+    assert!(bad[0].contains("line 2"), "{bad:?}");
+    let missing = |href: &str| (href != "fs/fn.copy.html").then(|| STABLE.to_owned());
+    let refused = extract(ALL, &missing);
+    assert!(refused.is_err_and(|e| e.contains("fs/fn.copy.html")));
+    let toolchain = "[toolchain]\nchannel = \"1.96.0\"\n";
+    assert!(toolchain_matches("fn std::fs::copy stable\n", toolchain)
+        .is_some_and(|m| m.contains("no toolchain line")));
+    assert!(toolchain_matches("", toolchain).is_some());
 }

@@ -49,7 +49,9 @@ pub(crate) fn gate(root: &Path) -> io::Result<bool> {
     let list = fs::read_to_string(root.join(STD_ITEMS))?;
     let toolchain = fs::read_to_string(root.join("rust-toolchain.toml"))?;
     failures.extend(std_items::toolchain_matches(&list, &toolchain));
-    failures.extend(std_items::check(&std_items::parse(&list), &entries));
+    let (items, malformed) = std_items::parse_list(&list);
+    failures.extend(malformed);
+    failures.extend(std_items::check(&items, &entries));
     for failure in &failures {
         println!("::error::[clippy-bans] {failure}");
     }
@@ -96,6 +98,7 @@ fn config_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> io::Result<()
 /// rust-docs), for `toolchain`, as `xtask/bans/std-items.txt` holds it.
 pub(crate) fn std_items_list(std_docs: &Path, toolchain: &str) -> io::Result<String> {
     let all = fs::read_to_string(std_docs.join("all.html"))?;
-    let items = std_items::extract(&all, &|href| fs::read_to_string(std_docs.join(href)).ok());
+    let items = std_items::extract(&all, &|href| fs::read_to_string(std_docs.join(href)).ok())
+        .map_err(io::Error::other)?;
     Ok(std_items::render(&items, toolchain))
 }
