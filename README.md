@@ -1095,11 +1095,11 @@ rules use Echo's `ban-nondeterminism` rule IDs, plus Lumen's `thread-spawn` and 
 
 | Rule | Banned | Enforced by |
 |---|---|---|
-| `time-system`, `time-instant` | `SystemTime`, `Instant` and their `now` and `elapsed` | `clippy.toml`, in `fmt, clippy` |
-| `thread-sleep`, `host-parallelism`, `thread-spawn` | `std::thread::sleep`, `available_parallelism`, `spawn`, `scope`, `Builder` | the same |
+| `time-system`, `time-instant` | `SystemTime`, `SystemTimeError`, `Instant` and their `now` and `elapsed` | `clippy.toml`, in `fmt, clippy` |
+| `thread-sleep`, `host-parallelism`, `thread-spawn` | `std::thread::sleep`, `sleep_ms`, `park_timeout`, `park_timeout_ms`, `available_parallelism`, `spawn`, `scope`, `Builder` | the same |
 | `unordered-container` | `HashMap`, `HashSet`, `RandomState` | the same |
-| `std-env`, `std-fs`, `std-process`, `network` | arguments, environment variables, `env!` and `option_env!`, files and `Path::exists`, processes, sockets | the same |
-| `float-type` | `f32`, `f64`, Bunny's `to_f32`; float arithmetic in the library (`clippy::float_arithmetic`) | the same, and `lib.rs` |
+| `std-env`, `std-fs`, `std-process`, `network` | every stable function and type of `std::env`, `std::fs`, `std::process` and `std::net` (except the address types), the `Path` methods that touch files, `env!` and `option_env!` | the same |
+| `float-type` | `f32`, `f64`, the float methods of `Duration`, Bunny's float bridge (`Scalar`, `Vec3`, `Ray3`, `PlyVertex`, `to_f32`, `into_float`, ...); float arithmetic in the library (`clippy::float_arithmetic`) | the same, and `lib.rs` |
 | `random`, `host-callback`, `json-serialization`, `wasm-serde`, crate forms of the rest | any crates.io crate | `deny.toml` (`allow-registry = []`), in `Gates / cargo-deny` |
 | `float-type`, `float-literal`, `float-cast`, the names and `std` paths above, `hand-hashed-table` | in the core, also under a `cfg` that is not built and in macro bodies: `f32`, `f64`, float literals, `as f64`; `Instant`, `SystemTime`, `HashMap` and the other banned names wherever spelled; names with the word `f32` or `f64` (`as_secs_f64`); `std::env`, `fs`, `process`, `net` and `thread` sleep paths through `use` trees, renames and `extern crate` aliases; any line naming open addressing | `cargo run -p xtask -- nondeterminism`, in `Gates / nondeterminism` |
 

@@ -52,10 +52,30 @@ them in CI (see Consequences), so this row is a check, not a recorded run.
 
 - **The compiler layer.** `clippy.toml` bans the types, functions and macros behind each of
   Echo's rule IDs, plus Lumen's `thread-spawn` (`std::thread::spawn`, `scope`, `Builder`) and
-  `float-type` (`f32`, `f64` and Bunny's `FixedQ32_32::to_f32`). Each ban's reason starts with
-  its rule ID, so a finding names the rule. `lib.rs` denies `clippy::float_arithmetic`, which
-  catches arithmetic on a float whose type is only inferred. The bans run in the existing
-  `fmt, clippy` job.
+  `float-type`. Each ban's reason starts with its rule ID, so a finding names the rule. Clippy
+  matches by resolved path, so an alias, a re-export or a raw identifier does not matter to it,
+  but it bans only what is listed (flyingrobots/lumen#115 found `host::fs::exists`,
+  `std::r#fs::copy` and `sleep_ms` unlisted), so the lists are complete by module: for
+  `std::env`, `std::fs`, `std::process` and `std::net`, every stable function and type in the
+  pinned toolchain's documentation (`std/all.html` of rust-docs 1.96.0, stability read from each
+  item's page), except the address types of `std::net` (`IpAddr`, `SocketAddr` and the like:
+  core's plain data, no socket and no lookup; `ToSocketAddrs`, which looks names up, is banned);
+  of `std::thread`, the sleeps (`sleep`, `sleep_ms`, `park_timeout`, `park_timeout_ms`), the
+  spawns and `available_parallelism`, not `current`, `park`, `yield_now`, `JoinHandle` and the
+  rest that the scheduler may use; of `std::time`, `SystemTime`, `SystemTimeError` and
+  `Instant`. Unstable items cannot be used on the pinned stable toolchain and are not listed.
+  `float-type` also covers every stable `Duration` method that takes or returns a float
+  (`as_secs_f64`, `mul_f64`, `from_secs_f64`, `try_from_secs_f64`, `div_duration_f64` and their
+  `f32` forms) and Bunny's float bridge at the pinned commit: `bunny_num::Scalar`,
+  `FixedQ32_32::{from_f32, to_f32, try_from_f32}` and their `conversions` functions,
+  `bunny_linalg::{Vec2, Vec3}` and `FixedVec{2,3}::try_from_float`, `bunny_geom::{Ray3, Aabb3,
+  Sphere3}` and the `into_float`/`try_from_float` of their fixed forms, and `bunny_codec`'s float
+  meshes (`ObjMesh`, `ObjVertex`, `ObjVertices`, `PlyBinaryMesh`, `PlyVertex`, `parse_obj_text`,
+  `parse_binary_ply`), whose `pub x: f32` fields carry a float with no token written. Constants
+  cannot be banned by Clippy (`std::env::consts::OS`, `UNIX_EPOCH`); they are the token scan's.
+  `lib.rs` denies `clippy::float_arithmetic`, which catches `+ - * / %` and negation on a float
+  whose type is only inferred (not method calls, comparisons or conversions). The bans run in
+  the existing `fmt, clippy` job.
 - **Deny by default.** The bans apply to every crate in the workspace. Code outside the
   deterministic core carries `#[expect(<lints>, reason = "<rule-ids>: <why>")]`: the `lumen`
   binary, the examples, `tests/cli.rs` and `xtask` at crate level, and the scheduler and two
@@ -157,6 +177,13 @@ relative to the macro's file, not the caller's. Outside the core, each for a rea
   WebAssembly leg (ADR 0004), where `usize` is 32 bits and the golden hashes must still match.
 - Not covered by the compiler layer: code under a `cfg` that is not built on the CI host, and
   macro bodies that are never invoked. The token scan reads them by name.
+- Not seen by either layer: a float whose type is only inferred, reached through an API that
+  neither list names and whose name has no `f32`, `f64` or `_float` (a generic `T: From<u32>`
+  instantiated by inference, or a float API a new dependency brings). A syntactic gate cannot see
+  an inferred type. The defences: no float type or literal can be written in the core, every
+  float-taking and float-returning API the library can name today is listed, `float_arithmetic`
+  catches arithmetic on such a float, and a new dependency fails `Gates / cargo-deny` until
+  `deny.toml` is changed on purpose, which is when its float API must be listed.
 - A Clippy waiver covers every ban of its lint on its item, not one rule; the rule IDs in its
   reason say which bans it is meant for.
 - A new ban is a line in `clippy.toml` and a use of the banned item in `xtask/clippy-fixture`.

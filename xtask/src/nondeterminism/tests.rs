@@ -15,7 +15,7 @@ fn reported(source: &str) -> Vec<(usize, &'static str)> {
     core_findings(source).iter().map(|f| (f.line, f.rule)).collect()
 }
 
-const REJECTED: [Form; 64] = [
+const REJECTED: [Form; 67] = [
     ("instant: qualified call", "pub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 1),
     ("instant: use then bare call", "use std::time::Instant;\npub fn f() { let _ = Instant::now(); }", "time-instant", 1),
     ("instant: use group", "use std::time::{Duration, Instant};\npub fn f() -> Duration { Instant::now().elapsed() }", "time-instant", 1),
@@ -80,9 +80,12 @@ const REJECTED: [Form; 64] = [
     ("float: from_secs_f64 of a parsed string", "pub fn f(t: &str) -> Option<core::time::Duration> { Some(core::time::Duration::from_secs_f64(t.parse().ok()?)) }", "float-type", 1),
     ("env: an alias shadowed by a sibling module's", "mod a {\n    extern crate core as host;\n    pub type D = host::time::Duration;\n}\nmod b {\n    extern crate std as host;\n    pub const OS: &str = host::env::consts::OS;\n}", "std-env", 7),
     ("float: Bunny's to_f32", "pub fn f(x: bunny_num::FixedQ32_32) -> u32 { x.to_f32().to_bits() }", "float-type", 1),
+    ("float: Bunny's into_float", "pub fn f(r: bunny_geom::FixedRay3) -> bool { r.into_float() == r.into_float() }", "float-type", 1),
+    ("float: a Bunny float vector by import", "use bunny_linalg::Vec3;\npub fn f(v: Vec3) -> Vec3 { v }", "float-type", 1),
+    ("float: a codec vertex's field", "pub fn f(v: bunny_codec::PlyVertex) -> bool { v.x == v.y }", "float-type", 1),
 ];
 
-const ACCEPTED: [(&str, &str); 16] = [
+const ACCEPTED: [(&str, &str); 18] = [
     ("sin and sqrt methods on a fixed-point type", "pub struct Fx(pub i64);\nimpl Fx { pub fn sin(self) -> Self { self } pub fn sqrt(self) -> Self { self } }\npub fn f() -> Fx { Fx(1).sin().sqrt() }"),
     ("HashMap in a comment and a doc comment", "// a HashMap would iterate in a random order\n/// not a std::collections::HashMap\npub fn f() {}"),
     ("HashMap and f64 in strings", "pub fn f() -> (&'static str, &'static str) { (\"std::collections::HashMap\", r#\"f64::NAN 0.5\"#) }"),
@@ -99,6 +102,8 @@ const ACCEPTED: [(&str, &str); 16] = [
     ("a module named env of the crate's own", "mod env { pub fn var() -> u32 { 1 } }\npub fn f() -> u32 { env::var() }"),
     ("core renamed by extern crate", "extern crate core as c;\npub fn f() -> c::time::Duration { c::time::Duration::ZERO }"),
     ("f64 inside a longer word", "pub fn buff64() -> u32 { 0 }\npub fn of32x() -> u32 { buff64() }"),
+    ("the float_arithmetic lint denied", "#![deny(clippy::float_arithmetic)]\npub fn f() {}"),
+    ("Bunny's fixed-point vector and an error named Float", "pub fn f(v: bunny_linalg::FixedVec3) -> Result<bunny_linalg::FixedVec3, bunny_num::FloatConversionError> { Ok(v) }"),
 ];
 
 #[test]

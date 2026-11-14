@@ -12,6 +12,9 @@ categories = ["development-tools"]
 publish = false
 
 [dependencies]
+bunny-codec.workspace = true
+bunny-geom.workspace = true
+bunny-linalg.workspace = true
 bunny-num.workspace = true
 
 [lints]

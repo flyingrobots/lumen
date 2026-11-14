@@ -6,7 +6,8 @@
 //! and macro bodies, and ignores comments and strings. In the deterministic core it reports
 //! float types, float literals and casts to a float; the names `Instant`, `SystemTime`,
 //! `UNIX_EPOCH`, `available_parallelism`, `HashMap`, `HashSet` and `RandomState`; the
-//! `env!` and `option_env!` macros; names with the word `f32` or `f64` (`as_secs_f64`); and
+//! `env!` and `option_env!` macros; names with the word `f32` or `f64` or ending `_float`
+//! (`as_secs_f64`, `into_float`); Bunny's float-bridge types (`bunny_linalg::Vec3`, `bunny_codec::PlyVertex`); and
 //! paths into `std::env`, `std::fs`, `std::process`, `std::net` and the `std::thread` sleeps,
 //! written out, raw (`std::r#fs`), through a `use` tree (groups, `self`, renames), through a name
 //! a `use` brought in, or through an `extern crate std as ...` alias, chained. Any line that names open addressing is
@@ -69,8 +70,9 @@ const NAMES: [(&str, &str); 9] = [
 
 /// Banned path prefixes and their rules. Each is compared segment by segment after the path is
 /// resolved through the file's imports ([`resolve`]); the `sleep` family is listed by name
-/// because `sleep_ms` is not under `sleep`.
-const PATHS: [(&[&str], &str); 9] = [
+/// because `sleep_ms` is not under `sleep`. The Bunny types are its float bridge, whose values
+/// carry floats with no float token (`PlyVertex.x`).
+const PATHS: [(&[&str], &str); 20] = [
     (&["std", "env"], "std-env"),
     (&["std", "fs"], "std-fs"),
     (&["std", "process"], "std-process"),
@@ -80,6 +82,17 @@ const PATHS: [(&[&str], &str); 9] = [
     (&["std", "thread", "sleep_until"], "thread-sleep"),
     (&["std", "thread", "park_timeout"], "thread-sleep"),
     (&["std", "thread", "park_timeout_ms"], "thread-sleep"),
+    (&["bunny_num", "Scalar"], "float-type"),
+    (&["bunny_linalg", "Vec2"], "float-type"),
+    (&["bunny_linalg", "Vec3"], "float-type"),
+    (&["bunny_geom", "Ray3"], "float-type"),
+    (&["bunny_geom", "Aabb3"], "float-type"),
+    (&["bunny_geom", "Sphere3"], "float-type"),
+    (&["bunny_codec", "ObjMesh"], "float-type"),
+    (&["bunny_codec", "ObjVertex"], "float-type"),
+    (&["bunny_codec", "ObjVertices"], "float-type"),
+    (&["bunny_codec", "PlyBinaryMesh"], "float-type"),
+    (&["bunny_codec", "PlyVertex"], "float-type"),
 ];
 
 /// One finding: the 1-based line, the rule and what was found.
@@ -111,9 +124,13 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
                 add(*line, if cast { "float-cast" } else { "float-type" }, name);
             }
             Token::Num(number) if is_float(number) => add(*line, "float-literal", number),
-            // A name with the word `f32` or `f64` (`as_secs_f64`, `mul_f32`, `to_f32`): a float
-            // passes through it even when no float type or literal is written.
-            Token::Ident(name) if name.split('_').any(|w| w == "f32" || w == "f64") => {
+            // A name with the word `f32` or `f64` (`as_secs_f64`, `to_f32`), or ending `_float`
+            // (Bunny's `into_float`): a float passes through it even when no float type or
+            // literal is written. Not `float_arithmetic`, the lint `lib.rs` denies.
+            Token::Ident(name)
+                if name.split('_').any(|w| w == "f32" || w == "f64")
+                    || name.ends_with("_float") =>
+            {
                 add(*line, "float-type", name);
             }
             Token::Ident(name) => {

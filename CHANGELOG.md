@@ -587,6 +587,17 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- `clippy.toml` lists every stable function and type of `std::env`, `std::fs`, `std::process`
+  and `std::net` (but the address types) in the pinned toolchain's documentation, so the members
+  flyingrobots/lumen#115 found unlisted are banned in the compiler layer: `std::fs::exists`,
+  `copy` and the rest of `fs`, `env::set_current_dir`, `set_var`, `split_paths`, the process
+  and socket types, `ToSocketAddrs`; also `thread::sleep_ms`, `park_timeout`,
+  `park_timeout_ms`, `SystemTimeError`, the twelve stable float methods of `Duration`
+  (`as_secs_f64`, `mul_f64`, `from_secs_f64`, ...) and Bunny's float bridge (`Scalar`,
+  `Vec2`/`Vec3`, `Ray3`/`Aabb3`/`Sphere3`, the codec's float meshes and vertices, `from_f32`,
+  `try_from_f32`, `into_float`, `try_from_float`): 143 bans, up from 53, each firing on
+  `xtask/clippy-fixture`. The token scan also reports Bunny's float-bridge types by path and
+  names ending `_float`. Main has no new finding in either layer.
 - The nondeterminism scan resolves `extern crate std as host` and chains of renames
   (`use host::env as e; e::var`), so std members `clippy.toml` does not list are caught by the
   scan's module rule when reached through an alias: `host::fs::exists`,
