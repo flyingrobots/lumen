@@ -105,7 +105,7 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   `Schedule`, `BandRows`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
   its `hash`), its provenance (`RenderProvenance`), PNG encoding into any writer (`write_png`,
   `png_len`), and the integrator's parts for custom tracers (`trace_path`, `pixel_radiance`,
-  `Tracer`, `Hit`, `TraceError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
+  `Tracer`, `Hit`, `PrimitiveIndex`, `TraceError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
   content, as `reference` is) and `lumen::mesh` (the mesh reader they use) are public modules. The SHA-256 and PNG checksum code
   is internal. [ADR 0002](docs/adr/0002-library-api-surface.md) records the rule.
 - **The library touches nothing outside its arguments.** It parses no arguments, opens no files,
@@ -395,9 +395,10 @@ giving the same answers. Lumen uses the binned-SAH tree in the compact layout, t
 four on a small render of the reference scene. The scene module keeps that choice in one file:
 `crates/lumen/src/scene/mod.rs` holds the scene model (`Scene`, `SceneSpec`, `Lighting`,
 `CameraPlacement`, `SceneError`), `scene/tracer.rs` the ray-query port (`Tracer`, `Hit`,
-`TraceError`, `FAR`), and `scene/tree.rs` the adapter that builds Bunny's tree and answers the
-port's queries with it. `crates/lumen/examples/traversal.rs` repeats the
-measurement, checks that all four give the same radiance bits, and prints the build times:
+`TraceError`, `FAR`), `scene/primitive_index.rs` the triangle's name (`PrimitiveIndex`, its
+position in input order, which breaks ties and so is part of the scene), and `scene/tree.rs` the
+adapter that builds Bunny's tree and answers the port's queries with it.
+`crates/lumen/examples/traversal.rs` repeats the measurement, checks that all four give the same radiance bits, and prints the build times:
 
 ```sh
 python3 $D lumen ~/git/lumen --worktree --exclusive -- \
