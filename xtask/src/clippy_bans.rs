@@ -65,21 +65,75 @@ pub(crate) struct Form {
     pub(crate) rule: Option<String>,
 }
 
-/// The bans of `clippy.toml`: each line with a `path = "..."` and a `reason = "<rule>: ..."`.
-pub(crate) fn entries(toml: &str) -> Vec<Entry> {
-    let quoted = |line: &str, key: &str| {
-        let rest = &line[line.find(&format!("{key} = \""))? + key.len() + 4..];
-        Some(rest[..rest.find('"')?].to_owned())
-    };
-    let lines = toml.lines().enumerate();
-    lines
-        .filter_map(|(n, line)| {
-            let path = quoted(line, "path")?;
-            let reason = quoted(line, "reason").unwrap_or_default();
-            let rule = reason.split_once(':').map_or(reason.as_str(), |(r, _)| r).to_owned();
-            Some(Entry { line: n + 1, path, rule })
-        })
-        .collect()
+/// The keys of `clippy.toml` whose arrays hold bans.
+const BAN_KEYS: [&str; 3] = ["disallowed-types", "disallowed-methods", "disallowed-macros"];
+
+/// `clippy.toml`'s bans, and a failure for each item of a ban array the check cannot read: not
+/// an inline table, or one without `path` and `reason` as strings, or with any other key
+/// (`allow-invalid` would silence Clippy's warning about a path that resolves to nothing). The
+/// check fails closed: a ban it cannot read is a ban it cannot prove fires.
+pub(crate) fn read_entries(toml: &str) -> (Vec<Entry>, Vec<String>) {
+    let (mut found, mut failures) = (Vec::new(), Vec::new());
+    for key in BAN_KEYS {
+        let Some(start) = toml
+            .lines()
+            .scan(0, |at, line| {
+                let here = *at;
+                *at += line.len() + 1;
+                Some((here, line))
+            })
+            .find(|(_, line)| line.trim_start().starts_with(key) && line.contains('['))
+            .map(|(at, line)| at + line.find('[').unwrap_or(0) + 1)
+        else {
+            continue;
+        };
+        let mut at = start;
+        let bytes = toml.as_bytes();
+        while let Some(&c) = bytes.get(at) {
+            let line = toml[..at].matches('\n').count() + 1;
+            match c {
+                b']' => break,
+                b'#' => at += toml[at..].find('\n').unwrap_or(toml.len() - at),
+                b'{' => {
+                    let end = toml[at..].find('}').map_or(toml.len(), |e| at + e);
+                    match table_entry(&toml[at + 1..end], line) {
+                        Ok(entry) => found.push(entry),
+                        Err(what) => failures.push(format!("clippy.toml:{line}: {what}")),
+                    }
+                    at = end + 1;
+                }
+                c if c.is_ascii_whitespace() || c == b',' => at += 1,
+                _ => {
+                    failures.push(format!(
+                        "clippy.toml:{line}: a {key} item the check cannot read: write it as \
+                         {{ path = \"...\", reason = \"<rule-id>: ...\" }}"
+                    ));
+                    at += toml[at..].find(['\n', ',']).unwrap_or(toml.len() - at);
+                }
+            }
+        }
+    }
+    found.sort_by_key(|e| e.line);
+    (found, failures)
+}
+
+/// The entry an inline table's body gives (`path = "...", reason = "<rule>: ..."`).
+fn table_entry(body: &str, line: usize) -> Result<Entry, String> {
+    let (mut path, mut reason) = (None, None);
+    for pair in body.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+        let (key, value) = pair.split_once('=').ok_or(format!("`{pair}` is not key = value"))?;
+        let slot = match key.trim() {
+            "path" => &mut path,
+            "reason" => &mut reason,
+            other => return Err(format!("the key `{other}` is not allowed in a ban")),
+        };
+        let text = value.trim().strip_prefix('"').and_then(|v| v.strip_suffix('"'));
+        *slot = Some(text.ok_or(format!("`{}` must be a string", key.trim()))?.to_owned());
+    }
+    let path = path.ok_or("a ban without a path")?;
+    let reason = reason.ok_or(format!("`{path}` has no reason, so no rule ID"))?;
+    let rule = reason.split_once(':').map_or(reason.as_str(), |(r, _)| r).to_owned();
+    Ok(Entry { line, path, rule })
 }
 
 /// The diagnostics in Clippy's short output: lines `file:line:col: level: message`.
@@ -180,7 +234,7 @@ pub(crate) fn judge(
                 Some(f) if f.rule.is_none() => {
                     failures.push(format!("look-alike {} is reported: {}", f.name, d.message));
                 }
-                Some(f) => reported.push((f.name.as_str(), rule)),
+                Some(f) => reported.push((f.file.as_str(), f.name.as_str(), rule)),
                 None => failures.push(format!(
                     "{}:{}: a finding outside every marked form: {}",
                     d.file, d.line, d.message
@@ -190,8 +244,11 @@ pub(crate) fn judge(
     }
     for form in forms {
         let Some(rule) = &form.rule else { continue };
-        if !reported.contains(&(form.name.as_str(), rule.as_str())) {
-            failures.push(format!("seeded form {} is not reported under {rule}", form.name));
+        if !reported.contains(&(form.file.as_str(), form.name.as_str(), rule.as_str())) {
+            failures.push(format!(
+                "seeded form {} in {} is not reported under {rule}",
+                form.name, form.file
+            ));
         }
     }
     for e in entries.iter().filter(|e| !fired.contains(e.path.as_str())) {
