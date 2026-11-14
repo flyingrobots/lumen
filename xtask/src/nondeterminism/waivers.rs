@@ -57,15 +57,27 @@ pub(super) fn apply_waivers(text: &str, mut found: Vec<Finding>) -> Vec<Finding>
 
 /// The lint-level attributes in any file that could turn a ban off: `allow` or `warn` of a ban
 /// lint, a renamed ban lint, any level below `deny` of a group that holds one, a lint list built
-/// by a macro (`$`), or an `expect` of a ban lint whose reason does not start with rule IDs and
-/// a colon. They are found as tokens, so also inside `cfg_attr` and macro bodies.
+/// by a macro (`$`), a lint level built by a macro (`#[$level(...)]`), or an `expect` of a ban
+/// lint whose reason does not start with rule IDs and a colon. They are found as tokens, so also
+/// inside `cfg_attr` and macro bodies; a function or method named `allow`, `expect` or `warn`
+/// is not a lint list.
 pub(crate) fn waiver_forms(text: &str) -> Vec<Finding> {
     let toks = tokens(text);
     let mut out = Vec::new();
     for (i, (line, token)) in toks.iter().enumerate() {
+        let at = |k: usize| toks.get(k).map(|(_, t)| t);
+        if built_level(&toks[i..]) {
+            let what = "a lint level built by a macro (#[$level(...)]): write the level out";
+            out.push(Finding { line: *line, rule: "waiver", what: what.to_owned() });
+            continue;
+        }
         let Token::Ident(level) = token else { continue };
-        let opens = matches!(toks.get(i + 1), Some((_, Token::Punct('('))));
-        if !(opens && LOWERING.contains(&level.as_str())) {
+        let opens = at(i + 1) == Some(&Token::Punct('('));
+        // `fn warn(..)` and `x.expect(..)` are a function and a method call, not a lint list.
+        let before = i.checked_sub(1).and_then(at);
+        let named = before == Some(&Token::Punct('.'))
+            || matches!(before, Some(Token::Ident(word)) if word == "fn");
+        if !(opens && LOWERING.contains(&level.as_str())) || named {
             continue;
         }
         if let Some(what) = lint_list_fault(level, &toks[i + 1..]) {
@@ -73,6 +85,24 @@ pub(crate) fn waiver_forms(text: &str) -> Vec<Finding> {
         }
     }
     out
+}
+
+/// Whether `toks` starts an attribute whose first token is a macro metavariable followed by a
+/// parenthesis, `#[$kind(...)]` or `#![$kind(...)]`: its level is chosen by the caller.
+fn built_level(toks: &[Located]) -> bool {
+    let words: Vec<&Token> = toks.iter().take(6).map(|(_, t)| t).collect();
+    let hash = |rest: &[&Token]| {
+        matches!(
+            rest,
+            [Token::Punct('['), Token::Punct('$'), Token::Ident(_), Token::Punct('('), ..]
+        )
+    };
+    match words.as_slice() {
+        [Token::Punct('#'), Token::Punct('!'), rest @ ..] | [Token::Punct('#'), rest @ ..] => {
+            hash(rest)
+        }
+        _ => false,
+    }
 }
 
 /// What is wrong with the lint list after a lowering `level` (`rest` starts at its `(`), if
