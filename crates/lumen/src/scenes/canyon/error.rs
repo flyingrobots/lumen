@@ -4,6 +4,7 @@ use core::fmt;
 
 use bunny_optics::{ShadingError, VertexNormalError};
 
+use super::convex::PoseError;
 use super::heightfield::HeightfieldError;
 use crate::mesh::PlaceError;
 use crate::scene::SceneError;
@@ -18,6 +19,8 @@ use crate::scene::SceneError;
 pub enum CanyonError {
     /// The heightfield generator refused the terrain's spec.
     Heightfield(HeightfieldError),
+    /// A craft's corner did not pose.
+    Craft(PoseError),
     /// The embedded Stanford bunny could not be read.
     Bunny(PlaceError),
     /// The bunny has no faces.
@@ -36,6 +39,7 @@ impl fmt::Display for CanyonError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Heightfield(error) => write!(f, "the terrain's heightfield: {error}"),
+            Self::Craft(error) => write!(f, "a craft could not be posed: {error}"),
             Self::Bunny(error) => write!(f, "the bunny could not be placed: {error}"),
             Self::EmptyBunny => f.write_str("the bunny has no faces"),
             Self::Overflow => f.write_str("a placed coordinate of the bunny overflows"),
@@ -52,6 +56,7 @@ impl std::error::Error for CanyonError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Heightfield(error) => Some(error),
+            Self::Craft(error) => Some(error),
             Self::Bunny(error) => Some(error),
             Self::Normals(error) => Some(error),
             Self::Constant(error) => Some(error),
