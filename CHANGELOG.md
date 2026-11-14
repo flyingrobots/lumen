@@ -8,6 +8,16 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- A ray query says what failed (part of flyingrobots/lumen#21). `TraceError::InconsistentHit`
+  is split into `UnknownPrimitive { primitive, triangles }` and `HitNotRepeatable { primitive,
+  distance }`, and `Display` names Bunny's `TraversalError` kinds in words instead of printing
+  their `Debug` form (`traversal failed: its stack of 64 nodes overflowed`, not `traversal
+  failed: StackOverflow`). `Scene::new` checks once that the tree names only its own
+  triangles (`SceneError::TreeNamesUnknownPrimitive`, which no input reaches), so the traversal
+  callbacks' missing-triangle case, formerly a silent miss, cannot occur for a built scene.
+  `PrimitiveIndex::to_usize` returns `usize`: the conversion is lossless on every target lumen
+  builds for. No pixel, hash, digest or line of the command's output changes.
+
 - Memory, spawn, size and buffer-length failures say what failed (part of
   flyingrobots/lumen#21). `RenderError::OutOfMemory` and `WorkerError::OutOfMemory` carry a
   `Reservation` (the image's bytes or the worker handles) and the allocator's
