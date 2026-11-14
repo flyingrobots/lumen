@@ -48,6 +48,26 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- The compiler layer's own check (part of flyingrobots/lumen#115 and flyingrobots/lumen#119):
+  `cargo run -p xtask -- clippy-bans`, `make clippy-bans`, and a `Clippy bans` step in the
+  `fmt, clippy` job. It runs Clippy on `xtask/clippy-fixture` (a workspace member that compiles
+  only under `--cfg lumen_clippy_fixture`) and fails on a misspelt or unresolved ban (Clippy
+  only warns, so `Path::exits` had passed with exit 0), on a ban that never fires, on a seeded
+  form not reported under its rule, on a reported look-alike, on a second `clippy.toml` or a
+  `.clippy.toml` anywhere (a crate's own replaces the root one) or `CLIPPY_CONF_DIR`, and on a
+  toolchain that moves a ban lint to another lint group. All 53 bans fire on main. The
+  compiler layer's seeded forms, until now a recorded run in ADR 0006, are the fixture's
+  `forms.rs`: ADR 0006's 42 that Clippy catches and six from flyingrobots/lumen#115 (an
+  `extern crate` alias, three raw identifiers, `r#f64`, float arithmetic on an inferred float);
+  each must be reported under its rule.
+- The std part of the ban list is derived from the pinned toolchain's documentation
+  (flyingrobots/lumen#115): `xtask/bans/std-items.txt` holds every public item of `std::env`,
+  `fs`, `process`, `net`, `thread` and `time` and the float methods of `Duration`, as
+  `cargo run -p xtask -- std-items <dir> <version>` reads them from rust-docs (`all.html` and
+  each item's page, for stability). `clippy-bans` fails when an item decided banned has no
+  `clippy.toml` entry, when a new item has no decision, or when the list is for another
+  toolchain; ADR 0006 gives the regeneration commands.
+  toolchain that moves a ban lint to another lint group. All 53 bans fire on main.
 - Run statistics (part of flyingrobots/lumen#29; ADR 0008): `render_traced_with_run` returns
   the render with a `RunStatistics` (the band height, the band count and, per worker, a
   `WorkerStatistics` of bands, rows, pixels and rays), from `render_pixels_by_worker` (`Rendered`,
@@ -588,6 +608,51 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- `clippy.toml` lists every stable function and type of `std::env`, `std::fs`, `std::process`
+  and `std::net` (but the address types) in the pinned toolchain's documentation, so the members
+  flyingrobots/lumen#115 found unlisted are banned in the compiler layer: `std::fs::exists`,
+  `copy` and the rest of `fs`, `env::set_current_dir`, `set_var`, `split_paths`, the process
+  and socket types, `ToSocketAddrs`; also `thread::sleep_ms`, `park_timeout`,
+  `park_timeout_ms`, `SystemTimeError`, the twelve stable float methods of `Duration`
+  (`as_secs_f64`, `mul_f64`, `from_secs_f64`, ...) and Bunny's float bridge (`Scalar`,
+  `Vec2`/`Vec3`, `Ray3`/`Aabb3`/`Sphere3`, the codec's float meshes and vertices, `from_f32`,
+  `try_from_f32`, `into_float`, `try_from_float`): 143 bans, up from 53, each firing on
+  `xtask/clippy-fixture`. The token scan also reports Bunny's float-bridge types by path and
+  names ending `_float`. Main has no new finding in either layer.
+- The nondeterminism scan resolves `extern crate std as host` and chains of renames
+  (`use host::env as e; e::var`), so std members `clippy.toml` does not list are caught by the
+  scan's module rule when reached through an alias: `host::fs::exists`,
+  `host::env::set_current_dir`, `host::env::consts::OS` (part of flyingrobots/lumen#115 and
+  flyingrobots/lumen#119). `std::thread::sleep_ms`, `sleep_until`, `park_timeout` and
+  `park_timeout_ms` are `thread-sleep`. A name with the word `f32` or `f64` (`as_secs_f64`,
+  `mul_f64`, `from_secs_f64`, `to_f32`) is `float-type`, which closes float arithmetic written
+  with no float token. Main has none of these.
+- Nothing but a reasoned `expect` turns a nondeterminism ban off (part of
+  flyingrobots/lumen#119). Scan waivers are taken from comments only, so
+  `// nondeterminism: allow ...` inside a string literal no longer waives a finding on its line.
+  The scan now fails, in every file: `#[allow(clippy::all)]`, `#[allow(clippy::style)]` and
+  `#[allow(clippy::restriction)]` (each silenced a ban in Clippy 0.1.96), and any other lowering
+  of those groups or of `warnings`; `warn` of a ban lint (silenced under `allow(warnings)`); the
+  renamed `disallowed_method` and `disallowed_type`; a lint list built by a macro
+  (`#[allow(clippy::$lint)]`); and, in the core, any attribute built from a macro metavariable.
+  Main has none of these.
+- The gates decide which files are test files, and which are the deterministic core, by the
+  module tree, not by file names (closes flyingrobots/lumen#120, part of flyingrobots/lumen#119):
+  `xtask/src/layout.rs` follows each crate's `mod` declarations as `rustc` resolves them. A
+  module named `tests.rs` or under `src/tests/` without `#[cfg(test)]` is now held to the
+  300-line source limit and scanned; a library module loaded by `#[path]` from `tests/` is core.
+  Both gates fail on `include!` and on a `#[path]` to anything but a `.rs` file they read (a
+  `.inc` file was neither counted nor scanned) and on a `path` inside `cfg_attr`. On main, only
+  `src/png/generated.rs` changes role: it is declared only under `#[cfg(test)]`, so it is a
+  test file and no longer scanned.
+- The file-length gate and the nondeterminism scan read a file as `rustc` lexes it
+  (flyingrobots/lumen#120, part of flyingrobots/lumen#119): a leading shebang line is skipped,
+  not lexed, so `#!/bin/x /*` no longer hides the rest of a file from both gates (a 603-line file
+  had counted as one line and been scanned not at all); a byte-order mark before it is skipped
+  too. Float literals follow the Rust reference's grammar, so `..1.5` and `1e+_3` are floats and
+  `1usize+2`, which the scan reported as a float, is not. Raw identifiers are read without `r#`,
+  so `std::r#env::var` is a `std-env` finding. New tests kill the three mutations of the lexer
+  and the `env!` ban that the review found surviving.
 - The PLY reader's generated-corruption test assumed a 64-bit `usize`: it converted each 64-bit
   generator output to `usize` before reducing it, which fails on `wasm32` and aborted the
   WebAssembly test run (found by the new WebAssembly job, flyingrobots/lumen#23). It now reduces
