@@ -67,8 +67,9 @@ part was built.
   bytes for a scene rendered as its own tracer. (flyingrobots/lumen#19, #38, #39, #57.)
 - **Statistics** (ADR 0008): `Scene::statistics` (triangles by material, bounds, the tree's
   shape, buffer sizes), ray statistics in every `Render` (`RayOutcomes`, `RayStatistics`), and
-  run statistics on request (`render_traced_with_run`, `RunStatistics`), which a render that
-  does not ask for pays nothing for. Traversal statistics wait for flyingrobots/bunny#335.
+  run statistics on request (`render_traced_with_run`, `RunStatistics`), which cost a render
+  that does not ask no counting work and nothing measured above the noise of 14 runs (about
+  1 to 2 %; asking costs about 2.5 % at 18 threads). Traversal statistics wait for flyingrobots/bunny#335.
   (flyingrobots/lumen#29.)
 - **The image hash and the PNG**: `sha256:` and the lowercase hex SHA-256 of the raw RGBA8 bytes
   (ADR 0009), with Lumen's own SHA-256; a PNG encoder with stored deflate blocks, whose bytes are
@@ -84,7 +85,10 @@ part was built.
   macOS, x86-64 Windows and `wasm32-wasip1` under Node, each in both profiles; ADR 0004), `fmt,
   clippy`, and `Gates / cargo-deny` (no registry crate, Bunny's repository only, pinned by
   `rev`), `Gates / cargo-audit`, `Gates / file length`, `Gates / nondeterminism`,
-  `Gates / doc links` and `Signal / coverage`. (flyingrobots/lumen#23, #25.)
+  `Gates / doc links` and `Signal / coverage`. The WebAssembly job runs the library's unit
+  tests, `tests/render.rs`, `library.rs`, `fixed_point/`, `generated.rs`, `smooth.rs` and
+  `statistics.rs`, and the canyon's golden test on its own; the tests that start threads or
+  processes run on the native jobs only. (flyingrobots/lumen#23, #25, #163.)
 - **Nondeterminism bans** (ADR 0006): `clippy.toml` bans the clock, sleeping, the core count,
   thread spawning, hash maps, every stable item of `std::env`, `fs`, `process` and `net`, floats,
   `Duration`'s float methods and Bunny's float bridge, each under an Echo rule ID; `xtask
