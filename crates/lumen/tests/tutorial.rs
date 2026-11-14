@@ -53,14 +53,17 @@ impl Drop for Scratch {
     }
 }
 
-/// The lines of the `text` block that follows the tutorial's `sh` block holding `command`. The
-/// tutorial is read with `\n` line ends, however the checkout wrote them (Git on Windows checks
-/// text out with `\r\n`).
+/// The lines of the `text` block that follows the tutorial's `sh` block holding `command`, before
+/// any other command's block. The tutorial is read with `\n` line ends, however the checkout
+/// wrote them (Git on Windows checks text out with `\r\n`).
 fn shown_after(command: &str) -> Vec<String> {
     let tutorial = TUTORIAL.replace("\r\n", "\n");
     let at = tutorial.find(&format!("```sh\n{command}\n```")).expect("the tutorial runs it");
     let rest = &tutorial[at..];
     let start = rest.find("```text\n").expect("an output block follows") + "```text\n".len();
+    // The output block must be this command's: no other command's block comes between them.
+    let next_command = rest[1..].find("```sh\n").map_or(usize::MAX, |at| at + 1);
+    assert!(start < next_command, "the tutorial shows no output for `{command}`");
     let end = rest[start..].find("```").expect("the block ends");
     rest[start..start + end].lines().map(str::to_owned).collect()
 }
