@@ -4,7 +4,7 @@ use bunny_num::fixed_q32_32::ONE_RAW;
 use bunny_optics::TriangleSurface;
 use bunny_query::TraceTriangle;
 use lumen::scenes::canyon::terrain::{
-    grid_point, terrain_triangles, COLUMNS, ROWS, STRATA, STRATUM,
+    grid_point, stratum_material, terrain_triangles, COLUMNS, ROWS, STRATA, STRATUM,
 };
 
 use crate::support::{heights, steps};
@@ -62,4 +62,20 @@ fn every_cell_is_coloured_by_its_stratum() {
     assert_eq!(STRATA, [0, 1, 0, 2]);
     assert!(used.iter().all(|&n| n > 10_000), "{used:?}");
     assert!(steps(grid_point(0, 0, 0)) == [-40 * 65_536, 0, 16 * 65_536]);
+}
+
+/// Oracle: the stratum rule worked by hand at its band edges (`4 * STRATUM = 393 216`): a sum
+/// of 0 is band 0, 393 216 band 1, 786 432 band 2 and -1 band 3, floored. At the extremes the
+/// sum leaves `i64`: `4 * i64::MAX = 2^65 - 4` over 393 216 floors to `(2^48 - 1) / 3`, which is
+/// 1 modulo 4, and `4 * i64::MIN = -2^65` to `-(2^48 + 2) / 3`, which is 2 modulo 4.
+#[test]
+fn every_band_and_both_extremes_have_a_stratum() {
+    let band = 4 * STRATUM;
+    assert_eq!(band, 393_216);
+    assert_eq!(stratum_material([0; 4]), STRATA[0]);
+    assert_eq!(stratum_material([band, 0, 0, 0]), STRATA[1]);
+    assert_eq!(stratum_material([band, band - 1, 0, 1]), STRATA[2]);
+    assert_eq!(stratum_material([0, 0, -1, 0]), STRATA[3]);
+    assert_eq!(stratum_material([i64::MAX; 4]), STRATA[1]);
+    assert_eq!(stratum_material([i64::MIN; 4]), STRATA[2]);
 }

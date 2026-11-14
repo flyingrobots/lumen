@@ -41,8 +41,9 @@
 //!    rows that is above its height to that height exactly: a level ledge cut into the rock,
 //!    whose edges stay rough where the rock was already lower.
 //!
-//! [`HeightfieldSpec::bounds`] states the range every height lies in. Any change to these steps,
-//! their constants or their order is a new version of the generator.
+//! [`HeightfieldSpec::bounds`] states the range every height of an accepted spec lies in, and
+//! refuses, like [`generate`], a spec outside its ranges. Any change to these steps, their
+//! constants or their order is a new version of the generator.
 
 mod error;
 
@@ -190,9 +191,21 @@ enum Zone {
 impl HeightfieldSpec<'_> {
     /// The centre of row `row` in 256ths of a column (step 4): where the canyon's floor is
     /// centred.
-    #[must_use]
-    pub fn centre_256(&self, row: u32) -> i64 {
-        let spacing = i64::from(self.meander.spacing.max(1));
+    ///
+    /// # Errors
+    ///
+    /// The [`HeightfieldError`] [`generate`] returns for a spec outside its stated ranges: the
+    /// centre is stated only for a spec the generator accepts.
+    pub fn centre_256(&self, row: u32) -> Result<i64, HeightfieldError> {
+        error::check(self)?;
+        Ok(self.accepted_centre_256(row))
+    }
+
+    /// The centre of row `row` of a spec [`error::check`] accepted. Inside its ranges nothing
+    /// overflows: a meander value is below `2^24` in magnitude and its spacing at most `2^12`, so
+    /// the blend is below `2^8 * 2^24 * 2^12 = 2^44`, and `256 * centre` is below `2^40`.
+    fn accepted_centre_256(&self, row: u32) -> i64 {
+        let spacing = i64::from(self.meander.spacing);
         let (b, g) = (i64::from(row) / spacing, i64::from(row) % spacing);
         let value = |b: i64| lattice_value(self.seed, MEANDER_TAG, [0, b], self.meander.amplitude);
         let offset = (256 * (value(b) * (spacing - g) + value(b + 1) * g)).div_euclid(spacing);
@@ -202,8 +215,16 @@ impl HeightfieldSpec<'_> {
     /// The range every height lies in, `[lowest, highest]` grid steps: the profile's range
     /// widened by the largest weighted noise (each layer is within its amplitude, step 2), and
     /// every shelf's height.
-    #[must_use]
-    pub fn bounds(&self) -> [i64; 2] {
+    ///
+    /// # Errors
+    ///
+    /// The [`HeightfieldError`] [`generate`] returns for a spec outside its stated ranges: the
+    /// range is stated only for a spec the generator accepts.
+    pub fn bounds(&self) -> Result<[i64; 2], HeightfieldError> {
+        error::check(self)?;
+        // Inside the checked ranges nothing overflows: at most 2^12 layers of amplitude at most
+        // 2^24 sum below 2^36, a weight of at most 16 makes the spread at most 2^40, and the
+        // rim, at most 2^12 tiers of at most 2^24 steps, at most 2^36.
         let noise: i64 = self.layers.iter().map(|layer| layer.amplitude).sum();
         let weight = self.weights.floor.max(self.weights.wall).max(self.weights.plateau);
         let spread = noise * weight;
@@ -211,7 +232,7 @@ impl HeightfieldSpec<'_> {
         let shelves = self.shelves.iter().map(|shelf| shelf.height);
         let lowest = shelves.clone().fold((-spread).div_euclid(4), i64::min);
         let highest = shelves.fold(rim + spread.div_euclid(4), i64::max);
-        [lowest, highest]
+        Ok([lowest, highest])
     }
 
     /// The carve's profile at `distance` 256ths of a column from the centre line, and its zone
@@ -251,7 +272,7 @@ impl HeightfieldSpec<'_> {
 
     /// The height of vertex `(column, row)` before the shelves (steps 4 to 6).
     fn carved(&self, column: u32, row: u32) -> i64 {
-        let distance = (256 * i64::from(column) - self.centre_256(row)).abs();
+        let distance = (256 * i64::from(column) - self.accepted_centre_256(row)).abs();
         let (profile, zone) = self.profile(distance);
         let weight = match zone {
             Zone::Floor => self.weights.floor,
