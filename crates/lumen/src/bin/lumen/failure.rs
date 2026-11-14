@@ -6,7 +6,7 @@ use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use lumen::{BuiltinSceneError, RenderError, ScheduleError, SizeError};
+use lumen::{BuiltinSceneError, RenderError, ScheduleError, SizeError, StatisticsError};
 
 use crate::cli::{UsageError, USAGE};
 use crate::publish::PublishError;
@@ -24,6 +24,8 @@ pub(crate) enum Failure {
     Size(SizeError),
     /// The chosen scene could not be built: exit code 1.
     Scene(BuiltinSceneError),
+    /// The scene's statistics could not be read: exit code 1.
+    Statistics(StatisticsError),
     /// The render failed: exit code 1.
     Render(RenderError),
     /// The PNG file could not be published, or the destination was refused before the render:
@@ -45,9 +47,11 @@ impl Failure {
     pub(crate) fn exit_code(&self) -> ExitCode {
         match self {
             Self::Usage(_) | Self::Threads(_) | Self::Size(_) => ExitCode::from(2),
-            Self::Scene(_) | Self::Render(_) | Self::Output { .. } | Self::Stdout(_) => {
-                ExitCode::FAILURE
-            }
+            Self::Scene(_)
+            | Self::Statistics(_)
+            | Self::Render(_)
+            | Self::Output { .. }
+            | Self::Stdout(_) => ExitCode::FAILURE,
         }
     }
 }
@@ -60,6 +64,7 @@ impl fmt::Display for Failure {
             Self::Threads(error) => write!(f, "--threads: {error}"),
             Self::Size(error) => write!(f, "{}", RenderError::Size(*error)),
             Self::Scene(error) => write!(f, "{error}"),
+            Self::Statistics(error) => write!(f, "statistics: {error}"),
             Self::Render(error) => write!(f, "{error}"),
             Self::Output { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Stdout(error) => write!(f, "stdout: {error}"),
@@ -74,6 +79,7 @@ impl std::error::Error for Failure {
             Self::Threads(error) => Some(error),
             Self::Size(error) => Some(error),
             Self::Scene(error) => Some(error),
+            Self::Statistics(error) => Some(error),
             Self::Render(error) => Some(error),
             Self::Output { error, .. } => Some(error),
             Self::Stdout(error) => Some(error),
@@ -114,6 +120,11 @@ mod tests {
             (
                 Failure::Output { path: PathBuf::from("out/x.png"), error: png },
                 "out/x.png: disk full".to_owned(),
+                ExitCode::FAILURE,
+            ),
+            (
+                Failure::Statistics(StatisticsError::MalformedTree { node: 3 }),
+                "statistics: the scene's tree is malformed at compact node 3".to_owned(),
                 ExitCode::FAILURE,
             ),
             (

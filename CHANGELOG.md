@@ -21,6 +21,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- `lumen stats [--scene NAME]` (part of flyingrobots/lumen#29; ADR 0008) builds a scene and
+  prints its statistics without rendering: its name, content identity and integrator, then
+  `key value` lines for the triangles by material with each albedo, the bounds, the sun, the sky,
+  the camera placement, the tree's builder, layout and shape, and the bytes of each buffer
+  (README, "Statistics", documents every key). Fixed-point values print in decimal with six
+  places, rounded to nearest with ties away from zero, from their exact raw integers; the mean
+  leaf depth with two places, by integer division. A scene whose statistics cannot be read is a
+  new `Failure::Statistics` (exit code 1), which no built-in scene reaches.
 - Scene statistics (part of flyingrobots/lumen#29; [ADR 0008](docs/adr/0008-statistics.md)):
   `Scene::statistics()` returns a `SceneStatistics`, computed on request from the built scene and
   never on a ray's path: triangles in all, by material, smooth and of zero area; the bounds; the
