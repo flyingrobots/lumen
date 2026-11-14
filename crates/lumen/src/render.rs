@@ -424,6 +424,23 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
 /// # Errors
 ///
 /// Any error of [`render_traced`].
+///
+/// # Examples
+///
+/// The same image on three threads with bands of 4 rows as on one thread:
+///
+/// ```
+/// use lumen::{reference_scene, render, render_scheduled, ImageSize, RenderSettings};
+/// use lumen::{BandRows, Schedule};
+///
+/// let scene = reference_scene()?;
+/// let size = ImageSize::new(16, 9)?;
+/// let settings = RenderSettings::new(1, 0)?;
+/// let schedule = Schedule::new(3, BandRows::new(4)?)?;
+/// let threaded = render_scheduled(&scene, size, settings, schedule)?;
+/// assert_eq!(threaded, render(&scene, size, settings)?);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn render_scheduled(
     scene: &Scene,
     size: ImageSize,

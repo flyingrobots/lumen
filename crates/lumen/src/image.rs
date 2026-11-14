@@ -138,6 +138,22 @@ impl Rgba8Image {
     }
 
     /// `sha256:` and the lowercase hex SHA-256 of the RGBA8 bytes: Geordi's image hash.
+    ///
+    /// # Examples
+    ///
+    /// One opaque black pixel, whose four bytes `00 00 00 ff` have a published SHA-256:
+    ///
+    /// ```
+    /// use lumen::{ImageSize, Rgba8Image};
+    ///
+    /// let image = Rgba8Image::from_bytes(ImageSize::new(1, 1)?, vec![0, 0, 0, 255])
+    ///     .ok_or("four bytes for one pixel")?;
+    /// assert_eq!(
+    ///     image.hash(),
+    ///     "sha256:e3820096cb82366b860b8a4e668453a7aaaf423af03bdf289fa308ea03a79332"
+    /// );
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[must_use]
     pub fn hash(&self) -> String {
         format!("sha256:{}", crate::sha256::hex(&crate::sha256::digest(&self.bytes)))

@@ -9,12 +9,11 @@ use bunny_broadphase::TraversalError;
 use bunny_num::FixedQ32_32;
 use bunny_optics::write_rgba8;
 use bunny_query::TraceRay;
-use lumen::render::{pixel_radiance, trace_path, RayCount, TONE_CURVE};
-use lumen::scene::{Hit, TraceError};
 use lumen::{
-    reference_scene, render, render_pixels, render_scheduled, render_traced, BandRows, ImageSize,
-    RenderError, RenderSettings, Rgba8Image, Scene, Schedule, ScheduleError, Tracer, WorkerError,
-    DEFAULT_BAND_ROWS, MAX_THREADS,
+    pixel_radiance, reference_scene, render, render_pixels, render_scheduled, render_traced,
+    trace_path, BandRows, Hit, ImageSize, RayCount, RenderError, RenderSettings, Rgba8Image, Scene,
+    Schedule, ScheduleError, TraceError, Tracer, WorkerError, DEFAULT_BAND_ROWS, MAX_THREADS,
+    TONE_CURVE,
 };
 
 mod golden;
