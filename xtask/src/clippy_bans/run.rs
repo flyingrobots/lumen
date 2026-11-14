@@ -22,7 +22,15 @@ pub(crate) fn gate(root: &Path) -> io::Result<bool> {
         failures.push("CLIPPY_CONF_DIR is set: it replaces the root clippy.toml".to_owned());
     }
     let toml = fs::read_to_string(root.join("clippy.toml"))?;
-    let fixture = ["clippy", "-p", "lumen-clippy-fixture", "--locked", "--message-format=short"];
+    // `--color=never`: CI sets `CARGO_TERM_COLOR=always`, and coloured lines do not parse.
+    let fixture = [
+        "clippy",
+        "-p",
+        "lumen-clippy-fixture",
+        "--locked",
+        "--color=never",
+        "--message-format=short",
+    ];
     let found = cargo(root, &[&fixture[..], &["--", "--cfg", "lumen_clippy_fixture"]].concat())?;
     let help = cargo(root, &[&fixture[..], &["--", "-W", "help"]].concat())?;
     let mut all_forms = Vec::new();
