@@ -34,6 +34,10 @@ All notable changes to lumen are recorded here. The format follows
   stop after a failure.
 - `docs/adr/0001-tile-scheduling.md`: the concurrency model, why the image cannot depend on it,
   how the first error is chosen, and what was rejected.
+- A dated measurement record, `docs/measurements/2026-11-13-4k-reference.md`
+  (flyingrobots/lumen#5): the 4K reference scene at 16 samples per pixel at `d8deec4`, five runs at
+  18 CPUs with a total of 5.828 to 6.232 seconds, one run at 1 thread (72.457 s) and one at 6 CPUs
+  (13.767 s), the same image hash in all, with its conditions and limits. Linked from the README.
 - A "Performance" section in the README: how to reproduce the thread-scaling, tile and 4K
   measurements through `devrun` with `--cpus` and `--exclusive`.
 
