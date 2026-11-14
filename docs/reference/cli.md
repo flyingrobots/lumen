@@ -1,7 +1,7 @@
 # The `lumen` command
 
 Reference for every command and option of `lumen`, what it prints and how it exits. To render a
-first image step by step, see the [tutorial](../../README.md#render-an-image); for how the
+first image step by step, see the [tutorial](../tutorial.md); for how the
 renderer works, see [how Lumen renders](../explanation.md).
 
 `lumen` is the crate's binary. From a checkout, run it through Cargo, for example

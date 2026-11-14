@@ -1,58 +1,47 @@
 # Lumen
 
-A deterministic ray tracer: a [Geordi](https://github.com/flyingrobots/geordi) runtime built on
-[Bunny](https://github.com/flyingrobots/bunny)'s fixed-point math. The same scene renders to the same bytes on
-every platform CI checks: x86-64 and aarch64 Linux, aarch64 macOS, x86-64 Windows and
-WebAssembly (see [Determinism](#determinism)).
+Lumen is a deterministic ray tracer: a [Geordi](https://github.com/flyingrobots/geordi) runtime
+built on [Bunny](https://github.com/flyingrobots/bunny)'s fixed-point math. It renders a scene to
+the same bytes, and so the same image hash, on every run, at every thread count, and on every
+platform CI checks: x86-64 and aarch64 Linux, aarch64 macOS, x86-64 Windows and WebAssembly
+(`wasm32-wasip1`). Each part of that claim is mapped to the tests that check it in the
+[evidence map](docs/explanation.md#requirements-and-their-evidence).
 
-Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
-
-## What lumen does today
-
-See [how Lumen renders](docs/explanation.md).
+It renders two built-in scenes: a reference scene (a bumpy red sphere, a blue octahedron and the
+Stanford bunny before a stone wall, under a low sun and a pale sky) and Fixed Point, the
+full-resolution bunny in sunglasses at a craps table. Every sample is one diffuse path with a
+shadow ray and one bounce, all in Bunny's integer arithmetic, and the image is written as a PNG.
 
 ## Render an image
 
-See the [tutorial](docs/tutorial.md).
+With a Rust toolchain ([rustup](https://rustup.rs/); the checkout pins Rust 1.96.0):
 
-The command's report, its options and their values, its exit status and how `--out` publishes the
-file are in the [command reference](docs/reference/cli.md).
+```sh
+git clone https://github.com/flyingrobots/lumen
+cd lumen
+cargo run --release -p lumen -- render --out first.png
+```
 
-## Library and command
+The report ends with the image hash, which is the same on every platform CI checks:
 
-The library's public surface, its errors and the command's edge are in the
-[library reference](docs/reference/library.md).
+```text
+image sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23
+png first.png (230699 bytes)
+```
 
-## Statistics
+The [tutorial](docs/tutorial.md) goes on from there.
 
-`lumen stats` and `lumen render --stats`, with every key they print, are in the
-[command reference](docs/reference/cli.md#statistics).
+## Documentation
 
-## The reference scene
-
-The two built-in scenes, `lumen-reference-scene/3` and `lumen-fixed-point-scene/2`, triangle by
-triangle, with their materials, lighting, cameras and tests, are in the
-[scene reference](docs/reference/scenes.md).
-
-## The Fixed Point scene
-
-See the [scene reference](docs/reference/scenes.md#the-fixed-point-scene).
-
-## The integrator
-
-See [the integrator](docs/explanation.md#the-integrator).
-
-## Performance
-
-See [measure performance](docs/how-to/measure-performance.md).
-
-## Determinism
-
-See [determinism](docs/explanation.md#determinism).
-
-## Build and test
-
-See [contributing](CONTRIBUTING.md).
+- Learn: [render your first image](docs/tutorial.md).
+- Look up: [the `lumen` command](docs/reference/cli.md), [the library](docs/reference/library.md),
+  [the built-in scenes](docs/reference/scenes.md).
+- Understand: [how Lumen renders, and why the image is the same everywhere](docs/explanation.md).
+- Measure: [measure render time](docs/how-to/measure-performance.md).
+- Decisions and records: the [documentation index](docs/README.md) lists every ADR and
+  measurement record.
+- Contribute: [contributing](CONTRIBUTING.md) and the [changelog](CHANGELOG.md). Work is tracked
+  in GitHub Issues with `issue-dag/2` frontmatter.
 
 ## License
 

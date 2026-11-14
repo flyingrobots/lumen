@@ -7,7 +7,7 @@ one machine; it never enters an image, a hash or a test.
 ## Prerequisites
 
 - The container runner, `devrun` (`~/git/devcontainers/bin/devrun`), as for every build in this
-  repository ([contributing](../../README.md#build-and-test)). Timings taken outside it are not
+  repository ([contributing](../../CONTRIBUTING.md#make-a-change)). Timings taken outside it are not
   comparable with the records.
 - No other run on the machine: pass `--exclusive`, which waits until no other `devrun` run is
   active and keeps the others out. A timing taken without it is not evidence.
