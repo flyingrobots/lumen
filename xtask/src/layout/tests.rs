@@ -179,3 +179,55 @@ fn a_circular_path_declaration_terminates() {
     assert_eq!(tree.role(LIB), Role::Source);
     assert_eq!(tree.role("crates/lumen/src/t.rs"), Role::Test);
 }
+
+#[test]
+fn a_file_reached_both_normally_and_by_path_resolves_its_children_both_ways() {
+    // rustc gives `shared.rs` reached as `mod shared;` (not `mod.rs`-like) and as
+    // `#[path = "shared.rs"] mod alternate;` (`mod.rs`-like) different directories, so its
+    // `mod child;` is both `shared/child.rs` and `child.rs`; both are compiled into the library.
+    let tree = layout(&[
+        (LIB, "#[path = \"../tests/entry.rs\"]\nmod entry;"),
+        ("crates/lumen/tests/entry.rs", "mod shared;\n#[path = \"shared.rs\"]\nmod alternate;"),
+        ("crates/lumen/tests/shared.rs", "mod child;"),
+        ("crates/lumen/tests/shared/child.rs", ""),
+        ("crates/lumen/tests/child.rs", ""),
+    ]);
+    assert!(tree.is_core("crates/lumen/tests/shared/child.rs"));
+    assert!(tree.is_core("crates/lumen/tests/child.rs"));
+}
+
+#[test]
+fn a_path_on_an_inline_module_is_its_directory_from_the_files_directory() {
+    // rustc_expand's module.rs: an inline module's `#[path]` is its directory, relative to the
+    // current directory, and drops a non-`mod.rs` file's pending `n/`.
+    let tree = layout(&[
+        (LIB, "mod n;"),
+        (
+            "crates/lumen/src/n.rs",
+            "#[cfg(test)]\n#[path = \"support\"]\nmod checks {\n    mod helper;\n}",
+        ),
+        ("crates/lumen/src/support/helper.rs", ""),
+        ("crates/lumen/src/m.rs", ""),
+    ]);
+    assert_eq!(tree.role("crates/lumen/src/support/helper.rs"), Role::Test);
+    let nested = layout(&[
+        (LIB, "mod n;"),
+        (
+            "crates/lumen/src/n.rs",
+            "mod a {\n    #[cfg(test)]\n    #[path = \"x\"]\n    mod b {\n        mod c;\n    }\n}",
+        ),
+        ("crates/lumen/src/n/a/x/c.rs", ""),
+    ]);
+    assert_eq!(nested.role("crates/lumen/src/n/a/x/c.rs"), Role::Test);
+}
+
+#[test]
+fn an_inner_cfg_test_makes_its_inline_module_a_test_module() {
+    let tree = layout(&[
+        (LIB, "mod support {\n    #![cfg(test)]\n    mod helper;\n}\nmod after;"),
+        ("crates/lumen/src/support/helper.rs", ""),
+        ("crates/lumen/src/after.rs", ""),
+    ]);
+    assert_eq!(tree.role("crates/lumen/src/support/helper.rs"), Role::Test);
+    assert_eq!(tree.role("crates/lumen/src/after.rs"), Role::Source);
+}

@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{fs, io};
 
-use super::{ban_groups, diagnostics, entries, forms, judge, std_items, FIXTURE_SRC, STD_ITEMS};
+use super::{
+    ban_groups, diagnostics, forms, judge, read_entries, std_items, FIXTURE_SRC, STD_ITEMS,
+};
 
 /// The check over the repository at `root`; true when it passes. Prints each failure.
 pub(crate) fn gate(root: &Path) -> io::Result<bool> {
@@ -41,7 +43,8 @@ pub(crate) fn gate(root: &Path) -> io::Result<bool> {
             all_forms.extend(forms(&format!("{FIXTURE_SRC}/{name}"), &fs::read_to_string(&path)?));
         }
     }
-    let entries = entries(&toml);
+    let (entries, unreadable) = read_entries(&toml);
+    failures.extend(unreadable);
     failures.extend(judge(&entries, &all_forms, &diagnostics(&found), &ban_groups(&help)));
     let list = fs::read_to_string(root.join(STD_ITEMS))?;
     let toolchain = fs::read_to_string(root.join("rust-toolchain.toml"))?;
