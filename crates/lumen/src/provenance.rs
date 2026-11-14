@@ -136,7 +136,8 @@ impl RenderProvenance {
     #[must_use]
     pub fn fields(&self) -> [(&'static str, ProvenanceValue); PROVENANCE_FIELDS] {
         use ProvenanceValue::{Content, Identity, Number, Size, Unnamed};
-        let pixels = u64::from(self.size.width()) * u64::from(self.size.height());
+        // Two `u32` factors always fit a `u64` product, so this never saturates.
+        let pixels = u64::from(self.size.width()).saturating_mul(u64::from(self.size.height()));
         [
             ("scene", self.name.map_or(Unnamed, Identity)),
             ("integrator", Identity(INTEGRATOR_ID)),
