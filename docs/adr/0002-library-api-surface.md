@@ -37,7 +37,10 @@ second front end would have had to rebuild that list by hand.
   `fields()` returns thirteen named fields in a stable order: `scene`, `integrator`, `shading`,
   `sampler`, `tone`, `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed`, `bounces`,
   `scene-content` (the last added by flyingrobots/lumen#38). New fields go at the end. Equal
-  provenance means equal RGBA8 bytes.
+  provenance means equal RGBA8 bytes. The `integrator` and `shading` fields are the two
+  identities taken from the scene: `lumen-smooth-diffuse-path/1` and
+  `bunny-diffuse-shading/1+bunny-smooth-shading/1+bunny-smooth-normal/1` for a scene with vertex
+  normals, `lumen-diffuse-path/1` and `bunny-diffuse-shading/1` otherwise (ADR 0007).
 - **The errors can grow.** `SceneError` and `TraceError` (flyingrobots/lumen#20), `RenderError`,
   `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneBuffer`, `PlaceError`,
   `FixedPointError`, `BuiltinSceneError` and `PngError` (flyingrobots/lumen#21) are
