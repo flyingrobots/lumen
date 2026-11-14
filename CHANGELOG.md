@@ -8,6 +8,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- Generated tests for the claims that quantify over inputs (flyingrobots/lumen#24): a pixel's
+  result is the same for random evaluation orders, permutations and merge trees of its samples
+  (`tests/generated.rs`, also run on `wasm32-wasip1`); SHA-256 gives the digest of the whole for
+  random splits of random inputs of boundary and random lengths, and the published digests for
+  random splits of the published vectors (`src/sha256.rs`); PNG files of 73 random and
+  block-boundary sizes decode to the same pixels, have the length `png_len` gives and the block
+  count the format defines (`src/png/generated.rs`). The seeded generator is
+  `tests/generator/mod.rs`. Each test was shown to fail on a seeded mutation of the code it checks.
 - `Scene::new` refuses an invalid camera placement (part of flyingrobots/lumen#20): it builds
   Bunny's `PinholeCamera` at a one-pixel image before anything is allocated and returns the new
   `SceneError::Camera(CameraError)` for a position outside the trace domain, a tangent not in

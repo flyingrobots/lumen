@@ -42,6 +42,18 @@ python3 $D lumen ~/git/lumen --worktree --fetch --export reference.png --out "$(
   bash -c 'mkdir -p /scratch/out && cargo run --locked --release -q -p lumen -- render --width 640 --height 360 --samples 64 --out /scratch/out/reference.png'
 ```
 
+### Generated tests
+
+A claim that quantifies over inputs (any split of a SHA-256 input, any image size, any order of a
+pixel's samples) is tested over generated inputs from `crates/lumen/tests/generator/mod.rs`, a
+seeded SplitMix64 (Lumen takes no property-testing crate). Each test fixes its seed, derives one
+seed per case, prints the seed and the case seed in every failure message, keeps to a bounded
+number of cases and states its oracle and run time in its comment. Replay one case with
+`Gen::new(case_seed)`. A new generated test is shown to fail on a seeded mutation of the code it
+checks before it merges. The tests are `tests/generated.rs`, `src/sha256.rs` and
+`src/png/generated.rs`; the first also runs in the WebAssembly job, so none may assume a 64-bit
+`usize`.
+
 `--fetch` is needed on the first run in a worktree. The command prints:
 
 ```text
@@ -762,8 +774,20 @@ are installed, from the repository root:
 rustup target add wasm32-wasip1
 CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/scripts/wasi-run.mjs" \
   cargo test --locked -p lumen --target wasm32-wasip1 --lib --test render --test library \
-    --test fixed_point
+    --test fixed_point --test generated
 ```
+
+### Generated tests
+
+A claim that quantifies over inputs (any split of a SHA-256 input, any image size, any order of a
+pixel's samples) is tested over generated inputs from `crates/lumen/tests/generator/mod.rs`, a
+seeded SplitMix64 (Lumen takes no property-testing crate). Each test fixes its seed, derives one
+seed per case, prints the seed and the case seed in every failure message, keeps to a bounded
+number of cases and states its oracle and run time in its comment. Replay one case with
+`Gen::new(case_seed)`. A new generated test is shown to fail on a seeded mutation of the code it
+checks before it merges. The tests are `tests/generated.rs`, `src/sha256.rs` and
+`src/png/generated.rs`; the first also runs in the WebAssembly job, so none may assume a 64-bit
+`usize`.
 
 `--fetch` is needed on the first run in a worktree; it downloads the Bunny git dependency, and
 later phases build offline. Use `--commit HEAD` instead of `--worktree` for evidence pinned to a
