@@ -93,3 +93,38 @@ fn id_views_colour_by_primitive_and_by_material() {
     assert_eq!(centre(&other, View::PrimitiveId), id_colour(PRIMITIVE_SEED, 0), "same triangle");
     assert_ne!(id_colour(MATERIAL_SEED, 1), id_colour(MATERIAL_SEED, 3));
 }
+
+/// The colour of pixel `(x, y)` of a 128 by 128 `view` of `scene`.
+fn at_128(scene: &Scene, view: View, x: u32, y: u32) -> [u8; 4] {
+    let image = render_view(scene, view, size(128, 128), one_sample(), schedule(4, 3))
+        .expect("renders")
+        .image;
+    rgba(&image, x, y)
+}
+
+/// Oracle: the edge rule by hand on the camera's geometry. At 128 by 128 with a 90-degree view
+/// from 8 units, a pixel centre in row `r` meets the plane z = -4 at `y = 8 - (r + 0.5) / 8`.
+/// Row 64 meets it at y = -0.0625, where v2's weight is `(y + 1) / 4 = 0.23`: fill. Row 71 meets
+/// it at y = -0.9375, a weight of `1 / 64`, below `1 / 32`: an edge. Row 73 is below the
+/// triangle: a miss.
+#[test]
+fn wireframe_draws_edges_where_a_weight_is_below_a_thirty_second() {
+    let scene = two_triangles(0);
+    assert_eq!(at_128(&scene, View::Wireframe, 64, 64), [64, 64, 64, 255], "fill");
+    assert_eq!(at_128(&scene, View::Wireframe, 64, 71), [255, 255, 255, 255], "edge");
+    assert_eq!(at_128(&scene, View::Wireframe, 64, 73), [0, 0, 0, 255], "miss");
+}
+
+/// Oracle: Bunny's search by hand (`tests/traversal_counts.rs` derives the same counts). With
+/// triangle 0 alone and the small one behind it, the tree is a root and two leaves; the centre
+/// ray tests the root's box and both children's, visits the near leaf (one triangle test), hits
+/// it at 8, and skips the far leaf: 3 + 1 = 4, `(0, 0, 8)` on the ramp. A ray that misses the
+/// scene's box makes one box test: `(0, 0, 2)`.
+#[test]
+fn bvh_cost_shows_the_camera_rays_box_and_triangle_tests() {
+    let scene = deep_scene();
+    let shape = scene.statistics().expect("statistics").tree;
+    assert_eq!((shape.interior_nodes, shape.leaves), (1, 2), "a root and two leaves");
+    assert_eq!(at_128(&scene, View::BvhCost, 64, 64), [0, 0, 8, 255], "4 tests");
+    assert_eq!(at_128(&scene, View::BvhCost, 0, 0), [0, 0, 2, 255], "1 box test");
+}

@@ -330,6 +330,6 @@ fn view_selects_a_debug_view_of_one_sample() {
     assert_eq!(
         unknown.to_string(),
         "--view: unknown view \"Normals\"; the views are lit, normals, shading-normals, depth, \
-         primitive-id, material-id"
+         primitive-id, material-id, wireframe, bvh-cost"
     );
 }

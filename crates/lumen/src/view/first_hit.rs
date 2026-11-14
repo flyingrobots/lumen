@@ -9,7 +9,7 @@ use super::{colour, View};
 use crate::image::ImageSize;
 use crate::render::{render_error, render_scheduled, PathError, RayOutcomes, RayStatistics};
 use crate::render::{Render, RenderError, RenderSettings};
-use crate::scene::{Hit, Scene, Tracer};
+use crate::scene::{CountingTracer, Hit, Scene, Tracer};
 use crate::schedule::Schedule;
 use crate::workers::render_pixels;
 
@@ -67,6 +67,16 @@ impl Frame<'_> {
         let point = PixelSample::centre(x, y);
         let ray = self.camera.ray(point).ok_or(PathError::NoRay { sample: 0, point })?;
         let mut found = RayOutcomes::default();
+        if self.view == View::BvhCost {
+            // Bunny's counted search: the same answer as the uncounted one, and its work.
+            let (hit, counts) = self.scene.closest_counted(&ray)?;
+            if hit.is_some() {
+                found.camera_hits = 1;
+            } else {
+                found.camera_misses = 1;
+            }
+            return Ok((colour::cost(&counts), found));
+        }
         let Some(hit) = self.scene.closest(&ray)? else {
             found.camera_misses = 1;
             return Ok((colour::MISS, found));
@@ -82,7 +92,9 @@ impl Frame<'_> {
         let geometric = surface.frame().normal();
         let front = hit.hit.front_face;
         Ok(match self.view {
-            View::Lit | View::Normals => colour::normal(geometric, front),
+            // `render_view` renders `Lit` itself and `pixel` colours `BvhCost` from the search's
+            // counts, so neither reaches here; the normal is their harmless answer.
+            View::Lit | View::BvhCost | View::Normals => colour::normal(geometric, front),
             View::ShadingNormals => match interpolated(scene, hit) {
                 Shading::Interpolated(normal) => colour::normal(normal.into_inner(), front),
                 Shading::Cancelled => colour::NO_NORMAL,
@@ -90,6 +102,7 @@ impl Frame<'_> {
             },
             View::Depth => colour::depth(hit.hit.distance.raw(), self.depth_range),
             View::PrimitiveId => colour::id(hashed(PRIMITIVE_ID_SEED, primitive.get())),
+            View::Wireframe => colour::wire(&hit.hit.barycentric_numerators()),
             View::MaterialId => {
                 let triangles = scene.triangles().len();
                 let material = scene

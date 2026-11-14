@@ -1,6 +1,8 @@
 //! The colours of the views: integer maps from a Bunny value to RGBA8, and nothing else.
 
+use bunny_broadphase::TraversalCounts;
 use bunny_linalg::FixedVec3;
+use bunny_query::BarycentricNumerators;
 
 /// A pixel no ray hit: black, which no normal colour reaches.
 pub(super) const MISS: [u8; 4] = [0, 0, 0, 255];
@@ -46,6 +48,54 @@ pub(super) fn id(bits: u64) -> [u8; 4] {
         u8::try_from(ID_FLOOR + byte * (256 - ID_FLOOR) / 256).unwrap_or(u8::MAX)
     };
     [channel(0), channel(8), channel(16), 255]
+}
+
+/// A wireframe edge: white.
+const WIRE: [u8; 4] = [255, 255, 255, 255];
+
+/// A wireframe face's fill: dark grey.
+const FILL: [u8; 4] = [64, 64, 64, 255];
+
+/// The edge band: a hit is on an edge when its smallest barycentric weight is below
+/// `1 / WIRE_FRACTION` of the triangle's.
+const WIRE_FRACTION: i128 = 32;
+
+/// Whether the hit with exact barycentric numerators `n` is on an edge: its smallest weight's
+/// numerator (`det - u - v`, `u` or `v`) times [`WIRE_FRACTION`] is below `det`. Exact: each is
+/// below `2^117`, so the product is below `2^122`.
+pub(super) fn is_edge(n: &BarycentricNumerators) -> bool {
+    let (u, v, det) = (n.u(), n.v(), n.det());
+    let smallest = (det - u - v).min(u).min(v);
+    smallest * WIRE_FRACTION < det
+}
+
+/// The wireframe colour of a hit: white on an edge, dark grey inside.
+pub(super) fn wire(n: &BarycentricNumerators) -> [u8; 4] {
+    if is_edge(n) {
+        WIRE
+    } else {
+        FILL
+    }
+}
+
+/// The traversal work the heat ramp reaches white at: box tests plus primitive tests.
+pub(super) const COST_WHITE: u64 = 512;
+
+/// The camera ray's work (`box_tests + primitive_tests`) through the heat ramp: with
+/// `t = min(cost, 512)`, `s = t / 128` and `f = 2 * (t % 128)`, black to blue (`s = 0`:
+/// `(0, 0, f)`), blue to red (`(f, 0, 255 - f)`), red to yellow (`(255, f, 0)`), yellow to white
+/// (`(255, 255, f)`), and white from 512 on.
+pub(super) fn cost(counts: &TraversalCounts) -> [u8; 4] {
+    let work = counts.box_tests.saturating_add(counts.primitive_tests).min(COST_WHITE);
+    let byte = |n: u64| u8::try_from(n.min(255)).unwrap_or(u8::MAX);
+    let f = byte(2 * (work % 128));
+    match work / 128 {
+        0 => [0, 0, f, 255],
+        1 => [f, 0, 255 - f, 255],
+        2 => [255, f, 0, 255],
+        3 => [255, 255, f, 255],
+        _ => [255, 255, 255, 255],
+    }
 }
 
 /// One component of a unit normal (raw Q32.32, at most `2^32 + 1` in magnitude) as a channel:
@@ -99,6 +149,45 @@ mod tests {
         assert_eq!(depth(8 * ONE, range), [16, 16, 16, 255]);
         assert_eq!(depth(80 * ONE, range), [16, 16, 16, 255], "beyond the range");
         assert_eq!(depth(1, range)[0], 255, "one raw unit floors to no change");
+    }
+
+    fn numerators(u: i128, v: i128, det: i128) -> BarycentricNumerators {
+        BarycentricNumerators::new(u, v, det).expect("on the triangle")
+    }
+
+    /// Oracle: the rule `min * 32 < det` by hand, at its boundary on each weight.
+    #[test]
+    fn an_edge_is_a_weight_below_a_thirty_second() {
+        let det = 3200;
+        assert!(!is_edge(&numerators(1000, 1000, det)), "centre-ish: fill");
+        assert!(!is_edge(&numerators(100, 1000, det)), "u = det / 32 exactly: fill");
+        assert!(is_edge(&numerators(99, 1000, det)), "u one below: edge");
+        assert!(is_edge(&numerators(1000, 99, det)), "v one below: edge");
+        assert!(is_edge(&numerators(1000, 2101, det)), "w0 = 99: edge");
+        assert!(!is_edge(&numerators(1000, 2100, det)), "w0 = 100: fill");
+        assert_eq!(wire(&numerators(0, 0, det)), WIRE);
+        assert_eq!(wire(&numerators(1000, 1000, det)), FILL);
+    }
+
+    fn work(boxes: u64, primitives: u64) -> [u8; 4] {
+        let mut counts = TraversalCounts::default();
+        (counts.box_tests, counts.primitive_tests) = (boxes, primitives);
+        cost(&counts)
+    }
+
+    /// Oracle: the ramp by hand at each segment's start and inside it.
+    #[test]
+    fn the_cost_ramp_runs_black_blue_red_yellow_white() {
+        assert_eq!(work(0, 0), [0, 0, 0, 255]);
+        assert_eq!(work(1, 1), [0, 0, 4, 255]);
+        assert_eq!(work(127, 0), [0, 0, 254, 255]);
+        assert_eq!(work(100, 28), [0, 0, 255, 255], "128: blue");
+        assert_eq!(work(200, 0), [144, 0, 111, 255], "200: f = 144");
+        assert_eq!(work(256, 0), [255, 0, 0, 255], "256: red");
+        assert_eq!(work(384, 0), [255, 255, 0, 255], "384: yellow");
+        assert_eq!(work(511, 0), [255, 255, 254, 255]);
+        assert_eq!(work(512, 0), [255, 255, 255, 255], "512: white");
+        assert_eq!(work(90_000, 9), [255, 255, 255, 255], "beyond: white");
     }
 
     /// Oracle: `32 + byte * 224 / 256` per byte, by hand.

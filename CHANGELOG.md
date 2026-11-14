@@ -8,6 +8,13 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Debug views `wireframe` and `bvh-cost` (part of flyingrobots/lumen#16, ADR 0010). `wireframe`
+  draws an edge where the hit's smallest barycentric weight is below 1/32, from Bunny's exact
+  numerators. `bvh-cost` shows the camera ray's box tests plus primitive tests from Bunny's
+  counted search through a fixed heat ramp (black, blue, red, yellow, white at 512). Golden
+  hashes for every scene, hand-derived pixels (fill, edge and miss rows; the costs of 4 and 1
+  tests), and four mutations each failing a test.
+
 - Debug views `depth`, `primitive-id` and `material-id` (part of flyingrobots/lumen#16, ADR
   0010): the first hit's distance as grey over the scene's own range (white at the eye, grey 16
   at the largest one-axis distance from the eye to a corner of the scene's box), and a stable

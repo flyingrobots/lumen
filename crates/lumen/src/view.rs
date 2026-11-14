@@ -39,6 +39,12 @@ pub enum View {
     /// A stable colour per material, from a hash of the triangle's material index
     /// ([`MATERIAL_ID_VIEW_ID`]).
     MaterialId,
+    /// Triangle edges, from the hit's barycentric numerators, over a flat fill
+    /// ([`WIREFRAME_VIEW_ID`]).
+    Wireframe,
+    /// The camera ray's traversal work, box tests plus primitive tests, as a heat ramp
+    /// ([`BVH_COST_VIEW_ID`]).
+    BvhCost,
 }
 
 /// The identity of [`View::Normals`].
@@ -56,15 +62,23 @@ pub const PRIMITIVE_ID_VIEW_ID: &str = "lumen-view-primitive-id/1";
 /// The identity of [`View::MaterialId`].
 pub const MATERIAL_ID_VIEW_ID: &str = "lumen-view-material-id/1";
 
+/// The identity of [`View::Wireframe`].
+pub const WIREFRAME_VIEW_ID: &str = "lumen-view-wireframe/1";
+
+/// The identity of [`View::BvhCost`].
+pub const BVH_COST_VIEW_ID: &str = "lumen-view-bvh-cost/1";
+
 impl View {
     /// Every view, in the order the command lists them.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::Lit,
         Self::Normals,
         Self::ShadingNormals,
         Self::Depth,
         Self::PrimitiveId,
         Self::MaterialId,
+        Self::Wireframe,
+        Self::BvhCost,
     ];
 
     /// The name `--view` accepts.
@@ -77,6 +91,8 @@ impl View {
             Self::Depth => "depth",
             Self::PrimitiveId => "primitive-id",
             Self::MaterialId => "material-id",
+            Self::Wireframe => "wireframe",
+            Self::BvhCost => "bvh-cost",
         }
     }
 
@@ -91,17 +107,25 @@ impl View {
             Self::Depth => Some(DEPTH_VIEW_ID),
             Self::PrimitiveId => Some(PRIMITIVE_ID_VIEW_ID),
             Self::MaterialId => Some(MATERIAL_ID_VIEW_ID),
+            Self::Wireframe => Some(WIREFRAME_VIEW_ID),
+            Self::BvhCost => Some(BVH_COST_VIEW_ID),
         }
     }
 
     /// The Bunny shading contracts the view's pixels use, the provenance's `shading` field;
-    /// `None` for [`View::Lit`] (the integrator's). The normals, depth and ID views use none
+    /// `None` for [`View::Lit`] (the integrator's). The normals, depth, ID, wireframe and BVH-cost
+    /// views use none
     /// (the ID views' colours come from Bunny's `bunny-sample-hash/1`, a hash, not shading).
     #[must_use]
     pub const fn shading_id(self) -> Option<&'static str> {
         match self {
             Self::Lit => None,
-            Self::Normals | Self::Depth | Self::PrimitiveId | Self::MaterialId => Some("none"),
+            Self::Normals
+            | Self::Depth
+            | Self::PrimitiveId
+            | Self::MaterialId
+            | Self::Wireframe
+            | Self::BvhCost => Some("none"),
             Self::ShadingNormals => Some(bunny_optics::SMOOTH_NORMAL_ID),
         }
     }

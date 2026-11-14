@@ -32,7 +32,7 @@ OPEN    ?= 1
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 RUN   = python3 $(DEVRUN) lumen $(ROOT) --worktree --fetch --cpus $(CPUS) --memory $(MEMORY)
 
-VIEWS  ?= normals shading-normals depth primitive-id material-id
+VIEWS  ?= normals shading-normals depth primitive-id material-id wireframe bvh-cost
 
 .PHONY: views help demo reference fixed-point canyon 4k 4k-fixed-point 4k-canyon test nondeterminism clippy-bans check-devrun
 
