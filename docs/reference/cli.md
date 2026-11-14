@@ -213,8 +213,9 @@ The library computes the counts (`Scene::statistics()`, a `SceneStatistics`) and
 formats them; nothing is counted while a ray is traced, and nothing in the scene changes.
 `Scene::statistics` is described in the [README](../../README.md#library-and-command);
 [ADR 0008](../adr/0008-statistics.md) records what is counted and why it cannot change a pixel.
-Traversal statistics (nodes visited and triangles tested per ray) are decided there and wait for
-flyingrobots/bunny#335.
+Traversal statistics (nodes visited and triangles tested per ray) are decided there; the library
+has the counted queries (`CountingTracer`, over Bunny's counted searches), and neither command
+prints traversal lines yet.
 
 ### `lumen render --stats`
 
