@@ -18,7 +18,7 @@ Every item `crates/lumen/src/lib.rs` re-exports, by what it is for; a test
 | Family | Items |
 | --- | --- |
 | Scenes | `Scene`, `SceneSpec`, `CameraPlacement`, `Lighting`, `SceneError`, `SceneBuffer`, `SceneContentId`, `SCENE_CONTENT_ENCODING`, `PrimitiveIndex` |
-| Ray queries | `Tracer`, `Hit`, `TraceError`, `FAR` |
+| Ray queries | `Tracer`, `CountingTracer` (the same queries, also returning Bunny's `TraversalCounts`), `Hit`, `TraceError`, `FAR` |
 | Built-in scenes | `BuiltinScene`, `BuiltinSceneError`, `ParseSceneError`, `reference_scene`, `REFERENCE_SCENE_ID`, `fixed_point_scene`, `FIXED_POINT_SCENE_ID`, `canyon_scene`, `CANYON_SCENE_ID`, and the modules `reference`, `scenes` and `mesh` |
 | Image size and pixels | `ImageSize`, `SizeError`, `MAX_DIMENSION`, `MAX_PIXELS`, `Rgba8Image`, `LengthError` |
 | Settings and the integrator | `RenderSettings`, `SettingsError`, `Integrator`, `INTEGRATOR_ID`, `SMOOTH_INTEGRATOR_ID`, `SMOOTH_SHADING_IDS`, `TONE_CURVE`, `CAMERA_PAIR`, `BOUNCE_PAIR`, `MAX_BOUNCES`, `trace_path`, `pixel_radiance`, `PathSample`, `PathError`, `RayCount` |
@@ -38,7 +38,7 @@ named scenes with their identities that the command's `--scene` reads), renderin
 its `hash`), its provenance (`RenderProvenance`), a scene's statistics (`Scene::statistics`,
 `SceneStatistics`, below), PNG encoding into any writer (`write_png`,
 `png_len`), and the integrator's parts for custom tracers (`trace_path`, `pixel_radiance`,
-`Tracer`, `Hit`, `PrimitiveIndex`, `TraceError`, `PathError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
+`Tracer`, `CountingTracer`, `Hit`, `PrimitiveIndex`, `TraceError`, `PathError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
 content, as `reference` is) and `lumen::mesh` (the mesh types they use) are public modules. The SHA-256 and PNG checksum code
 is internal. [ADR 0002](../adr/0002-library-api-surface.md) records the rule.
 

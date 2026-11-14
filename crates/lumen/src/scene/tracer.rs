@@ -1,9 +1,10 @@
-//! The ray-query port: the two queries a path needs ([`Tracer`]), the hit it reports ([`Hit`])
-//! and why a query failed ([`TraceError`]).
+//! The ray-query port: the two queries a path needs ([`Tracer`]), the same two with the work of
+//! the traversal that answered them ([`CountingTracer`]), the hit they report ([`Hit`]) and why a
+//! query failed ([`TraceError`]).
 
 use core::fmt;
 
-use bunny_broadphase::TraversalError;
+use bunny_broadphase::{TraversalCounts, TraversalError};
 use bunny_num::FixedQ32_32;
 use bunny_query::{TraceRay, TriangleHit};
 
@@ -96,4 +97,32 @@ pub trait Tracer {
     ///
     /// A [`TraceError`] if the traversal fails.
     fn occluded(&self, ray: &TraceRay, t_max: FixedQ32_32) -> Result<bool, TraceError>;
+}
+
+/// The two queries of [`Tracer`], each also returning the work of the traversal that answered it:
+/// Bunny's `TraversalCounts` (box tests, boxes entered, popped entries skipped, interior and leaf
+/// visits, primitive tests and the deepest stack). [`Scene`](super::Scene) implements it with
+/// Bunny's counted compact searches, which return the same answers as the uncounted ones. A
+/// render asks for it only when traversal statistics are asked for (ADR 0008), so the render
+/// that does not ask calls the uncounted searches.
+pub trait CountingTracer: Tracer {
+    /// [`Tracer::closest`], and the work of the search. The answer is the same as `closest`'s.
+    ///
+    /// # Errors
+    ///
+    /// The [`TraceError`] `closest` returns; a failed search reports no counts.
+    fn closest_counted(&self, ray: &TraceRay)
+        -> Result<(Option<Hit>, TraversalCounts), TraceError>;
+
+    /// [`Tracer::occluded`], and the work of the search up to its first hit. The answer is the
+    /// same as `occluded`'s.
+    ///
+    /// # Errors
+    ///
+    /// The [`TraceError`] `occluded` returns; a failed search reports no counts.
+    fn occluded_counted(
+        &self,
+        ray: &TraceRay,
+        t_max: FixedQ32_32,
+    ) -> Result<(bool, TraversalCounts), TraceError>;
 }
