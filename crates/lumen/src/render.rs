@@ -19,7 +19,7 @@ use bunny_optics::{
 use crate::image::{ImageSize, Rgba8Image};
 use crate::scene::{Scene, Tracer};
 use crate::schedule::Schedule;
-use crate::workers::{render_pixels_by_worker, WorkerError};
+use crate::workers::{render_pixels, render_pixels_by_worker, WorkerError};
 
 mod error;
 mod run;
@@ -416,7 +416,13 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
     settings: RenderSettings,
     schedule: Schedule,
 ) -> Result<Render, RenderError> {
-    render_traced_with_run(scene, tracer, size, settings, schedule).map(|(render, _)| render)
+    let camera = scene.camera().camera(size.width(), size.height())?;
+    let frame = Frame { scene, tracer, camera: &camera, settings };
+    // `render_pixels` counts nothing per worker: the render pays nothing for run statistics.
+    let (image, statistics) =
+        render_pixels(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y))
+            .map_err(render_error)?;
+    Ok(Render { image, rays: statistics.count(), statistics })
 }
 
 /// [`render_traced`], with what each worker did ([`RunStatistics`]): information about the run,
@@ -434,26 +440,28 @@ pub fn render_traced_with_run<T: Tracer + Sync + ?Sized>(
 ) -> Result<(Render, RunStatistics), RenderError> {
     let camera = scene.camera().camera(size.width(), size.height())?;
     let frame = Frame { scene, tracer, camera: &camera, settings };
-    match render_pixels_by_worker(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y)) {
-        Ok(done) => {
-            let statistics = done.total;
-            let render = Render { image: done.image, rays: statistics.count(), statistics };
-            let run = RunStatistics {
-                band_rows: schedule.band().get(),
-                bands: schedule.band().count(size),
-                workers: done
-                    .workers
-                    .iter()
-                    .map(|w| WorkerStatistics::of(w, size.width()))
-                    .collect(),
-            };
-            Ok((render, run))
+    let done =
+        render_pixels_by_worker(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y))
+            .map_err(render_error)?;
+    let statistics = done.total;
+    let render = Render { image: done.image, rays: statistics.count(), statistics };
+    let run = RunStatistics {
+        band_rows: schedule.band().get(),
+        bands: schedule.band().count(size),
+        workers: done.workers.iter().map(|w| WorkerStatistics::of(w, size.width())).collect(),
+    };
+    Ok((render, run))
+}
+
+/// A worker's failure as the render's: the pixel and its path error, or the reservation or
+/// spawn that failed.
+fn render_error(error: WorkerError<PathError>) -> RenderError {
+    match error {
+        WorkerError::Pixel { x, y, error } => RenderError::Pixel { x, y, error },
+        WorkerError::OutOfMemory { reserving, error } => {
+            RenderError::OutOfMemory { reserving, error }
         }
-        Err(WorkerError::Pixel { x, y, error }) => Err(RenderError::Pixel { x, y, error }),
-        Err(WorkerError::OutOfMemory { reserving, error }) => {
-            Err(RenderError::OutOfMemory { reserving, error })
-        }
-        Err(WorkerError::Spawn(error)) => Err(RenderError::Spawn(error)),
+        WorkerError::Spawn(error) => RenderError::Spawn(error),
     }
 }
 

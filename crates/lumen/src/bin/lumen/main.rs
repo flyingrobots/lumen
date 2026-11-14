@@ -26,8 +26,8 @@ use std::time::Instant;
 use cli::{Command, Detail, USAGE};
 use failure::Failure;
 use lumen::{
-    render_traced_with_run, BuiltinScene, ImageSize, RenderProvenance, RenderSettings, Schedule,
-    BUNNY_REV, MAX_THREADS,
+    render_scheduled, render_traced_with_run, BuiltinScene, ImageSize, RenderProvenance,
+    RenderSettings, Schedule, BUNNY_REV, MAX_THREADS,
 };
 use publish::Disk;
 use report::{Report, Times};
@@ -97,9 +97,20 @@ fn run(
             .map_err(|error| Failure::Output { path: path.to_path_buf(), error })?;
     }
     let built = started.elapsed();
-    let (render, run) =
-        render_traced_with_run(&built_scene, &built_scene, size, settings, schedule)
-            .map_err(Failure::Render)?;
+    // Only `--stats` asks the workers to count: without it the render pays nothing for run
+    // statistics (ADR 0008).
+    let (render, run) = match detail {
+        Detail::Report => (
+            render_scheduled(&built_scene, size, settings, schedule).map_err(Failure::Render)?,
+            None,
+        ),
+        Detail::Statistics => {
+            let (render, run) =
+                render_traced_with_run(&built_scene, &built_scene, size, settings, schedule)
+                    .map_err(Failure::Render)?;
+            (render, Some(run))
+        }
+    };
     let rendered = started.elapsed();
     let image = &render.image;
     let hash = image.hash();
@@ -141,7 +152,7 @@ fn run(
     if let Some(scene_statistics) = statistics {
         stats::write_scene_block(&mut stdout, &built_scene, &scene_statistics)
             .and_then(|()| stats::write_rays(&mut stdout, &render.statistics, settings))
-            .and_then(|()| stats::write_run(&mut stdout, &run))
+            .and_then(|()| run.as_ref().map_or(Ok(()), |run| stats::write_run(&mut stdout, run)))
             .map_err(Failure::Stdout)?;
     }
     Ok(())
