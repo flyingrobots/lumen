@@ -11,8 +11,19 @@ use lumen::{fixed_point_scene, PrimitiveIndex, FIXED_POINT_SCENE_ID};
 
 use crate::support::{content, part, steps};
 
+/// The full bunny's faces that have zero area once scaled, floored and turned, and are dropped:
+/// measured, and listed by `placed_bunny`.
+const BUNNY_DROPPED: usize = 0;
+
+/// The bunny's triangles in the scene: Stanford's 69 451 faces less those dropped.
+const BUNNY_KEPT: usize = 69_451 - BUNNY_DROPPED;
+
+/// Every triangle of the scene: 2 124 for the table, the puck, the dice and the glasses, and the
+/// bunny's.
+const TRIANGLES: usize = 2_124 + BUNNY_KEPT;
+
 /// Oracle: counts derived by hand from the construction: two triangles per rectangle, 24-gon
-/// discs, 12-sided pips, and the bunny's 3 851 faces with none dropped.
+/// discs, 12-sided pips, and the full bunny's 69 451 faces less those dropped.
 #[test]
 fn every_part_has_its_derived_triangle_count() {
     let content = content();
@@ -31,8 +42,9 @@ fn every_part_has_its_derived_triangle_count() {
         (PartKind::Numeral(9), 6 * 2),
         (PartKind::Numeral(10), 8 * 2),
         (PartKind::PuckFace, 24),
-        // The ring on top and the side: 24 quads each.
-        (PartKind::PuckRim, 2 * 24 * 2),
+        // The thin ring on top and the white side: 24 quads each.
+        (PartKind::PuckRim, 24 * 2),
+        (PartKind::PuckSide, 24 * 2),
         // O: four rectangles; N: two and a diagonal.
         (PartKind::PuckLetters, 7 * 2),
         // 6 faces, 12 chamfers, 8 corners; 24 pips of 12 top and 24 wall triangles.
@@ -40,7 +52,7 @@ fn every_part_has_its_derived_triangle_count() {
         (PartKind::Pips(Die::Left), 24 * 36),
         (PartKind::DieBody(Die::Right), 44),
         (PartKind::Pips(Die::Right), 864),
-        (PartKind::Bunny, 3851),
+        (PartKind::Bunny, BUNNY_KEPT),
         (PartKind::Lens(Side::Left), 8),
         (PartKind::Lens(Side::Right), 8),
         (PartKind::Bridge, 2),
@@ -51,8 +63,8 @@ fn every_part_has_its_derived_triangle_count() {
         assert_eq!(count(kind), n, "{kind:?}");
     }
     assert_eq!(content.parts.len(), expected.len());
-    assert_eq!(content.triangles.len(), 5975);
-    assert_eq!(placed_bunny().expect("places").dropped, Vec::<usize>::new());
+    assert_eq!(content.triangles.len(), TRIANGLES);
+    assert_eq!(placed_bunny().expect("places").dropped.len(), BUNNY_DROPPED);
     // The parts cover every primitive once, in order, each with its part's material.
     let mut next = 0;
     for part in &content.parts {
@@ -70,7 +82,7 @@ fn every_part_has_its_derived_triangle_count() {
 #[test]
 fn every_triangle_is_in_the_trace_domain_and_none_is_degenerate() {
     let scene = fixed_point_scene().expect("the scene builds");
-    assert_eq!(FIXED_POINT_SCENE_ID, "lumen-fixed-point-scene/1");
+    assert_eq!(FIXED_POINT_SCENE_ID, "lumen-fixed-point-scene/2");
     let mut coordinates = 0_u64;
     for (primitive, triangle) in scene.triangles().iter().enumerate() {
         for vertex in triangle.vertices() {
@@ -82,7 +94,7 @@ fn every_triangle_is_in_the_trace_domain_and_none_is_degenerate() {
         let index = PrimitiveIndex::new(u32::try_from(primitive).expect("fits"));
         assert!(scene.surface(index).is_some(), "primitive {primitive} is degenerate");
     }
-    assert_eq!(coordinates, 5975 * 9);
+    assert_eq!(coordinates, u64::try_from(TRIANGLES * 9).expect("fits"));
     assert_eq!(fixed_point_materials().expect("valid").len(), 8);
     assert_eq!(Material::Shades.index(), 7);
     let lighting = fixed_point_lighting().expect("valid");
@@ -96,8 +108,12 @@ fn every_triangle_is_in_the_trace_domain_and_none_is_degenerate() {
 #[test]
 fn the_dice_the_puck_and_the_bunny_rest_on_the_felt() {
     let content = content();
-    let resting =
-        [PartKind::Pips(Die::Left), PartKind::Pips(Die::Right), PartKind::PuckRim, PartKind::Bunny];
+    let resting = [
+        PartKind::Pips(Die::Left),
+        PartKind::Pips(Die::Right),
+        PartKind::PuckSide,
+        PartKind::Bunny,
+    ];
     for kind in resting {
         let vertices: Vec<_> = part(&content, kind).into_iter().flatten().collect();
         let lowest = vertices.iter().map(|p| p[1]).min();
@@ -117,4 +133,29 @@ fn the_dice_the_puck_and_the_bunny_rest_on_the_felt() {
     let nose =
         bunny.triangles.iter().flatten().map(|&v| steps(v)).find(|p| (p[0], p[2]) == NOSE_XZ);
     assert!(nose.is_some(), "no bunny vertex at the nose position");
+}
+
+/// Oracle: Bunny's `VertexNormals` rule, that a vertex named by no face, or whose faces cancel,
+/// has no normal. Every bunny triangle has a normal at all three vertices (so none of the
+/// 1 113 vertices no face names, which get `None`, is referred to), every other part has none,
+/// and the scene counts exactly the bunny's triangles as smooth.
+#[test]
+fn every_bunny_vertex_has_a_normal_and_nothing_else_does() {
+    let content = content();
+    assert_eq!(content.normals.len(), content.triangles.len());
+    let mut smooth = 0;
+    for part in &content.parts {
+        for normals in &content.normals[part.primitives.clone()] {
+            if part.kind == PartKind::Bunny {
+                assert!(normals.iter().all(Option::is_some), "a bunny vertex has no normal");
+                smooth += 1;
+            } else {
+                assert_eq!(normals, &[None; 3], "{:?} has a vertex normal", part.kind);
+            }
+        }
+    }
+    assert_eq!(smooth, BUNNY_KEPT);
+    let scene = fixed_point_scene().expect("builds");
+    assert_eq!(scene.smooth_triangles(), BUNNY_KEPT);
+    assert_eq!(lumen::Integrator::for_scene(&scene).id(), "lumen-smooth-diffuse-path/1");
 }

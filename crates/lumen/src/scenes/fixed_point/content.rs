@@ -3,7 +3,7 @@
 
 use core::ops::Range;
 
-use bunny_linalg::FixedVec3;
+use bunny_linalg::{FixedUnitVec3, FixedVec3};
 
 use super::solids::StepTriangle;
 use crate::vertex_grid::at;
@@ -39,8 +39,10 @@ pub enum PartKind {
     Numeral(u8),
     /// The puck's white top.
     PuckFace,
-    /// The puck's black rim and side.
+    /// The puck's black rim: the thin ring around its face.
     PuckRim,
+    /// The puck's white side.
+    PuckSide,
     /// The black letters "ON" on the puck.
     PuckLetters,
     /// A die's red body.
@@ -103,7 +105,7 @@ impl PartKind {
             Self::Felt => Material::Felt,
             Self::Rail => Material::Leather,
             Self::LayoutLines | Self::Numeral(_) => Material::Chalk,
-            Self::PuckFace | Self::Pips(_) => Material::White,
+            Self::PuckFace | Self::PuckSide | Self::Pips(_) => Material::White,
             Self::PuckRim | Self::PuckLetters => Material::Black,
             Self::DieBody(_) => Material::DieRed,
             Self::Bunny => Material::Fur,
@@ -128,6 +130,9 @@ pub struct FixedPointContent {
     pub triangles: Vec<[FixedVec3; 3]>,
     /// The material index of each triangle.
     pub material_of: Vec<u32>,
+    /// The vertex normals of each triangle: the bunny's from Bunny's `VertexNormals`, none for
+    /// every other part, which is shaded flat.
+    pub normals: Vec<[Option<FixedUnitVec3>; 3]>,
     /// The parts, in primitive order, covering every triangle once.
     pub parts: Vec<Part>,
 }
@@ -150,10 +155,22 @@ impl FixedPointContent {
         self.push(kind, &placed);
     }
 
-    /// Appends a part made of placed triangles.
+    /// Appends a part made of placed triangles, shaded flat.
     pub(crate) fn push(&mut self, kind: PartKind, triangles: &[[FixedVec3; 3]]) {
+        self.push_smooth(kind, triangles, &vec![[None; 3]; triangles.len()]);
+    }
+
+    /// Appends a part made of placed triangles with their vertex normals, one entry each.
+    pub(crate) fn push_smooth(
+        &mut self,
+        kind: PartKind,
+        triangles: &[[FixedVec3; 3]],
+        normals: &[[Option<FixedUnitVec3>; 3]],
+    ) {
         let first = self.triangles.len();
         self.triangles.extend_from_slice(triangles);
+        self.normals.extend_from_slice(normals);
+        self.normals.resize(self.triangles.len(), [None; 3]);
         let material = kind.material().index();
         self.material_of.resize(self.triangles.len(), material);
         self.parts.push(Part { kind, primitives: first..self.triangles.len() });
