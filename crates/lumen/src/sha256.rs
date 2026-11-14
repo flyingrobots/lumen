@@ -201,6 +201,7 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::generator::Gen;
 
     fn sha(bytes: &[u8]) -> String {
         hex(&digest(bytes))
@@ -248,6 +249,79 @@ mod tests {
             hasher.update(&message[..split]);
             hasher.update(&message[split..]);
             assert_eq!(hasher.finish(), whole, "split at {split}");
+        }
+    }
+
+    /// Hashes `message` cut at up to eight random points (repeated points and empty pieces
+    /// included), one `update` per piece.
+    fn split_digest(message: &[u8], rng: &mut Gen) -> [u8; 32] {
+        let cuts = rng.below(9);
+        let mut points: Vec<usize> = (0..cuts)
+            .map(|_| usize::try_from(rng.below(message.len() as u64 + 1)).expect("a length"))
+            .collect();
+        points.sort_unstable();
+        let mut hasher = Sha256::new();
+        let mut at = 0;
+        for point in points {
+            hasher.update(&message[at..point]);
+            at = point;
+        }
+        hasher.update(&message[at..]);
+        hasher.finish()
+    }
+
+    const SPLIT_SEED: u64 = 0x5EED_5A25_6001;
+
+    /// For all splits: the digest of the pieces is the published digest. Oracle: the vectors of
+    /// FIPS 180-2 Appendix B (the empty message, "abc", the 448-bit message, and one million
+    /// "a"), as in `published_test_vectors`. 40 cases each, 4 for the million; under 0.1 s in the test profile.
+    #[test]
+    fn any_split_of_a_published_vector_gives_its_published_digest() {
+        let million = vec![b'a'; 1_000_000];
+        let vectors: [(&[u8], usize, &str); 4] = [
+            (b"", 40, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+            (b"abc", 40, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+            (
+                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+                40,
+                "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
+            ),
+            (&million, 4, "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"),
+        ];
+        for (message, cases, want) in vectors {
+            for case in 0..cases as u64 {
+                let case_seed = Gen::case_seed(SPLIT_SEED, case);
+                let got = hex(&split_digest(message, &mut Gen::new(case_seed)));
+                assert_eq!(
+                    got,
+                    want,
+                    "{} bytes, seed {SPLIT_SEED:#x}, case {case}, case seed {case_seed:#x}",
+                    message.len()
+                );
+            }
+        }
+    }
+
+    /// For all inputs and all splits: the digest of the pieces is the digest of the whole.
+    /// Lengths are random up to 1 000 bytes or at a padding or block boundary (55 to 57, 63 to
+    /// 65, 119 to 121 and 127 to 129 bytes, and none). 300 cases; under 0.1 s in the test profile.
+    #[test]
+    fn any_split_of_any_input_gives_the_digest_of_the_whole() {
+        const EDGES: [u64; 13] = [0, 1, 55, 56, 57, 63, 64, 65, 119, 120, 121, 127, 128];
+        for case in 0..300 {
+            let case_seed = Gen::case_seed(SPLIT_SEED, case);
+            let mut rng = Gen::new(case_seed);
+            let len = if case % 2 == 0 {
+                EDGES[usize::try_from(rng.below(EDGES.len() as u64)).expect("an index")]
+            } else {
+                rng.below(1_001)
+            };
+            let message = rng.bytes(usize::try_from(len).expect("a length"));
+            assert_eq!(
+                split_digest(&message, &mut rng),
+                digest(&message),
+                "{len} bytes, seed {SPLIT_SEED:#x}, case {case}, case seed {case_seed:#x}"
+            );
         }
     }
 }
