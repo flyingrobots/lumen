@@ -113,10 +113,38 @@ accumulator takes at most 1024. The seed is `0..=4294967295`, the domain of Geor
 settings. Arguments are read as OS strings, so an output path that is not valid Unicode is
 used as given; a non-Unicode number or option is refused like any other bad argument. Bad
 arguments exit with status 2 and the usage text; a refused size or an unwritable output path
-exits with status 1 and a message. The output file is written after the render, so nothing is
-written when the render fails. `--threads` is `1..=256` (0 and anything larger are refused with
+exits with status 1 and a message. The output file is published atomically (see below), so
+`--out` names either the complete new PNG or what it was before, whether the render or the write
+fails. `--threads` is `1..=256` (0 and anything larger are refused with
 status 2); `--band-rows` is the number of whole image rows a worker takes at a time, at least 1
 (0 is refused with status 2). There is no `--tile` option any more; it is refused as unknown.
+
+### The output file
+
+`--out FILE` is checked before the render starts: a destination that cannot be written (its
+directory is missing or not writable, it is a directory or a link to one, it is a read-only file,
+it has no file name) is refused with status 1 and a message that names the path, without computing a
+pixel and without leaving anything behind.
+
+The PNG is then written to a temporary file in the destination's directory, `.NAME.lumen-PID-N.tmp`
+(created exclusively, so it never replaces another file and two runs never share one), flushed,
+`sync_all`ed and renamed over the destination. If any step fails the temporary file is removed and
+the destination is exactly as it was: a failed write (a full disk, a size limit) no longer leaves a
+truncated file or destroys the one that was there. A temporary file that cannot be removed is
+named in the error.
+
+- Durability: on Unix the directory is synced after the rename, so the new name survives a crash;
+  if that sync fails the error says the file was written but its directory could not be synced (the
+  destination holds the new image). On Windows the standard library cannot sync a directory and
+  none is attempted; the replacement itself is a single rename.
+- An existing regular file is replaced by a new one: it gets the default mode for new files, not
+  the old file's mode, owner or hard links. A read-only file is refused rather than replaced.
+- A symbolic link is replaced itself; the file it pointed to is not written (this differs from
+  writing through the link). A link to a directory is refused like a directory; a dangling link is
+  replaced.
+- A device, pipe or socket (`--out /dev/null`) is written in place, without a temporary file or
+  a sync, since replacing it would destroy the node.
+- The rename needs write permission on the directory, not on the old file.
 
 The PNG is uncompressed (see below), so it is about four bytes per pixel: 922 266 bytes at
 640 by 360, and 33 188 430 bytes (about 33 MB) at 3840 by 2160.
@@ -356,7 +384,8 @@ seed; at most one bounce) follow Geordi's ray-traced scene profile, so that load
 (flyingrobots/lumen#6) maps onto them. `SceneSpec` also carries optional vertex normals
 (`normals`: empty, or three `Option<FixedUnitVec3>` per triangle, the input of Bunny's
 `SmoothHit::new`), which `Scene::new` checks for count (`SceneError::NormalCount`) and keeps
-(`Scene::vertex_normals`); they enter the content identity. No integrator reads them yet.
+(`Scene::vertex_normals`); they enter the content identity, and a scene with any of them is
+shaded smooth ([below](#smooth-shading-lumen-smooth-diffuse-path1)).
 
 ## The Fixed Point scene
 
@@ -498,6 +527,37 @@ the per-pixel function holds no shared mutable state, so rendering bands on thre
 change of schedule only.
 
 Geordi's integrator identity is meant to pin this same composition.
+
+### Smooth shading: `lumen-smooth-diffuse-path/1`
+
+A scene whose `SceneSpec::normals` gives at least one triangle a vertex normal is rendered by
+`lumen-smooth-diffuse-path/1` (`SMOOTH_INTEGRATOR_ID`), and its provenance says so: the
+`integrator` field is that name (`Integrator::for_scene`) and the `shading` field is
+`bunny-diffuse-shading/1+bunny-smooth-shading/1+bunny-smooth-normal/1` (`SMOOTH_SHADING_IDS`, the
+Bunny contracts its paths use, in the order they apply). Any other scene, the two built-in ones
+included, keeps `lumen-diffuse-path/1`, `bunny-diffuse-shading/1` and its bytes. The smooth integrator is the same composition with one
+change, made per triangle: at a hit on a triangle with a vertex normal, steps 3 to 5 use Bunny's
+`bunny-smooth-shading/1`:
+
+- `h = SmoothHit::new(surface_hit, hit.barycentric_numerators(), normals)`, which interpolates
+  the three vertex normals at the exact hit point (`smooth_normal`, `bunny-smooth-normal/1`) and
+  turns the shading frame to the arrival side, or keeps the geometric frame when a normal is
+  missing or the interpolation is along the surface;
+- `D = h.light_sample(sun)`: the same shadow ray and side test, with the cosine taken against
+  the shading normal;
+- `h.bounce(sampler.point(i, 1))`: a ray around the shading normal, or, when that direction is
+  at or below the geometric surface, no ray at all and `B = 0`. Bunny does this on purpose (a
+  ray along or under the surface would hit its own neighbourhood), and it darkens grazing,
+  strongly tilted shading normals slightly; the ray count then has one closest-hit query fewer.
+
+A triangle without a vertex normal in the same scene is shaded flat, exactly as by
+`lumen-diffuse-path/1`. Lumen adds no arithmetic. [ADR 0007](docs/adr/0007-smooth-shading.md)
+records why the integrator's name follows the scene and why the normals are stored per triangle.
+`tests/smooth.rs` checks the choice of integrator, that the reference scene given its own face
+normals at every vertex renders its flat bytes, a hand-derived value (a pyramid whose normals all
+point at a sun straight above reflects `0.5 * FRAC_1_PI` rounded to even, raw 683 565 276, at every hit), the rejected bounce
+(no ray, zero radiance), and every sample of a scene that mixes a smooth octahedron and a flat
+floor against Bunny's documented steps composed in the test over brute-force queries.
 
 ### Traversal
 
