@@ -362,3 +362,49 @@ fn a_scene_refusal_chains_from_the_built_in_scene_to_bunny() {
         "the Fixed Point scene: the scene could not be built: invalid camera placement: "
     ));
 }
+
+/// A writer that accepts `room` bytes, then refuses every write as a full disk would.
+struct Full {
+    room: usize,
+}
+
+impl std::io::Write for Full {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.room == 0 {
+            return Err(io::Error::new(io::ErrorKind::StorageFull, "no space left"));
+        }
+        let taken = bytes.len().min(self.room);
+        self.room -= taken;
+        Ok(taken)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Oracle: the constructed writer. A writer that fails part way, in the header or in the pixel
+/// data, gives `PngError::Write` with the writer's error, its kind and text kept, as the source.
+/// The encoder's own length checks are built directly for their text: no image reaches them,
+/// which `src/png/generated.rs` counts over 73 sizes.
+#[test]
+fn a_failed_png_write_keeps_the_writers_error() {
+    use lumen::{write_png, PngError, Rgba8Image};
+    let size = ImageSize::new(64, 300).expect("valid size");
+    let image = Rgba8Image::from_bytes(size, vec![7; size.byte_len()]).expect("right length");
+    for room in [0, 20, 70_000] {
+        let refused = write_png(&mut Full { room }, &image).expect_err("the writer is full");
+        let PngError::Write(error) = &refused else { panic!("{refused:?}") };
+        assert_eq!(error.kind(), io::ErrorKind::StorageFull, "after {room} bytes");
+        assert_eq!(refused.to_string(), "no space left");
+        assert_eq!(refused.source().map(ToString::to_string).as_deref(), Some("no space left"));
+    }
+    let chunk = PngError::ChunkTooLong { length: 1 << 33 };
+    assert_eq!(
+        chunk.to_string(),
+        "a PNG chunk of 8589934592 bytes is longer than its length field holds"
+    );
+    let block = PngError::BlockTooLong { length: 65_536 };
+    assert_eq!(block.to_string(), "a stored block of 65536 bytes is longer than 65535");
+    assert!(chunk.source().is_none() && block.source().is_none());
+}

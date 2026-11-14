@@ -40,7 +40,8 @@ second front end would have had to rebuild that list by hand.
   provenance means equal RGBA8 bytes.
 - **The errors can grow.** `SceneError` and `TraceError` (flyingrobots/lumen#20), `RenderError`,
   `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneBuffer`, `PlaceError`,
-  `FixedPointError` and `BuiltinSceneError` (flyingrobots/lumen#21) are `#[non_exhaustive]`: a
+  `FixedPointError`, `BuiltinSceneError` and `PngError` (flyingrobots/lumen#21) are
+  `#[non_exhaustive]`: a
   new reason to refuse a scene, a mesh, a ray, a path, a size or a render is not a breaking
   change, and a `match` on any of them outside the crate needs a wildcard arm. Code outside the crate may still construct their
   variants, as a custom `Tracer` does.

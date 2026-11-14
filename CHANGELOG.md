@@ -8,6 +8,12 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- `write_png` returns `Result<(), PngError>` instead of an `io::Result` built partly from
+  strings (part of flyingrobots/lumen#21). `PngError::Write` keeps the writer's `io::Error` as
+  its `source()` and its text; the encoder's own length checks are `ChunkTooLong { length }`
+  and `BlockTooLong { length }`, which no image reaches. `PngError` is `#[non_exhaustive]`. The
+  command prints the same messages.
+
 - A refused scene says what was wrong (part of flyingrobots/lumen#21). `SceneError` variants
   carry their values: `TooManyTriangles { triangles, limit }`, `OutsideTraceDomain { primitive,
   vertex, point }` (lumen repeats Bunny's documented check of `TraceTriangle::new` after a

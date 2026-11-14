@@ -205,13 +205,16 @@ through the public API and checks its values and its chain.
   no text) or the room given when `build_bvh_sah` refuses (`BvhBuild`); and the camera, mesh and
   constant errors as sources. `FixedPointError`, `BuiltinSceneError` and `PlaceError` return
   theirs from `source()` too.
+- **A PNG** (`write_png`) fails with a `PngError`: `Write` with the writer's `io::Error` as its
+  source and its text; `ChunkTooLong` and `BlockTooLong` carry the length for the encoder's own
+  length checks, which no image reaches.
 - **A size** is refused with a `SizeError` carrying the width and height (or the pixel count)
   asked for and the limit; a buffer of the wrong length for `Rgba8Image::from_bytes` with a
   `LengthError` carrying both lengths. `ImageSize::byte_len` cannot fail: `ImageSize::new`
   computes and checks it once, at most `2^29`.
 - `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
-  `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError` and `BuiltinSceneError` are
-  `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
+  `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `BuiltinSceneError` and
+  `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
 
 ## The reference scene
 
