@@ -11,12 +11,13 @@
 //! anything else fail ([`Layout::failures`]): `include!`, a `#[path]` naming a file the gates do
 //! not read, and a `path` inside `cfg_attr`, whose file cannot be known without the `cfg`.
 
+mod parse;
 #[cfg(test)]
 mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::nondeterminism::tokens::{tokens, Located, Token};
+use parse::parse;
 
 /// The `lumen` library's crate root, whose non-test modules are the deterministic core.
 pub(crate) const LIBRARY: &str = "crates/lumen/src/lib.rs";
@@ -58,8 +59,18 @@ struct Decl {
     test: bool,
     /// Its `#[path]`, if it has one.
     path: Option<String>,
-    /// The directories the enclosing inline modules add (their names, or their `#[path]`s).
-    inline: Vec<String>,
+    /// The enclosing inline modules, outermost first.
+    inline: Vec<InlineDir>,
+}
+
+/// What an enclosing inline module does to the directory of the modules it declares: adds its
+/// name, or, with a `#[path]`, is that directory, relative to the current one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum InlineDir {
+    /// `mod name { ... }`.
+    Name(String),
+    /// `#[path = "dir"] mod name { ... }`.
+    Path(String),
 }
 
 /// A file's declarations, whether it is `#![cfg(test)]`, and its failures by line.
@@ -76,7 +87,12 @@ impl Layout {
     pub(crate) fn new(files: &[(String, String)], crates: &[String]) -> Self {
         let text: BTreeMap<&str, &str> =
             files.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
-        let mut walk = Walk { text: &text, roles: BTreeMap::new(), failures: BTreeSet::new() };
+        let mut walk = Walk {
+            text: &text,
+            roles: BTreeMap::new(),
+            seen: BTreeMap::new(),
+            failures: BTreeSet::new(),
+        };
         walk.visit(LIBRARY, Role::Source, true);
         let library = walk.roles.iter().filter(|(_, r)| **r == Role::Source);
         let library: BTreeSet<String> = library.map(|(p, _)| p.clone()).collect();
@@ -134,6 +150,9 @@ fn root_role(krate: &str, path: &str) -> Option<Role> {
 struct Walk<'a> {
     text: &'a BTreeMap<&'a str, &'a str>,
     roles: BTreeMap<String, Role>,
+    /// Each file and directory ownership visited, with the highest role it was visited as: a
+    /// file reached both as `mod.rs`-like and not resolves its children both ways.
+    seen: BTreeMap<(String, bool), Role>,
     failures: BTreeSet<Failure>,
 }
 
@@ -143,10 +162,13 @@ impl Walk<'_> {
         let Some(text) = self.text.get(path) else { return };
         let parsed = parse(text);
         let role = if parsed.test { Role::Test } else { role };
-        if self.roles.get(path).is_some_and(|known| *known >= role) {
+        let key = (path.to_owned(), mod_rs);
+        if self.seen.get(&key).is_some_and(|known| *known >= role) {
             return;
         }
-        self.roles.insert(path.to_owned(), role);
+        self.seen.insert(key, role);
+        let known = self.roles.get(path).copied();
+        self.roles.insert(path.to_owned(), known.map_or(role, |k| k.max(role)));
         for (line, what) in parsed.failures {
             self.failures.insert(Failure { path: path.to_owned(), line, what });
         }
@@ -172,22 +194,33 @@ impl Walk<'_> {
         decl: &Decl,
     ) -> Result<Option<(String, bool)>, String> {
         let parent = path.rsplit_once('/').map_or("", |(dir, _)| dir);
-        let own = if mod_rs {
-            parent.to_owned()
-        } else {
-            format!("{parent}/{}", path.rsplit('/').next().unwrap_or("").trim_end_matches(".rs"))
-        };
-        let inline =
-            |base: &str| decl.inline.iter().fold(base.to_owned(), |dir, d| format!("{dir}/{d}"));
+        let stem = path.rsplit('/').next().unwrap_or("").trim_end_matches(".rs");
+        // rustc_expand's module.rs: a non-`mod.rs` file's own directory (`n/` for `n.rs`) is
+        // pending until a named inline module or an out-of-line `mod` needs it; an inline
+        // module's `#[path]` replaces the directory and drops the pending part.
+        let (mut dir, mut pending) = (parent.to_owned(), (!mod_rs).then_some(stem));
+        for inline in &decl.inline {
+            match inline {
+                InlineDir::Name(name) => {
+                    if let Some(own) = pending.take() {
+                        dir = format!("{dir}/{own}");
+                    }
+                    dir = format!("{dir}/{name}");
+                }
+                InlineDir::Path(to) => {
+                    dir = normalize(&format!("{dir}/{to}")).unwrap_or_default();
+                    pending = None;
+                }
+            }
+        }
         if let Some(target) = &decl.path {
-            let base = if decl.inline.is_empty() { parent.to_owned() } else { inline(&own) };
-            let file = normalize(&format!("{base}/{target}"));
+            let file = normalize(&format!("{dir}/{target}"));
             return match file {
                 Some(f) if self.text.contains_key(f.as_str()) => Ok(Some((f, true))),
                 _ => Err(format!("#[path = \"{target}\"] loads a file the gates do not read: make it a .rs module under crates/ or xtask/")),
             };
         }
-        let base = inline(&own);
+        let base = pending.map_or_else(|| dir.clone(), |own| format!("{dir}/{own}"));
         let flat = format!("{base}/{}.rs", decl.name);
         let nested = format!("{base}/{}/mod.rs", decl.name);
         Ok([(flat, false), (nested, true)]
@@ -209,152 +242,4 @@ fn normalize(path: &str) -> Option<String> {
         }
     }
     Some(parts.join("/"))
-}
-
-/// The `mod` declarations of `text`, whether it is `#![cfg(test)]`, and its `include!`s and
-/// `cfg_attr` paths.
-fn parse(text: &str) -> Parsed {
-    let toks = tokens(text);
-    let mut parser = Parser {
-        toks: &toks,
-        parsed: Parsed { test: false, decls: Vec::new(), failures: Vec::new() },
-        depth: 0,
-        inline: Vec::new(),
-        attrs: Vec::new(),
-    };
-    let mut i = 0;
-    while i < toks.len() {
-        i = parser.step(i);
-    }
-    parser.parsed
-}
-
-/// The parser's state: the brace depth, the enclosing inline modules (their directory, the depth
-/// their body opens at, and whether they are under `cfg(test)`), and the outer attributes read
-/// for the next item.
-struct Parser<'t> {
-    toks: &'t [Located],
-    parsed: Parsed,
-    depth: usize,
-    inline: Vec<(String, usize, bool)>,
-    attrs: Vec<&'t [Located]>,
-}
-
-impl Parser<'_> {
-    /// Reads the token at `i`; the index of the next token to read.
-    fn step(&mut self, i: usize) -> usize {
-        let toks = self.toks;
-        let next = |k: usize| toks.get(i + k).map(|(_, t)| t);
-        let inner = next(1) == Some(&Token::Punct('!'));
-        let open = i + 1 + usize::from(inner);
-        let (line, token) = &toks[i];
-        if *token == Token::Punct('#') && toks.get(open).map(|(_, t)| t) == Some(&Token::Punct('['))
-        {
-            return self.attribute(*line, inner, open);
-        }
-        let pending = core::mem::take(&mut self.attrs);
-        match token {
-            Token::Ident(word) if word == "include" && next(1) == Some(&Token::Punct('!')) => {
-                self.parsed.failures.push((
-                    *line,
-                    "include! reads a file the gates do not read as a module: make it a module"
-                        .to_owned(),
-                ));
-            }
-            Token::Ident(word) if word == "pub" => {
-                self.attrs = pending;
-                if next(1) == Some(&Token::Punct('(')) {
-                    return closing(toks, i + 1) + 1;
-                }
-            }
-            Token::Ident(word) if word == "mod" => self.module(i, &pending),
-            Token::Punct('{') => self.depth += 1,
-            Token::Punct('}') => {
-                if self.inline.last().is_some_and(|(_, d, _)| *d == self.depth) {
-                    self.inline.pop();
-                }
-                self.depth = self.depth.saturating_sub(1);
-            }
-            _ => {}
-        }
-        i + 1
-    }
-
-    /// Reads the attribute whose `[` is at `open`; the index after its `]`.
-    fn attribute(&mut self, line: usize, inner: bool, open: usize) -> usize {
-        let end = closing(self.toks, open);
-        let attr = &self.toks[(open + 1).min(end)..end];
-        check_attribute(line, attr, &mut self.parsed.failures);
-        if inner && is_cfg_test(attr) && self.depth == 0 {
-            self.parsed.test = true;
-        } else if !inner {
-            self.attrs.push(attr);
-        }
-        end + 1
-    }
-
-    /// Reads the `mod` item at `i`, with the outer attributes `pending` read before it.
-    fn module(&mut self, i: usize, pending: &[&[Located]]) {
-        let next = |k: usize| self.toks.get(i + k).map(|(_, t)| t);
-        let Some(Token::Ident(name)) = next(1) else { return };
-        let under_test =
-            pending.iter().any(|a| is_cfg_test(a)) || self.inline.iter().any(|(_, _, t)| *t);
-        let file = pending.iter().find_map(|a| path_value(a));
-        if next(2) == Some(&Token::Punct('{')) {
-            self.inline.push((file.unwrap_or_else(|| name.clone()), self.depth + 1, under_test));
-        } else if next(2) == Some(&Token::Punct(';')) {
-            let dirs = self.inline.iter().map(|(d, _, _)| d.clone()).collect();
-            let (line, name) = (self.toks[i].0, name.clone());
-            self.parsed.decls.push(Decl { line, name, test: under_test, path: file, inline: dirs });
-        }
-    }
-}
-
-/// The index of the bracket that closes the one at `open` (`[`, `(` or `{`), or the last index.
-fn closing(toks: &[Located], open: usize) -> usize {
-    let mut depth = 0_usize;
-    for (k, (_, t)) in toks.iter().enumerate().skip(open) {
-        match t {
-            Token::Punct('[' | '(' | '{') => depth += 1,
-            Token::Punct(']' | ')' | '}') => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return k;
-                }
-            }
-            _ => {}
-        }
-    }
-    toks.len().saturating_sub(1)
-}
-
-/// Whether an attribute's tokens are exactly `cfg(test)`.
-fn is_cfg_test(attr: &[Located]) -> bool {
-    let words: Vec<&Token> = attr.iter().map(|(_, t)| t).collect();
-    matches!(words.as_slice(), [Token::Ident(c), Token::Punct('('), Token::Ident(t), Token::Punct(')')] if c == "cfg" && t == "test")
-}
-
-/// The file of a `path = "..."` attribute.
-fn path_value(attr: &[Located]) -> Option<String> {
-    match attr {
-        [(_, Token::Ident(p)), (_, Token::Punct('=')), (_, Token::Str(file))] if p == "path" => {
-            Some(file.clone())
-        }
-        _ => None,
-    }
-}
-
-/// Adds a failure for a `path` key inside `cfg_attr`.
-fn check_attribute(line: usize, attr: &[Located], failures: &mut Vec<(usize, String)>) {
-    let is_cfg_attr = matches!(attr.first(), Some((_, Token::Ident(w))) if w == "cfg_attr");
-    let path_key = attr
-        .windows(2)
-        .any(|w| matches!(w, [(_, Token::Ident(p)), (_, Token::Punct('='))] if p == "path"));
-    if is_cfg_attr && path_key {
-        failures.push((
-            line,
-            "a path inside cfg_attr: which file is loaded depends on the cfg; use #[path] alone"
-                .to_owned(),
-        ));
-    }
 }
