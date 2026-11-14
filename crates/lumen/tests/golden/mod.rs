@@ -1,4 +1,15 @@
-//! The golden image hash, shared by the render and thread tests.
+//! The golden image hashes and content identities, shared by the render and thread tests, and
+//! the Bunny commit they were last checked against.
+
+/// The Bunny commit every golden value below was last checked against: the pin the tests require
+/// (`BUNNY_REV`). It is the one place a pin move is acknowledged in the tests. Moving the pin
+/// means confirming that every golden value here is unchanged at the new commit, or updating the
+/// value the move changed as its intended effect, and then changing this constant.
+#[allow(
+    dead_code,
+    reason = "each test crate that includes this module uses only the constants it needs"
+)]
+pub(crate) const GOLDEN_BUNNY_REV: &str = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd";
 
 /// The golden image hash of the reference scene.
 ///
@@ -88,3 +99,32 @@ pub(crate) const GOLDEN_REFERENCE_CONTENT: &str =
 )]
 pub(crate) const GOLDEN_FIXED_POINT_CONTENT: &str =
     "sha256:f80160bbd1ebb6e79f186bf5a86f2ce3419d4ef31168cc4cab0b6fd1f0f64e11";
+
+/// The golden image hash of the canyon scene, `lumen-canyon-scene/1`: 96 by 54 pixels, 4
+/// samples per pixel, seed 0, rendered from `canyon_scene()` (and by
+/// `lumen render --scene canyon`).
+///
+/// Recorded for `lumen-canyon-scene/1` (terrain by `lumen-canyon-heightfield/1`),
+/// `lumen-smooth-diffuse-path/1` (Bunny's `bunny-sobol-owen/1`, `bunny-diffuse-shading/1`,
+/// `bunny-smooth-shading/1` and `bunny-smooth-normal/1`), `bunny-tone-srgb/1` and
+/// `bunny-rgba8-opaque/1`, against Bunny d4fe51d38fa10f8d6496bd110955314edac30bbf, unchanged at
+/// 2cd551e248d55407a8f27e84dcb26d1b1d8768bd; first
+/// recorded on aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). The same rules
+/// as the other scenes' hashes: one value for every platform and build profile, updated only
+/// with an identity, these settings or the Bunny commit, and a change to the scene's triangles,
+/// their order, its materials, normals, lighting or camera is a new scene version.
+#[allow(
+    dead_code,
+    reason = "each test crate that includes this module uses only the hashes it needs"
+)]
+pub(crate) const GOLDEN_CANYON_96X54_4SPP: &str =
+    "sha256:019fcdddaaff8761f3f6e64dfe28d1ce7d2b07200b8c69663345ca4a495466c5";
+
+/// The golden content identity of the canyon scene, `lumen-canyon-scene/1`, on the same terms
+/// as [`GOLDEN_REFERENCE_CONTENT`].
+#[allow(
+    dead_code,
+    reason = "each test crate that includes this module uses only the constants it needs"
+)]
+pub(crate) const GOLDEN_CANYON_CONTENT: &str =
+    "sha256:a809761e5cbc96944721e8e2095ae9e0eaa76d8f3ac8bf25e536446835eaf88d";
