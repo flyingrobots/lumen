@@ -25,14 +25,18 @@ pub(crate) const DEFAULT_SEED: u32 = 0;
 /// The usage text.
 pub(crate) const USAGE: &str = "\
 usage: lumen render [--scene NAME] [--out FILE] [--width W] [--height H] [--samples N] [--seed S]
-                    [--threads T] [--band-rows R]
+                    [--threads T] [--band-rows R] [--stats]
+       lumen stats [--scene NAME]
        lumen --help | --version
 
 Renders one of lumen's built-in scenes (reference, the default, or fixed-point) on T threads,
 each taking bands of R whole rows, with N samples per pixel of a diffuse path (a shadow-casting
 sun, a uniform sky and one bounce), writes it to a PNG file if --out is given, and prints the
 image hash (SHA-256 of the raw RGBA8 bytes) and the timing. The image is the same for every
-thread count and band height.
+thread count and band height. --stats adds the scene's statistics and what the rays found
+after the report (see the README, Statistics). `lumen stats` builds the scene, renders nothing
+and prints what it holds: triangles by material, bounds, lights, camera, the shape of its tree
+and its memory.
 Scenes (--scene NAME): reference, fixed-point (the Stanford bunny in sunglasses at a craps table).
 Defaults: --scene reference --width 320 --height 180 --samples 4 --seed 0 --band-rows 1, and as
 many threads as the system reports available.
@@ -47,6 +51,11 @@ pub(crate) enum Command {
     Help,
     /// Print the version.
     Version,
+    /// Print a built-in scene's statistics, without rendering.
+    Stats {
+        /// The scene to describe.
+        scene: BuiltinScene,
+    },
     /// Render a built-in scene.
     Render {
         /// The scene to render.
@@ -64,8 +73,22 @@ pub(crate) enum Command {
         band: BandRows,
         /// The PNG file to write, with the bytes it was given, if any.
         out: Option<PathBuf>,
+        /// Whether the report ends with the statistics.
+        detail: Detail,
     },
 }
+
+/// How much `render` reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Detail {
+    /// The report alone, as before statistics existed.
+    Report,
+    /// The report, then the scene and ray statistics (`--stats`).
+    Statistics,
+}
+
+/// The flag that asks for [`Detail::Statistics`].
+const STATS: &str = "--stats";
 
 /// The options `render` takes.
 const OPTIONS: [&str; 8] =
@@ -75,8 +98,8 @@ const OPTIONS: [&str; 8] =
 ///
 /// # Errors
 ///
-/// A [`UsageError`] for anything but `render` with known options, `--help`/`-h`/`help`, or
-/// `--version`/`-V`.
+/// A [`UsageError`] for anything but `render` with known options, `stats` with `--scene`,
+/// `--help`/`-h`/`help`, or `--version`/`-V`.
 pub(crate) fn parse<I, S>(args: I) -> Result<Command, UsageError>
 where
     I: IntoIterator<Item = S>,
@@ -88,6 +111,7 @@ where
         Some("--help" | "-h" | "help") => return Ok(Command::Help),
         Some("--version" | "-V") => return Ok(Command::Version),
         Some("render") => {}
+        Some("stats") => return parse_stats(args),
         _ => {
             let shown = command.to_string_lossy().into_owned();
             return Err(if shown.starts_with('-') {
@@ -100,9 +124,15 @@ where
     let mut numbers: [Option<u32>; 6] = [None; 6];
     let mut out: Option<PathBuf> = None;
     let mut scene: Option<BuiltinScene> = None;
+    let mut detail = Detail::Report;
     while let Some(option) = args.next() {
         let (name, inline) = match option.to_str() {
             Some("--help" | "-h") => return Ok(Command::Help),
+            Some(STATS) if detail == Detail::Report => {
+                detail = Detail::Statistics;
+                continue;
+            }
+            Some(STATS) => return Err(UsageError::Repeated(STATS)),
             Some(text) => {
                 // `--name=value` carries its value in the same argument, whatever it looks like.
                 let (name, inline) = text.split_once('=').unzip();
@@ -144,7 +174,27 @@ where
         threads,
         band,
         out,
+        detail,
     })
+}
+
+/// The arguments of `stats`: at most one `--scene NAME` (or `--scene=NAME`), or `--help`.
+fn parse_stats(mut args: impl Iterator<Item = OsString>) -> Result<Command, UsageError> {
+    const SCENE: &str = "--scene";
+    let mut scene: Option<BuiltinScene> = None;
+    while let Some(option) = args.next() {
+        let text = option.to_str();
+        let value = match (text, text.and_then(|t| t.strip_prefix("--scene="))) {
+            (Some("--help" | "-h"), _) => return Ok(Command::Help),
+            (Some(SCENE), _) => separate_value(&mut args, SCENE)?,
+            (_, Some(inline)) => OsString::from(inline),
+            _ => return Err(UsageError::UnknownOption(option.to_string_lossy().into_owned())),
+        };
+        if scene.replace(scene_name(&value)?).is_some() {
+            return Err(UsageError::Repeated(SCENE));
+        }
+    }
+    Ok(Command::Stats { scene: scene.unwrap_or(BuiltinScene::Reference) })
 }
 
 /// The next argument as the value of `option`: missing, or reading as an option, is refused.

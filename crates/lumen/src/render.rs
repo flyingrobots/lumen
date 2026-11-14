@@ -23,9 +23,11 @@ use crate::workers::{render_pixels, WorkerError};
 
 mod error;
 mod shade;
+mod statistics;
 
 pub use error::{PathError, RenderError};
 use shade::{direct, Shade};
+pub use statistics::{RayCheckError, RayOutcomes, RayStatistics};
 
 /// The stable name and version of [`trace_path`] on a scene with no vertex normal
 /// ([`Integrator::DiffusePath`]).
@@ -233,8 +235,16 @@ impl Add for RayCount {
 pub struct PathSample {
     /// Linear radiance per channel.
     pub radiance: [FixedQ32_32; 3],
-    /// The rays traced for it.
+    /// The rays traced for it: `outcomes.count()`.
     pub rays: RayCount,
+    /// What each of its rays found (ADR 0008).
+    pub outcomes: RayOutcomes,
+}
+
+impl PathSample {
+    const fn new(radiance: [FixedQ32_32; 3], outcomes: RayOutcomes) -> Self {
+        Self { radiance, rays: outcomes.count(), outcomes }
+    }
 }
 
 const ZERO: [FixedQ32_32; 3] = [FixedQ32_32::ZERO; 3];
@@ -280,31 +290,38 @@ pub fn trace_path<T: Tracer + ?Sized>(
     sample: u32,
 ) -> Result<PathSample, PathError> {
     let lighting = scene.lighting();
-    let mut count = RayCount { closest: 1, shadow: 0 };
+    // A path adds at most one to each camera and bounce count and two to the shadow counts, so
+    // no count saturates.
+    let mut found = RayOutcomes::default();
     let point = sampler.camera_sample(sample);
     let ray0 = camera.ray(point).ok_or(PathError::NoRay { sample, point })?;
     let Some(hit1) = tracer.closest(&ray0)? else {
-        return Ok(PathSample { radiance: lighting.sky.radiance(), rays: count });
+        found.camera_misses = 1;
+        return Ok(PathSample::new(lighting.sky.radiance(), found));
     };
+    found.camera_hits = 1;
     let h1 = Shade::at(scene, &ray0, &hit1)?;
-    let d1 = direct(scene, tracer, &h1, &mut count)?;
+    let d1 = direct(scene, tracer, &h1, &mut found)?;
     let Some(ray1) = h1.bounce(sampler.point(sample, BOUNCE_PAIR))? else {
         // Bunny's smooth shading rejected the bounce: no ray, and it contributes zero.
+        found.rejected_bounces = 1;
         let radiance = h1.reflect(d1, ZERO)?;
-        return Ok(PathSample { radiance, rays: count });
+        return Ok(PathSample::new(radiance, found));
     };
-    // A path traces at most two closest-hit and two shadow rays, so no count saturates.
-    count.closest = count.closest.saturating_add(1);
     let b = match tracer.closest(&ray1)? {
-        None => lighting.sky.radiance(),
+        None => {
+            found.bounce_misses = 1;
+            lighting.sky.radiance()
+        }
         Some(hit2) => {
+            found.bounce_hits = 1;
             let h2 = Shade::at(scene, &ray1, &hit2)?;
-            let d2 = direct(scene, tracer, &h2, &mut count)?;
+            let d2 = direct(scene, tracer, &h2, &mut found)?;
             h2.reflect(d2, ZERO)?
         }
     };
     let radiance = h1.reflect(d1, b)?;
-    Ok(PathSample { radiance, rays: count })
+    Ok(PathSample::new(radiance, found))
 }
 
 /// The resolved linear radiance of pixel `(x, y)` and the rays it traced: samples `0` to
@@ -324,7 +341,8 @@ pub fn pixel_radiance(
     x: u32,
     y: u32,
 ) -> Result<([FixedQ32_32; 3], RayCount), PathError> {
-    Frame { scene, tracer: scene, camera, settings }.radiance(x, y)
+    let (radiance, found) = Frame { scene, tracer: scene, camera, settings }.radiance(x, y)?;
+    Ok((radiance, found.count()))
 }
 
 /// A rendered image and the rays it took.
@@ -332,8 +350,10 @@ pub fn pixel_radiance(
 pub struct Render {
     /// The image.
     pub image: Rgba8Image,
-    /// The rays traced.
+    /// The rays traced: `statistics.count()`.
     pub rays: RayCount,
+    /// What the rays found, in all and per pixel (ADR 0008).
+    pub statistics: RayStatistics,
 }
 
 /// The pixels of one render, shared read-only by every worker: the scene, the tracer that
@@ -347,25 +367,25 @@ struct Frame<'a, T: ?Sized> {
 
 impl<T: Tracer + ?Sized> Frame<'_, T> {
     /// [`pixel_radiance`] with the frame's tracer.
-    fn radiance(&self, x: u32, y: u32) -> Result<([FixedQ32_32; 3], RayCount), PathError> {
+    fn radiance(&self, x: u32, y: u32) -> Result<([FixedQ32_32; 3], RayOutcomes), PathError> {
         let sampler = self.settings.sampler(x, y);
         let mut accumulator = PixelAccumulator::new();
-        let mut rays = RayCount::default();
+        let mut found = RayOutcomes::default();
         for sample in 0..self.settings.samples_per_pixel() {
             let path = trace_path(self.scene, self.tracer, self.camera, sampler, sample)?;
             accumulator.add_sample(path.radiance)?;
-            rays = rays + path.rays;
+            found = found + path.outcomes;
         }
-        Ok((accumulator.resolve()?, rays))
+        Ok((accumulator.resolve()?, found))
     }
 
     /// The four RGBA8 bytes of pixel `(x, y)`: its radiance through [`TONE_CURVE`] and
     /// `write_rgba8`.
-    fn rgba(&self, x: u32, y: u32) -> Result<([u8; 4], RayCount), PathError> {
-        let (radiance, rays) = self.radiance(x, y)?;
+    fn rgba(&self, x: u32, y: u32) -> Result<([u8; 4], RayStatistics), PathError> {
+        let (radiance, found) = self.radiance(x, y)?;
         let mut rgba = [0_u8; 4];
         write_rgba8(&mut rgba, TONE_CURVE, radiance)?;
-        Ok((rgba, rays))
+        Ok((rgba, RayStatistics::pixel(found, self.settings.samples_per_pixel())))
     }
 }
 
@@ -395,8 +415,8 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
 ) -> Result<Render, RenderError> {
     let camera = scene.camera().camera(size.width(), size.height())?;
     let frame = Frame { scene, tracer, camera: &camera, settings };
-    match render_pixels(size, schedule, RayCount::default(), |x, y| frame.rgba(x, y)) {
-        Ok((image, rays)) => Ok(Render { image, rays }),
+    match render_pixels(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y)) {
+        Ok((image, statistics)) => Ok(Render { image, rays: statistics.count(), statistics }),
         Err(WorkerError::Pixel { x, y, error }) => Err(RenderError::Pixel { x, y, error }),
         Err(WorkerError::OutOfMemory { reserving, error }) => {
             Err(RenderError::OutOfMemory { reserving, error })
