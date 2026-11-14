@@ -26,7 +26,8 @@ pub enum TraceError {
     /// The traversal refused the tree.
     Traversal(TraversalError),
     /// The traversal named a primitive that the triangle list does not hold, or whose hit
-    /// could not be repeated. Neither can happen with a tree built by [`Scene::new`].
+    /// could not be repeated. Neither can happen with a tree built by
+    /// [`Scene::new`](super::Scene::new).
     InconsistentHit,
 }
 
@@ -41,8 +42,8 @@ impl fmt::Display for TraceError {
 
 impl std::error::Error for TraceError {}
 
-/// The two ray queries a path needs. [`Scene`] implements it with Bunny's traversals; a test can
-/// wrap a scene to check every query against a test of every triangle.
+/// The two ray queries a path needs. [`Scene`](super::Scene) implements it with Bunny's
+/// traversals; a test can wrap a scene to check every query against a test of every triangle.
 pub trait Tracer {
     /// The nearest triangle `ray` hits at a distance in `0..=FAR`, or `None` for a miss. Of
     /// triangles at the same distance the lowest primitive index wins.
