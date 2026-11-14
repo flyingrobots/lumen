@@ -7,7 +7,7 @@ use lumen::scenes::fixed_point::table::{FELT, FELT_Y};
 use lumen::scenes::fixed_point::{
     fixed_point_lighting, fixed_point_materials, Die, Material, PartKind, Side,
 };
-use lumen::{fixed_point_scene, FIXED_POINT_SCENE_ID};
+use lumen::{fixed_point_scene, PrimitiveIndex, FIXED_POINT_SCENE_ID};
 
 use crate::support::{content, part, steps};
 
@@ -79,7 +79,7 @@ fn every_triangle_is_in_the_trace_domain_and_none_is_degenerate() {
                 coordinates += 1;
             }
         }
-        let index = u32::try_from(primitive).expect("fits");
+        let index = PrimitiveIndex::new(u32::try_from(primitive).expect("fits"));
         assert!(scene.surface(index).is_some(), "primitive {primitive} is degenerate");
     }
     assert_eq!(coordinates, 5975 * 9);

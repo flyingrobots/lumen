@@ -77,7 +77,8 @@ fn the_bunny_keeps_every_face_and_none_is_degenerate() {
     // Every reference triangle has a surface: no zero-area triangle reaches the scene.
     let scene = reference_scene().expect("builds");
     for primitive in 0..u32::try_from(REFERENCE_TRIANGLE_COUNT).expect("fits") {
-        assert!(scene.surface(primitive).is_some(), "primitive {primitive}");
+        let index = crate::scene::PrimitiveIndex::new(primitive);
+        assert!(scene.surface(index).is_some(), "primitive {primitive}");
     }
 }
 

@@ -5,6 +5,7 @@ use bunny_num::FixedQ32_32;
 
 use super::shapes::OCTAHEDRON_CENTRE;
 use super::*;
+use crate::scene::PrimitiveIndex;
 use crate::vertex_grid::{at, GRID_RAW, U};
 
 #[test]
@@ -15,13 +16,14 @@ fn the_reference_scene_has_the_stated_triangles_and_materials() {
     let scene = reference_scene().expect("the reference scene builds");
     assert_eq!(scene.triangles().len(), 31_511);
     let materials = reference_materials().expect("Bunny accepts every reference albedo");
+    let albedo = |primitive| scene.albedo(PrimitiveIndex::new(primitive));
     for (primitive, want) in [(0, 0), (1, 0), (2, 1), (3, 1), (4, 2), (11, 2), (12, 3)] {
-        assert_eq!(scene.albedo(primitive), Some(&materials[want]), "primitive {primitive}");
+        assert_eq!(albedo(primitive), Some(&materials[want]), "primitive {primitive}");
     }
-    assert_eq!(scene.albedo(27_659), Some(&materials[3]));
-    assert_eq!(scene.albedo(27_660), Some(&materials[4]));
-    assert_eq!(scene.albedo(31_510), Some(&materials[4]));
-    assert_eq!(scene.albedo(31_511), None);
+    assert_eq!(albedo(27_659), Some(&materials[3]));
+    assert_eq!(albedo(27_660), Some(&materials[4]));
+    assert_eq!(albedo(31_510), Some(&materials[4]));
+    assert_eq!(albedo(31_511), None);
     // Five distinct albedos.
     for (i, a) in REFERENCE_ALBEDO_256.iter().enumerate() {
         assert!(REFERENCE_ALBEDO_256[..i].iter().all(|b| b != a), "albedo {i} repeats");
@@ -60,7 +62,7 @@ fn every_surface_normal_points_out_of_its_object() {
         _ => None,
     };
     for (primitive, triangle) in scene.triangles().iter().enumerate() {
-        let index = u32::try_from(primitive).expect("fits");
+        let index = PrimitiveIndex::new(u32::try_from(primitive).expect("fits"));
         let surface = scene.surface(index).expect("no reference triangle is degenerate");
         let normal = surface.frame().normal();
         let expected_axis = match primitive {
@@ -85,7 +87,8 @@ fn octahedron_normals_are_the_diagonals() {
     // 1 / sqrt(3) = 0.57735026918962576..., times 2^32 = 2479700524.8...
     let third = 2_479_700_525_i64;
     for primitive in 4..12 {
-        let normal = scene.surface(primitive).expect("surface").frame().normal();
+        let normal =
+            scene.surface(PrimitiveIndex::new(primitive)).expect("surface").frame().normal();
         for c in [normal.x, normal.y, normal.z] {
             assert!((c.raw().abs() - third).abs() <= 2, "{c:?}");
         }

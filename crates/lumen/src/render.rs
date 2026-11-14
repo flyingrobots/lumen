@@ -18,7 +18,7 @@ use bunny_optics::{
 use bunny_query::TraceRay;
 
 use crate::image::{ImageSize, Rgba8Image, SizeError};
-use crate::scene::{Hit, Scene, SceneError, TraceError, Tracer};
+use crate::scene::{Hit, PrimitiveIndex, Scene, SceneError, TraceError, Tracer};
 use crate::schedule::Schedule;
 use crate::workers::{render_pixels, WorkerError};
 
@@ -323,7 +323,7 @@ fn direct<T: Tracer + ?Sized>(
     Ok(light.radiance(visible))
 }
 
-fn albedo(scene: &Scene, primitive: u32) -> Result<&bunny_optics::Albedo, RenderError> {
+fn albedo(scene: &Scene, primitive: PrimitiveIndex) -> Result<&bunny_optics::Albedo, RenderError> {
     scene.albedo(primitive).ok_or(RenderError::Shading)
 }
 

@@ -31,6 +31,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- `lumen::PrimitiveIndex` (flyingrobots/lumen#20): the name of a triangle in its scene, a `u32`
+  that is its zero-based position in `SceneSpec::triangles`, in input order. `Hit::primitive`,
+  `Scene::surface`, `Scene::albedo` and `SceneError::OutsideTraceDomain` /
+  `SceneError::UnknownMaterial` take or carry it in place of `u32` and `usize`, so the scene code
+  no longer mixes the two for one quantity. Its documentation and ADR 0002 state that the order
+  breaks ties (the lowest index wins) and is part of the scene's identity; a test shows two
+  coincident triangles listed in the other order give the other one's material.
+
 - Supply-chain, size and coverage checks in CI (flyingrobots/lumen#23), in
   `.github/workflows/gates.yml`: `Gates / cargo-deny` (`deny.toml`: advisories, Apache-2.0 only,
   no duplicate or wildcard versions, crates.io and Bunny's git repository by `rev` as the only
