@@ -82,7 +82,8 @@ part was built.
   oracles other than the counting code, golden image hashes and content digests (one value for
   every platform), simulated hand-out orders, generated tests from a seeded generator, and the
   documentation's own checks (the command reference against the program, the library reference
-  against the crate root, the tutorial by running it). Each integration test file states its size
+  against the crate root, the tutorial by running it). The golden tests check `BUNNY_REV`
+  against one constant, `GOLDEN_BUNNY_REV`, so a pin move is acknowledged in one place. Each integration test file states its size
   class. (flyingrobots/lumen#3, #4, #14, #24, #25, #55, #57, #162.)
 - **CI**: the determinism matrix (`Determinism / ...` on x86-64 and aarch64 Linux, aarch64
   macOS, x86-64 Windows and `wasm32-wasip1` under Node, each in both profiles; ADR 0004), `fmt,
@@ -95,7 +96,8 @@ part was built.
 - **Nondeterminism bans** (ADR 0006): `clippy.toml` bans the clock, sleeping, the core count,
   thread spawning, hash maps, every stable item of `std::env`, `fs`, `process` and `net`, floats
   (also as `c_double` and `c_float` of `core::ffi` and `std::os::raw`; the scan also names `f16`
-  and `f128`), `Duration`'s float methods and Bunny's float bridge, each under an Echo rule ID; `xtask
+  and `f128`), `Duration`'s float methods and Bunny's float bridge (`bunny_num::is_finite` included), each
+  under an Echo rule ID; `xtask
   clippy-bans` checks on a seeded fixture that every ban resolves and fires and that the std item
   list (`xtask/bans/std-items.txt`, from the toolchain's documentation) is complete; the token
   scan (`xtask nondeterminism`) covers what Clippy cannot see, over the deterministic core found
@@ -121,6 +123,6 @@ part was built.
   measurement records in `docs/measurements/`. (flyingrobots/lumen#5, #25, #39, #40, #57.)
 - **Dependencies**: Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`,
   `bunny-broadphase`, `bunny-optics` and `bunny-codec` (default features off), version 0.7.1,
-  as git dependencies pinned to `d4fe51d38fa10f8d6496bd110955314edac30bbf` (`BUNNY_REV`, checked
+  as git dependencies pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (`BUNNY_REV`, checked
   against `Cargo.lock` by a test); no crates.io crate. Dependencies build with `opt-level = 2`
   in the dev and test profiles.

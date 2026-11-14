@@ -1,4 +1,15 @@
-//! The golden image hash, shared by the render and thread tests.
+//! The golden image hashes and content identities, shared by the render and thread tests, and
+//! the Bunny commit they were last checked against.
+
+/// The Bunny commit every golden value below was last checked against: the pin the tests require
+/// (`BUNNY_REV`). It is the one place a pin move is acknowledged in the tests. Moving the pin
+/// means confirming that every golden value here is unchanged at the new commit, or updating the
+/// value the move changed as its intended effect, and then changing this constant.
+#[allow(
+    dead_code,
+    reason = "each test crate that includes this module uses only the constants it needs"
+)]
+pub(crate) const GOLDEN_BUNNY_REV: &str = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd";
 
 /// The golden image hash of the reference scene.
 ///

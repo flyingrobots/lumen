@@ -10,7 +10,7 @@ use lumen::scenes::canyon::{Craft, PartKind};
 use lumen::{render, trace_path, Hit, ImageSize, PrimitiveIndex, RenderSettings, Scene};
 use lumen::{TraceError, Tracer, BUNNY_REV, FAR};
 
-use crate::golden::{GOLDEN_CANYON_96X54_4SPP, GOLDEN_CANYON_CONTENT};
+use crate::golden::{GOLDEN_BUNNY_REV, GOLDEN_CANYON_96X54_4SPP, GOLDEN_CANYON_CONTENT};
 use crate::support::{content, scene};
 
 fn settings(samples: u32, seed: u32) -> RenderSettings {
@@ -172,7 +172,7 @@ fn every_traced_ray_of_the_scene_equals_a_test_of_every_triangle() {
 fn the_canyon_image_has_its_golden_hash() {
     assert_eq!(lumen::CANYON_SCENE_ID, "lumen-canyon-scene/1");
     assert_eq!(lumen::SMOOTH_INTEGRATOR_ID, "lumen-smooth-diffuse-path/1");
-    assert_eq!(BUNNY_REV, "d4fe51d38fa10f8d6496bd110955314edac30bbf");
+    assert_eq!(BUNNY_REV, GOLDEN_BUNNY_REV);
     let scene = scene();
     assert_eq!(scene.content_id().to_string(), GOLDEN_CANYON_CONTENT);
     let size = ImageSize::new(96, 54).expect("size");
