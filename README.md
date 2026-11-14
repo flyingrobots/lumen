@@ -946,6 +946,11 @@ under `--cfg lumen_clippy_fixture`, and fails when an entry produces a diagnosti
 under its rule or one marked `// accepted` is reported, when there is any Clippy configuration
 file besides the root `clippy.toml` (a crate's own replaces it), and when the toolchain's lint
 groups holding a ban lint change. A new ban is a line in `clippy.toml` and a use in the fixture.
+The std part of the list is checked against `xtask/bans/std-items.txt`, every public item of the
+banned std modules in the pinned toolchain's documentation: an item decided banned without an
+entry, an item without a decision, or a list made for another toolchain fails the check. ADR 0006
+gives the commands that regenerate the list when the toolchain moves
+(`cargo run -p xtask -- std-items <rust-docs std dir> <version>`).
 
 ## Bunny dependency
 

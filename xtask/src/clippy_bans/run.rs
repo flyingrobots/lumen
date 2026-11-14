@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{fs, io};
 
-use super::{ban_groups, diagnostics, entries, forms, judge, FIXTURE_SRC};
+use super::{ban_groups, diagnostics, entries, forms, judge, std_items, FIXTURE_SRC, STD_ITEMS};
 
 /// The check over the repository at `root`; true when it passes. Prints each failure.
 pub(crate) fn gate(root: &Path) -> io::Result<bool> {
@@ -35,6 +35,10 @@ pub(crate) fn gate(root: &Path) -> io::Result<bool> {
     }
     let entries = entries(&toml);
     failures.extend(judge(&entries, &all_forms, &diagnostics(&found), &ban_groups(&help)));
+    let list = fs::read_to_string(root.join(STD_ITEMS))?;
+    let toolchain = fs::read_to_string(root.join("rust-toolchain.toml"))?;
+    failures.extend(std_items::toolchain_matches(&list, &toolchain));
+    failures.extend(std_items::check(&std_items::parse(&list), &entries));
     for failure in &failures {
         println!("::error::[clippy-bans] {failure}");
     }
@@ -75,4 +79,12 @@ fn config_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> io::Result<()
     }
     out.sort();
     Ok(())
+}
+
+/// The std item list for the docs at `std_docs` (the `share/doc/rust/html/std` directory of
+/// rust-docs), for `toolchain`, as `xtask/bans/std-items.txt` holds it.
+pub(crate) fn std_items_list(std_docs: &Path, toolchain: &str) -> io::Result<String> {
+    let all = fs::read_to_string(std_docs.join("all.html"))?;
+    let items = std_items::extract(&all, &|href| fs::read_to_string(std_docs.join(href)).ok());
+    Ok(std_items::render(&items, toolchain))
 }

@@ -33,6 +33,13 @@ All notable changes to lumen are recorded here. The format follows
   `forms.rs`: ADR 0006's 42 that Clippy catches and six from flyingrobots/lumen#115 (an
   `extern crate` alias, three raw identifiers, `r#f64`, float arithmetic on an inferred float);
   each must be reported under its rule.
+- The std part of the ban list is derived from the pinned toolchain's documentation
+  (flyingrobots/lumen#115): `xtask/bans/std-items.txt` holds every public item of `std::env`,
+  `fs`, `process`, `net`, `thread` and `time` and the float methods of `Duration`, as
+  `cargo run -p xtask -- std-items <dir> <version>` reads them from rust-docs (`all.html` and
+  each item's page, for stability). `clippy-bans` fails when an item decided banned has no
+  `clippy.toml` entry, when a new item has no decision, or when the list is for another
+  toolchain; ADR 0006 gives the regeneration commands.
 
 - Smooth shading (part of flyingrobots/lumen#39; ADR 0007): `trace_path` shades a hit on a
   triangle with at least one vertex normal with Bunny's `bunny-smooth-shading/1`
