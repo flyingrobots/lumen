@@ -51,7 +51,7 @@ shading bunny-diffuse-shading/1
 sampler bunny-sobol-owen/1
 tone bunny-tone-srgb/1
 encoding bunny-rgba8-opaque/1
-bunny 3c395f9950ac63d5ecfbd2055c306954111daf9d
+bunny 3c0dab3e77c0d45de8904906a134e846dfe5ec6c
 size 640x360
 pixels 230400
 samples 64
@@ -106,7 +106,7 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   its `hash`), its provenance (`RenderProvenance`), PNG encoding into any writer (`write_png`,
   `png_len`), and the integrator's parts for custom tracers (`trace_path`, `pixel_radiance`,
   `Tracer`, `Hit`, `TraceError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
-  content, as `reference` is) and `lumen::mesh` (the mesh reader they use) are public modules. The SHA-256 and PNG checksum code
+  content, as `reference` is) and `lumen::mesh` (the mesh types they use) are public modules. The SHA-256 and PNG checksum code
   is internal. [ADR 0002](docs/adr/0002-library-api-surface.md) records the rule.
 - **The library touches nothing outside its arguments.** It parses no arguments, opens no files,
   reads no clock or environment, prints nothing and asks the host nothing: the caller passes the
@@ -194,29 +194,25 @@ as Geordi uses it; lumen's Apache-2.0 license does not cover it. `assets/stanfor
 records the provenance and Stanford's terms, and Stanford's reconstruction README is kept beside
 the file. `.gitattributes` keeps Git from rewriting its line endings.
 
-**Reading it: an interim, `lumen-ascii-ply-q32.32/1`.** Lumen's rule is that numerical code
-belongs in Bunny, but Bunny's PLY reader handles only binary little-endian files with exactly
-`x y z` vertices, and this file is ASCII with two more vertex columns. Until Bunny has an ASCII
-reader (flyingrobots/bunny#247), `crates/lumen/src/mesh/` (`ply.rs`, `decimal.rs`) reads exactly
-this file's profile and refuses anything else with a typed error (`PlyError`, `DecimalError`,
-each carrying the line number and what was found): a header of exactly `format ascii 1.0`,
-`element vertex`, the properties `x y z confidence intensity` as `float`, `element face` with
-`property list uchar int vertex_indices`, then five numbers per vertex line separated by single
-spaces, `3 a b c` per face line with every index in range, `\n` line endings, and nothing after
-the last face. `confidence` and `intensity` are checked but not used. Its limits, each a typed
-error: at most 2^20 vertices and 2^20 faces declared, lines of at most 256 bytes, counts and
-indices of at most ten digits. Declared counts never reserve memory.
+**Reading it: Bunny's ASCII PLY reader.** `crates/lumen/src/mesh/loaded.rs` passes the embedded
+bytes to `bunny_codec::parse_ascii_ply` (profile `bunny-ascii-ply-triangle-mesh/1`) and gathers
+its vertices and faces into the vectors that placement reads. A refusal is Bunny's
+`AsciiPlyError` with its kind and 1-based line number, carried unchanged in
+`PlaceError::Ply` (and so in `SceneError::Mesh` and `FixedPointError::Bunny`). The decimal
+coordinates are converted to Q32.32 by Bunny's rule `bunny-decimal-q32-32/1`: the exact value
+times `2^32`, rounded to nearest with ties to even. Bunny's own tests cover the conversion's
+ties, range edges and refusals and the reader's refusals; see its `docs/topics/ascii-ply/`.
 
-The conversion, `lumen-ascii-ply-q32.32/1`, follows Bunny's `bunny-decimal-q32-32/1` (merged to Bunny's main as
-flyingrobots/bunny#281, not yet released), so that the swap to Bunny's reader changes no bit: for decimal text
-`[+-]digits[.digits][(e|E)[+-]digits]` with exact value `v`, the raw value is `v * 2^32` rounded
-to the nearest integer, **ties to even**, applied to the magnitude and then the sign; a positive
-magnitude may reach `2^63 - 1` and a negative one `2^63`, decided after rounding. Values certainly
-out of range (`|v| >= 1e10`) or certainly below half a raw unit (`|v| < 1e-10`) are decided
-whatever their length; a value in between with more than 28 significant digits is refused.
-Everything is integer arithmetic in `u128`; no floating point. Bunny's exact tie vectors and
-range edges are among lumen's tests, and every one of the file's 5 667 coordinates agrees with an
-exact rational computation. The file has one coordinate in exponent form, `8.20736e-05`.
+Bunny's reader is looser than the interim reader that this replaced (`lumen-ascii-ply-q32.32/1`,
+deleted): it accepts CRLF line endings, tabs and runs of spaces, blank lines, `comment` and
+`obj_info` header lines, any other scalar vertex properties (skipped by declaration, not
+checked as numbers) and `float` or `double` coordinates, and it sets no limit on the counts or
+the line length (it reserves no memory from a declared count). The embedded file is fixed and its
+bytes are checked, so none of this changes what Lumen renders: the converted asset (1 889 vertices,
+3 851 faces) is pinned by a SHA-256 over every raw coordinate and index in order, recorded from
+the interim reader, which also agreed with Bunny's reader on every vertex and face when the
+interim reader was deleted. The file has one coordinate in exponent form, `8.20736e-05`, and
+the manifest's bounds, converted by Bunny, equal the converted mesh's bounds exactly.
 
 **Placing it** (`BUNNY_PLACEMENT` in `crates/lumen/src/reference/bunny.rs`, applied by
 `crates/lumen/src/mesh/placement.rs`): every vertex is turned half a turn
@@ -667,12 +663,10 @@ How it is tested (`crates/lumen/tests/`):
   scrambled order has the same hash.
 - **Convergence** (a regression guard, not a proof): for six reference pixels the mean of 1024
   samples is within `5 / 256` of the mean of 256 per channel.
-- **The bunny**: the asset's SHA-256; exact decimal conversion (hand-derived raw values for the
-  first vertex, the bounds and the file's one exponent, exact ties, and 20 000 generated decimals
-  checked against the definition of rounding to nearest); the converted mesh's bounds equal the
-  exact conversion of the manifest's bounds; the PLY reader's refusals (a binary format line, a
-  missing property, a four-index face, an index out of range, a truncated file, a second decimal
-  point and more), each with its typed error; the placed bounds derived by hand, with the lowest
+- **The bunny**: the asset's SHA-256; the converted mesh (counts, the first vertex's raw values and a
+  SHA-256 over every raw coordinate and index, recorded from the interim reader that Bunny's
+  replaced); the converted mesh's bounds equal Bunny's conversion of the manifest's bounds; a
+  refusal keeps Bunny's kind and line number; the placed bounds derived by hand, with the lowest
   vertex exactly on the ground; no dropped and no degenerate triangle; the winding and hole
   counts; a camera ray through the bunny's pixels hits it; and a ground point behind it, derived
   from the light direction through a point inside its body, is in its shadow while a nearby point
@@ -710,12 +704,13 @@ this way is recorded in [ADR 0004](docs/adr/0004-webassembly-determinism-leg.md)
 
 ## Bunny dependency
 
-Lumen uses Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`, `bunny-broadphase`
-and `bunny-optics` at version 0.7.1. The crates come in as git dependencies pinned to the full
-commit `3c395f9950ac63d5ecfbd2055c306954111daf9d` of `https://github.com/flyingrobots/bunny`, a commit of Bunny's
-main after the 0.7.1 release. They move to the crates.io registry when a release holds what lumen
+Lumen uses Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`, `bunny-broadphase`,
+`bunny-optics` and `bunny-codec` (with default features off, so it needs no crates.io crate) at
+version 0.7.1. The crates come in as git dependencies pinned to the full commit
+`3c0dab3e77c0d45de8904906a134e846dfe5ec6c` of `https://github.com/flyingrobots/bunny`, a commit of Bunny's
+main after the 0.7.1 release (`bunny-codec` also brings in `bunny-mesh`). They move to the crates.io registry when a release holds what lumen
 needs. `BUNNY_REV` in `crates/lumen/src/lib.rs`
-records the commit, and a test checks that `Cargo.lock` resolves every Bunny crate to it.
+records the commit, and a test checks that `Cargo.lock` resolves every Bunny crate to it and lists no registry crate.
 
 Dependencies build with `opt-level = 2` even in debug builds and tests, so the brute-force tests
 and a default-size render take seconds; lumen's own code keeps the debug profile.
@@ -725,7 +720,7 @@ then regenerate `Cargo.lock` in the container and apply the exported patch:
 
 ```sh
 python3 $D lumen ~/git/lumen --worktree --network --export-patch --out "$(mktemp -d)" -- \
-  bash -c 'mkdir -p /tmp/ch && CARGO_HOME=/tmp/ch cargo update -p bunny-num -p bunny-linalg -p bunny-geom -p bunny-query -p bunny-broadphase -p bunny-optics'
+  bash -c 'mkdir -p /tmp/ch && CARGO_HOME=/tmp/ch cargo update -w'
 ```
 
 ## Build and test

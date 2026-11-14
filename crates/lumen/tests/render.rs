@@ -928,6 +928,9 @@ fn the_lockfile_resolves_bunny_to_the_recorded_commit() {
     let pinned = format!("?rev={BUNNY_REV}#{BUNNY_REV}\"");
     let bunny_sources: Vec<&str> =
         lock.lines().filter(|line| line.contains("flyingrobots/bunny")).collect();
-    assert_eq!(bunny_sources.len(), 6, "six Bunny crates: {bunny_sources:?}");
+    assert_eq!(bunny_sources.len(), 8, "eight Bunny crates: {bunny_sources:?}");
     assert!(bunny_sources.iter().all(|line| line.ends_with(&pinned)), "{bunny_sources:?}");
+    // Lumen's only dependencies are Bunny's: no crate comes from a registry.
+    let registry: Vec<&str> = lock.lines().filter(|line| line.contains("registry+")).collect();
+    assert!(registry.is_empty(), "registry crates in the lock: {registry:?}");
 }

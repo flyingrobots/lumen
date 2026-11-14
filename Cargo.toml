@@ -11,7 +11,9 @@ rust-version = "1.96"
 version = "0.1.0"
 
 # Bunny's crates come in as git dependencies pinned to one full commit of Bunny's main, after
-# the 0.7.1 release. They move to the registry when a release holds what lumen needs.
+# the 0.7.1 release. `bunny-codec` has default features off: nothing it needs is behind
+# `mesh-hash`, which would bring in `sha2` and its tree. They move to the registry when a
+# release holds what lumen needs.
 [workspace.dependencies]
 bunny-broadphase = { git = "https://github.com/flyingrobots/bunny", rev = "3c0dab3e77c0d45de8904906a134e846dfe5ec6c" }
 bunny-codec = { git = "https://github.com/flyingrobots/bunny", rev = "3c0dab3e77c0d45de8904906a134e846dfe5ec6c", default-features = false }

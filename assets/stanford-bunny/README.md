@@ -43,6 +43,6 @@ lumen's own `sha256` module.
   (as in Geordi's `bunny.mesh.json`)
 - One coordinate in exponent form (`8.20736e-05`); the others are plain decimals
 
-Lumen reads it with the interim reader in `crates/lumen/src/mesh/`
-(`lumen-ascii-ply-q32.32/1`), to be replaced by Bunny's ASCII PLY reader once it exists
-(flyingrobots/bunny#247).
+Lumen reads it with Bunny's ASCII PLY reader (`bunny_codec::parse_ascii_ply`, profile
+`bunny-ascii-ply-triangle-mesh/1`, decimals converted by `bunny-decimal-q32-32/1`), through
+`crates/lumen/src/mesh/loaded.rs`.

@@ -128,3 +128,17 @@ fn every_builtin_scene_builds_renders_and_has_its_own_identity() {
     let count = BuiltinScene::ALL.len();
     assert_eq!((ids.len(), names.len(), hashes.len()), (count, count, count));
 }
+
+/// `lumen::mesh` is public for its placement and error types; its reader is Bunny's, and a
+/// refusal reaches the caller as Bunny's typed error with its line number, unchanged.
+#[test]
+fn the_mesh_module_reads_with_bunnys_reader_and_refuses_with_its_error() {
+    let text = b"ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\n\
+property float z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n\
+0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n";
+    let mesh = lumen::mesh::read_ascii_ply(text).expect("a triangle reads");
+    assert_eq!((mesh.vertices.len(), mesh.faces), (3, vec![[0, 1, 2]]));
+    let refused = lumen::mesh::read_ascii_ply(&text[..text.len() - 8]).expect_err("truncated");
+    assert_eq!(refused.kind(), bunny_codec::AsciiPlyErrorKind::PayloadTooShort);
+    assert_eq!(lumen::mesh::PlaceError::Ply(refused), lumen::mesh::PlaceError::Ply(refused));
+}

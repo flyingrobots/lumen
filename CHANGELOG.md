@@ -22,12 +22,22 @@ All notable changes to lumen are recorded here. The format follows
 - The `RayCount` addition's documentation says a sample traces at most four rays (camera,
   bounce and a shadow ray at each hit), not five; the bound of 2^39 rays per render stands.
 
-- Bunny is pinned to `3c395f9950ac63d5ecfbd2055c306954111daf9d` (was `dcd6bd37613738de93f7084e7c8aa0283de964ea`), a commit of Bunny's main after the 0.7.1
-  release, for every Bunny crate lumen uses (flyingrobots/lumen#27, part of it). Both golden image
-  hashes are unchanged. Of Bunny's 0.7.1 behaviour changes, `ray_intersects_aabb` and
-  `intersect_ray` are not called by lumen, whose traversal uses the compact BVH, and the
-  `try_look_at` correction is not used. The pin move brings no new crate: `Cargo.lock` changes only
-  in the revision and version (0.7.0 to 0.7.1) of each Bunny crate.
+- Bunny is pinned to `3c0dab3e77c0d45de8904906a134e846dfe5ec6c` (was
+  `dcd6bd37613738de93f7084e7c8aa0283de964ea`), a commit of Bunny's main after the 0.7.1 release,
+  for every Bunny crate lumen uses, and `bunny-codec` (default features off, so no crates.io
+  crate) is added (flyingrobots/lumen#27). Both golden image hashes are unchanged. Of Bunny's
+  0.7.1 behaviour changes, `ray_intersects_aabb` and `intersect_ray` are not called by lumen,
+  whose traversal uses the compact BVH, and the `try_look_at` correction is not used.
+- The Stanford bunny is read with Bunny's ASCII PLY reader (`bunny_codec::parse_ascii_ply`) and
+  the interim reader is deleted: `mesh/ply.rs`, `mesh/decimal.rs`, their tests and the identity
+  `lumen-ascii-ply-q32.32/1`, which reported what Bunny's `bunny-decimal-q32-32/1` and
+  `bunny-ascii-ply-triangle-mesh/1` now report. `PlaceError::Ply` carries Bunny's
+  `AsciiPlyError` (kind and line). Bunny's reader accepts more than the interim one (CRLF, other
+  whitespace, comments, other vertex properties) and has no count or line-length limits; the
+  embedded file is fixed, and the converted mesh is pinned by a SHA-256 recorded from the interim
+  reader, which agreed with Bunny's on every vertex and face. `lumen::mesh` no longer exports
+  `parse_ascii_ply`, `PlyError`, `Element`, `DecimalError`, `decimal_to_q32_32` or `ASCII_PLY_ID`;
+  it exports `read_ascii_ply`.
 
 ### Added
 
@@ -141,13 +151,6 @@ All notable changes to lumen are recorded here. The format follows
   Laboratory), byte for byte (SHA-256
   `975e7f9b160b4ea15b0e225e21b10828ebcf678df020d2f6a46aa408fdcf5cd6`), with its provenance,
   Stanford's reconstruction README and attribution; `.gitattributes` keeps its bytes intact.
-- An interim, strict ASCII PLY reader for exactly that file's profile
-  (`crates/lumen/src/mesh/ply.rs`, `mesh/decimal.rs`), with typed errors carrying line numbers
-  and found values, and explicit limits (2^20 vertices and faces, 256-byte lines, ten-digit
-  counts and indices). It converts decimals to Q32.32 with integers only by
-  `lumen-ascii-ply-q32.32/1`, which follows Bunny's `bunny-decimal-q32-32/1` (the exact value
-  times `2^32`, rounded to nearest, ties to even, sign applied after rounding). It is to be
-  replaced by Bunny's ASCII PLY reader, now on Bunny's main (flyingrobots/bunny#247).
 - Mesh placement (`crates/lumen/src/mesh/placement.rs`): a half turn about `+Y`, a power-of-two scale, a
   floor to the `2^-16` grid and a whole-step translation; faces with zero area after placement
   are dropped and listed.

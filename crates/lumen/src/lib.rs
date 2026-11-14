@@ -14,7 +14,7 @@
 //!
 //! The library is the crate root: every type and function a front end needs is re-exported
 //! here, and only [`mod@reference`] and [`scenes`] (the scenes' content) and [`mesh`] (the mesh
-//! reader they use) are public modules. It reads no arguments, files, clock or environment, prints nothing
+//! types they use) are public modules. It reads no arguments, files, clock or environment, prints nothing
 //! and asks the host nothing: the caller passes the thread count and any writer. The `lumen`
 //! command (`src/bin/lumen/`) is one such front end.
 //!
