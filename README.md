@@ -300,6 +300,18 @@ wins. In the 640 by 360 reference picture the holes do not show: the base faces 
 small front hole is out of the camera's view, and no light leaks where the bunny meets the
 ground.
 
+**The full-resolution mesh.** `assets/stanford-bunny/bun_zipper.ply` is the zippered
+reconstruction the decimated mesh was made from: 35 947 vertices and 69 451 faces, taken byte for
+byte from Stanford's archive (retrieved 2026-11-14, archive SHA-256 checked before extracting;
+file SHA-256 `b1acc63bece78444aa2e15bdcc72371a201279b98c6f5d4b74c993d02f0566fe`, 3 033 195
+bytes, its trailing spaces kept). It is embedded as
+`scenes::fixed_point::full_bunny::FULL_BUNNY_PLY` for Fixed Point version 2
+(flyingrobots/lumen#39); no scene uses it yet, and the linker leaves it out of any program that
+does not. Read by Bunny's reader, it is manifold and consistently wound, with no duplicate vertex
+or face; its 223 boundary edges are five holes in its base, and 1 113 vertices are named by no
+face. `assets/stanford-bunny/README.md` records its provenance, its measured topology and what it
+costs in binary and repository size.
+
 The scene's types (`SceneSpec`: triangles, a material index per triangle, diffuse albedos, an
 optional directional light and a sky; `RenderSettings`: a power-of-two sample count and a `u32`
 seed; at most one bounce) follow Geordi's ray-traced scene profile, so that loading an artifact
