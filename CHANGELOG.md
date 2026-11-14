@@ -6,6 +6,16 @@ All notable changes to lumen are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The nondeterminism gate checks the workspace boundary (flyingrobots/lumen#158, ADR 0006's
+  amendment of 2026-11-14): `xtask nondeterminism` reads `cargo metadata` and fails on a workspace
+  member that is neither reached by `lumen`'s normal and build dependencies nor classified as
+  tooling, on a path dependency outside the workspace, on a dependency from anywhere but Bunny's
+  repository at a full commit, and on a build script or procedural macro in a deterministic
+  crate. Before, a second workspace crate with floats, or a `build.rs` setting a `cfg`, decided
+  library behaviour with no finding.
+
 ### Fixed
 
 - A panic in the pixel function now halts the other workers (flyingrobots/lumen#56). Each worker

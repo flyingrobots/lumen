@@ -108,11 +108,12 @@ them in CI (see Consequences), so this row is a check, not a recorded run.
   binary, the examples, `tests/cli.rs` and `xtask` at crate level, and the scheduler and two
   unit tests at the function. `expect`, not `allow`: a waiver that no longer matches anything
   is an `unfulfilled_lint_expectations` error.
-- **The dependency rule is `cargo-deny`'s.** `deny.toml` allows no registry, so any crates.io
-  crate fails `Gates / cargo-deny` as an unknown registry. That bans `rand`, `getrandom`,
-  `serde_json`, `hashbrown`, `tokio`, `wasm-bindgen` and every other crate behind Echo's
-  crate-level rules. Bunny's crates, from the one allowed git repository, are checked by
-  Bunny's own nondeterminism rules.
+- **The dependency rule is `cargo-deny`'s, and the workspace boundary's.** `deny.toml` allows no
+  registry, so any crates.io crate fails `Gates / cargo-deny` as an unknown registry. That bans
+  `rand`, `getrandom`, `serde_json`, `hashbrown`, `tokio`, `wasm-bindgen` and every other crate
+  behind Echo's crate-level rules. Bunny's crates, from the one allowed git repository, are
+  checked by Bunny's own nondeterminism rules. `cargo-deny` does not check path dependencies;
+  the workspace boundary does (see the amendment below).
 - **The token scan** (`cargo run -p xtask -- nondeterminism`) closes Clippy's gaps over the core's
   source text, comments and strings excluded: float types and float literals anywhere, macro
   bodies and `cfg`-gated code included; the banned names (`Instant`, `SystemTime`, `HashMap`,
@@ -234,3 +235,30 @@ relative to the macro's file, not the caller's. Outside the core, each for a rea
   the `fmt, clippy` job one `xtask` build and one Clippy run over a single small crate. It
   checks that each listed ban works, not that the list is complete; nor does it read lint levels
   set outside source files (`RUSTFLAGS`, `.cargo/config.toml`).
+
+## Amendment, 2026-11-14: the workspace boundary
+
+flyingrobots/lumen#158 found two ways for code the gates do not read to decide the library: a
+second workspace crate as a path dependency (floats and `sin`, no waiver, and neither layer
+looked at it), and a build script that sets a `cfg` the library branches on.
+
+- **The deterministic crates are derived, not listed.** `xtask nondeterminism` runs
+  `cargo metadata --no-deps --format-version 1` and reads every workspace member and its
+  declared dependencies (`xtask/src/workspace.rs`, with a JSON reader of its own, since `xtask`
+  takes no crates.io crate). The deterministic crates are `lumen` and every member its package
+  reaches through normal and build dependencies, on every target and with every optional
+  dependency, since the metadata lists them all whatever the platform or features. Dev
+  dependencies are not followed: they build only tests. Every other member must be classified
+  as tooling, with its reason, in `TOOLING` (`xtask` and `lumen-clippy-fixture` today); a
+  member that is neither fails, and so does a tooling crate the library comes to depend on.
+- **What the boundary refuses**, for every member: a path dependency whose directory is not a
+  workspace member (cargo makes every path dependency inside the workspace a member, so this is
+  one outside it), and a dependency from any source but Bunny's repository at a full 40-digit
+  commit (the rule `deny.toml` holds, repeated because `cargo-deny` reads only the resolved graph
+  and not path dependencies). For a deterministic crate: a build script (a `custom-build`
+  target, whether the file is `build.rs` or named by `build =`), since it can set a `cfg` or an
+  environment variable the library reads (`cargo::rustc-cfg`, `cargo::rustc-env`) with no
+  `include!`; and a procedural macro, whose output is code the gates never read. No
+  deterministic crate needs either today. The fixture's `build.rs`, which only declares its
+  `cfg`, is tooling's.
+- Failures print as `[workspace]` errors of `Gates / nondeterminism`.
