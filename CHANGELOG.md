@@ -34,6 +34,15 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- `lumen render --scene canyon` and `lumen stats --scene canyon` (part of flyingrobots/lumen#40):
+  `BuiltinScene::Canyon` registers `lumen-canyon-scene/1`, with a golden image hash (96 by 54, 4
+  samples, `sha256:019fcddd...66c5`) and content identity (`sha256:a809761e...f88d`) in
+  `tests/golden/mod.rs`, checked by the library, command and thread tests (the same hash at every
+  thread count and band height). The canyon's tests add what the camera sees (bunny, each craft
+  and the planet by pixel count) and every ray of a 48 by 27 image against a test of all 566 005
+  triangles, which runs in the release profile only. The other scenes' hashes and identities are
+  unchanged. README, "The canyon scene", with the picture's known limits.
+
 - The canyon scene, `lumen-canyon-scene/1` (part of flyingrobots/lumen#40), assembled:
   `lumen::canyon_scene()` and `scenes::canyon::canyon_content()` build 566 005 triangles (the
   terrain, the three craft, the full-resolution Stanford bunny smooth on its ledge, the planet)
