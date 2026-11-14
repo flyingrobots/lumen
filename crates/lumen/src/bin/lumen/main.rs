@@ -76,6 +76,7 @@ fn describe(scene: BuiltinScene) -> Result<(), Failure> {
 }
 
 /// What to render: the scene, the view, the size, the settings and the schedule.
+#[derive(Clone, Copy)]
 struct Job {
     scene: BuiltinScene,
     view: View,
