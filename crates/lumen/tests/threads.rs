@@ -9,13 +9,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bunny_broadphase::TraversalError;
 use bunny_num::FixedQ32_32;
-use bunny_optics::write_rgba8;
+use bunny_optics::{write_rgba8, PixelSample};
 use bunny_query::TraceRay;
 use lumen::{
     pixel_radiance, reference_scene, render, render_pixels, render_scheduled, render_traced,
-    trace_path, BandRows, BuiltinScene, Hit, ImageSize, RayCount, RenderError, RenderSettings,
-    Rgba8Image, Scene, Schedule, ScheduleError, TraceError, Tracer, WorkerError, DEFAULT_BAND_ROWS,
-    MAX_THREADS, TONE_CURVE,
+    trace_path, BandRows, BuiltinScene, Hit, ImageSize, PathError, RayCount, RenderError,
+    RenderSettings, Rgba8Image, Scene, Schedule, ScheduleError, TraceError, Tracer, WorkerError,
+    DEFAULT_BAND_ROWS, MAX_THREADS, TONE_CURVE,
 };
 
 mod golden;
@@ -148,6 +148,14 @@ fn schedules_are_checked() {
 // ---------------------------------------------------------------------------------------------
 // Errors.
 
+/// The error the injected pixel function gives at `(x, y)`: `NoRay`, naming the pixel.
+fn no_ray(x: u32, y: u32) -> PathError {
+    PathError::NoRay {
+        sample: 0,
+        point: PixelSample::new(x, y, FixedQ32_32::ZERO, FixedQ32_32::ZERO),
+    }
+}
+
 /// A pixel function that fails at `failing` pixels with `NoRay` naming the pixel, and otherwise
 /// returns a colour made from the coordinates. It counts the pixels it was asked for and panics
 /// (failing the test, through the thread scope) past `limit`: a scheduler that does not stop
@@ -156,13 +164,13 @@ fn failing_pixels<'a>(
     failing: &[(u32, u32)],
     asked: &'a AtomicUsize,
     limit: usize,
-) -> impl Fn(u32, u32) -> Result<([u8; 4], RayCount), RenderError> + Sync + 'a {
+) -> impl Fn(u32, u32) -> Result<([u8; 4], RayCount), PathError> + Sync + 'a {
     let failing = failing.to_vec();
     move |x, y| {
         let n = asked.fetch_add(1, Ordering::SeqCst);
         assert!(n < limit, "asked for more than {limit} pixels");
         if failing.contains(&(x, y)) {
-            return Err(RenderError::NoRay { x, y });
+            return Err(no_ray(x, y));
         }
         Ok(([x.to_le_bytes()[0], y.to_le_bytes()[0], 7, 255], RayCount { closest: 1, shadow: 0 }))
     }
@@ -197,7 +205,7 @@ fn the_first_failing_pixel_in_raster_order_is_reported_at_every_schedule() {
                     );
                     assert_eq!(
                         result,
-                        Err(WorkerError::Pixel { x, y, error: RenderError::NoRay { x, y } }),
+                        Err(WorkerError::Pixel { x, y, error: no_ray(x, y) }),
                         "{failing:?}, {threads} threads, bands of {rows}"
                     );
                 }
@@ -213,8 +221,7 @@ fn the_first_failing_pixel_in_raster_order_is_reported_at_every_schedule() {
 fn workers_stop_after_a_failure() {
     let image = size(512, 512);
     for (fx, fy) in [(0, 0), (37, 20), (511, 300)] {
-        let first =
-            Err(WorkerError::Pixel { x: fx, y: fy, error: RenderError::NoRay { x: fx, y: fy } });
+        let first = Err(WorkerError::Pixel { x: fx, y: fy, error: no_ray(fx, fy) });
         for rows in [1, 7, 32, 512] {
             let asked = AtomicUsize::new(0);
             let result = render_pixels(
@@ -276,8 +283,9 @@ impl Tracer for Failing<'_> {
 }
 
 /// A traversal failure in the real integrator surfaces as the typed error of the first failing
-/// pixel in raster order, the one a raster-order loop over `trace_path` meets first, at every
-/// thread count and band height, within a budget of queries.
+/// pixel in raster order, with that pixel's coordinates: the error and the pixel a raster-order
+/// loop over `trace_path` meets first, at every thread count and band height, within a budget
+/// of queries.
 #[test]
 fn a_traversal_failure_is_the_same_typed_error_at_every_schedule() {
     {
@@ -294,7 +302,7 @@ fn a_traversal_failure_is_the_same_typed_error_at_every_schedule() {
                     if let Err(error) =
                         trace_path(&scene, &failing, &camera, settings.sampler(x, y), sample)
                     {
-                        first = Some(error);
+                        first = Some(RenderError::Pixel { x, y, error });
                         break 'pixels;
                     }
                 }

@@ -38,10 +38,22 @@ second front end would have had to rebuild that list by hand.
   `sampler`, `tone`, `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed`, `bounces`,
   `scene-content` (the last added by flyingrobots/lumen#38). New fields go at the end. Equal
   provenance means equal RGBA8 bytes.
-- **The scene errors can grow.** `SceneError` and `TraceError` are `#[non_exhaustive]`
-  (flyingrobots/lumen#20): a new reason to refuse a scene or a ray is not a breaking change, and
-  a `match` on either outside the crate needs a wildcard arm. Code outside the crate may still
-  construct their variants, as a custom `Tracer` does. A scene is validated whole when it is
+- **The errors can grow.** `SceneError` and `TraceError` (flyingrobots/lumen#20), `RenderError`
+  and `PathError` (flyingrobots/lumen#21) are `#[non_exhaustive]`: a new reason to refuse a
+  scene, a ray, a path or a render is not a breaking change, and a `match` on any of them
+  outside the crate needs a wildcard arm. Code outside the crate may still construct their
+  variants, as a custom `Tracer` does.
+- **An error says what failed and keeps its cause** (flyingrobots/lumen#21). Each variant carries
+  the values it saw (an index and a count, Bunny's reason, a pixel's coordinates), not a bare
+  name. An error that wraps another includes the inner message in its `Display`, so the text
+  stands alone and the command prints it unchanged, and returns the inner error from
+  `source()`, so a program can walk the chain; a reporter that prints the whole chain repeats
+  the inner text, which is the price of the first. A path's failure (`PathError`, from
+  `trace_path` and `pixel_radiance`) is its own type, not a `RenderError`, because a path cannot
+  fail for a size, a scene or a thread; the render wraps it with the pixel
+  (`RenderError::Pixel { x, y, error }`). Where Bunny has a fast `Option` form and a typed
+  `try_` form of the same check, lumen calls the `Option` form and the `try_` form only after a
+  `None`, so carrying the reason costs a render that succeeds nothing. A scene is validated whole when it is
   built: `Scene::new` refuses a camera placement Bunny's camera refuses
   (`SceneError::Camera`), so at render time only the image size can be refused.
 - **A triangle is named by its `PrimitiveIndex`** (flyingrobots/lumen#20): a `u32`, the

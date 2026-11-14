@@ -72,8 +72,8 @@ pub use provenance::{ProvenanceValue, RenderProvenance, PROVENANCE_FIELDS};
 pub use reference::{reference_scene, REFERENCE_SCENE_ID};
 pub use render::{
     pixel_radiance, render, render_reference, render_scheduled, render_traced, trace_path,
-    PathSample, RayCount, Render, RenderError, RenderSettings, SettingsError, BOUNCE_PAIR,
-    CAMERA_PAIR, INTEGRATOR_ID, MAX_BOUNCES, TONE_CURVE,
+    PathError, PathSample, RayCount, Render, RenderError, RenderSettings, SettingsError,
+    BOUNCE_PAIR, CAMERA_PAIR, INTEGRATOR_ID, MAX_BOUNCES, TONE_CURVE,
 };
 pub use scene::{
     CameraPlacement, Hit, Lighting, PrimitiveIndex, Scene, SceneContentId, SceneError, SceneSpec,

@@ -133,7 +133,7 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   `Schedule`, `BandRows`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
   its `hash`), its provenance (`RenderProvenance`), PNG encoding into any writer (`write_png`,
   `png_len`), and the integrator's parts for custom tracers (`trace_path`, `pixel_radiance`,
-  `Tracer`, `Hit`, `PrimitiveIndex`, `TraceError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
+  `Tracer`, `Hit`, `PrimitiveIndex`, `TraceError`, `PathError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
   content, as `reference` is) and `lumen::mesh` (the mesh types they use) are public modules. The SHA-256 and PNG checksum code
   is internal. [ADR 0002](docs/adr/0002-library-api-surface.md) records the rule.
 - **The library touches nothing outside its arguments.** It parses no arguments, opens no files,
@@ -165,6 +165,27 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
 - **The command owns everything at the edge**: argument parsing and the usage text (`cli.rs`,
   `cli/usage_error.rs`, with its tests in `cli/tests.rs`), the default thread count from
   `available_parallelism`, the clock, the output file and the terminal (`main.rs`, `report.rs`).
+
+### Errors
+
+Every refusal is a typed value that says what failed and carries what was observed. Each error's
+`Display` includes the message of the error it wraps, so its text stands alone, and `source()`
+returns that error, so a program can walk the chain; `tests/errors.rs` produces each variant
+through the public API and checks its values and its chain.
+
+- **A path** (`trace_path`, `pixel_radiance`) fails with a `PathError`: `NoRay` with the sample
+  index and Bunny's camera sample for a pixel outside the camera's image; `Trace` for a failed
+  ray query; and, for a hit a `Tracer` reported, `UnknownPrimitive` (the index and the scene's
+  triangle count), `NoSurface` (a zero-area triangle) or `SurfaceHit` (the triangle and Bunny's
+  `SecondaryRayError`). `BounceRay`, `RadianceOverflow` and `Pixel` are reached by no input,
+  since Bunny's sampler and lights bound their values; a generated test over both scenes counts
+  that none occurs. Lumen calls Bunny's fast `Option` forms and, only after a `None`, the `try_`
+  form for the reason, so a render that succeeds pays nothing for it.
+- **A render** (`render`, `render_scheduled`, `render_traced`) fails with a `RenderError`: the
+  size, the scene or the camera refused, or `Pixel { x, y, error }` for the first failing pixel
+  in raster order with its `PathError`.
+- `RenderError`, `PathError`, `SceneError` and `TraceError` are `#[non_exhaustive]`
+  ([ADR 0002](docs/adr/0002-library-api-surface.md)).
 
 ## The reference scene
 
@@ -503,7 +524,8 @@ one mutex, one atomic); there is no `unsafe` and no thread-pool dependency.
   reachable from it, is `Sync` as it is, with no lock or wrapper. Building it is timed separately
   (`scene-seconds`) from rendering (`render-seconds`).
 - **Errors**: if a pixel fails (a traversal error, a ray outside Bunny's domain), the render
-  returns the typed error of the first failing pixel in raster order, top row first: the error a
+  returns `RenderError::Pixel` with the coordinates and the `PathError` of the first failing
+  pixel in raster order, top row first: the error a
   one-pixel-at-a-time render in raster order meets, at every thread count and band height. When
   a pixel in row `y` fails, no worker begins a row from `y` down: every pixel before it is in an
   earlier row, or earlier in row `y`, which only the failing worker renders. No worker panics or

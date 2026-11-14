@@ -12,15 +12,19 @@ use core::ops::Add;
 
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
-    write_rgba8, CameraError, PinholeCamera, PixelAccumulator, PixelError, PixelSampler,
-    SurfaceHit, ToneCurve, MAX_SAMPLES_PER_PIXEL, SHADOW_T_MAX,
+    write_rgba8, Albedo, PinholeCamera, PixelAccumulator, PixelSampler, SurfaceHit, ToneCurve,
+    MAX_SAMPLES_PER_PIXEL, SHADOW_T_MAX,
 };
 use bunny_query::TraceRay;
 
-use crate::image::{ImageSize, Rgba8Image, SizeError};
-use crate::scene::{Hit, PrimitiveIndex, Scene, SceneError, TraceError, Tracer};
+use crate::image::{ImageSize, Rgba8Image};
+use crate::scene::{Hit, PrimitiveIndex, Scene, Tracer};
 use crate::schedule::Schedule;
 use crate::workers::{render_pixels, WorkerError};
+
+mod error;
+
+pub use error::{PathError, RenderError};
 
 /// The stable name and version of lumen's integrator, [`trace_path`].
 ///
@@ -119,86 +123,6 @@ impl RenderSettings {
     }
 }
 
-/// Why a render failed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RenderError {
-    /// The image size was refused.
-    Size(SizeError),
-    /// The scene could not be built.
-    Scene(SceneError),
-    /// Bunny refused the camera at the image size. [`Scene::new`] has already checked the
-    /// placement, so for a built scene this is a size Bunny's camera does not accept.
-    Camera(CameraError),
-    /// The camera gave no ray for a pixel sample inside the image.
-    NoRay {
-        /// The pixel column.
-        x: u32,
-        /// The pixel row.
-        y: u32,
-    },
-    /// A ray could not be traced.
-    Trace(TraceError),
-    /// Bunny's pixel path refused a value.
-    Pixel(PixelError),
-    /// A shading step refused its input: a hit on a triangle without a surface, a start point
-    /// outside the trace domain, a sampler point outside `[0, 1)` or a radiance sum that is not
-    /// representable. None of these happens for a scene built by `Scene::new` inside the trace
-    /// domain.
-    Shading,
-    /// Memory for the image could not be reserved.
-    OutOfMemory,
-    /// The operating system refused to start a worker thread.
-    Spawn,
-}
-
-impl fmt::Display for RenderError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Size(error) => write!(f, "invalid image size: {error}"),
-            Self::Scene(error) => write!(f, "invalid scene: {error}"),
-            Self::Camera(error) => write!(f, "invalid camera: {error}"),
-            Self::NoRay { x, y } => write!(f, "the camera gave no ray for pixel ({x}, {y})"),
-            Self::Trace(error) => write!(f, "{error}"),
-            Self::Pixel(error) => write!(f, "pixel value refused: {error}"),
-            Self::Shading => f.write_str("a shading step refused its input"),
-            Self::OutOfMemory => f.write_str("not enough memory for the image"),
-            Self::Spawn => f.write_str("a worker thread could not be started"),
-        }
-    }
-}
-
-impl std::error::Error for RenderError {}
-
-impl From<SizeError> for RenderError {
-    fn from(error: SizeError) -> Self {
-        Self::Size(error)
-    }
-}
-
-impl From<SceneError> for RenderError {
-    fn from(error: SceneError) -> Self {
-        Self::Scene(error)
-    }
-}
-
-impl From<CameraError> for RenderError {
-    fn from(error: CameraError) -> Self {
-        Self::Camera(error)
-    }
-}
-
-impl From<TraceError> for RenderError {
-    fn from(error: TraceError) -> Self {
-        Self::Trace(error)
-    }
-}
-
-impl From<PixelError> for RenderError {
-    fn from(error: PixelError) -> Self {
-        Self::Pixel(error)
-    }
-}
-
 /// How many rays were traced.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RayCount {
@@ -264,43 +188,97 @@ const ZERO: [FixedQ32_32; 3] = [FixedQ32_32::ZERO; 3];
 ///
 /// # Errors
 ///
-/// [`RenderError::NoRay`] for a pixel outside the camera's image, [`RenderError::Trace`] if a
-/// traversal fails, and [`RenderError::Shading`] if a Bunny shading step refuses its input.
+/// [`PathError::NoRay`] for a pixel outside the camera's image and [`PathError::Trace`] if a
+/// query fails. For a hit the tracer reports, [`PathError::UnknownPrimitive`] past the scene's
+/// triangles, [`PathError::NoSurface`] on a zero-area triangle and [`PathError::SurfaceHit`]
+/// with Bunny's reason when Bunny refuses the hit; then [`PathError::BounceRay`] and
+/// [`PathError::RadianceOverflow`], which no input reaches. The scene as its own tracer reports
+/// only hits Bunny accepts.
 pub fn trace_path<T: Tracer + ?Sized>(
     scene: &Scene,
     tracer: &T,
     camera: &PinholeCamera,
     sampler: PixelSampler,
     sample: u32,
-) -> Result<PathSample, RenderError> {
+) -> Result<PathSample, PathError> {
     let lighting = scene.lighting();
     let mut count = RayCount { closest: 1, shadow: 0 };
-    let ray0 = camera
-        .ray(sampler.camera_sample(sample))
-        .ok_or(RenderError::NoRay { x: sampler.x(), y: sampler.y() })?;
+    let point = sampler.camera_sample(sample);
+    let ray0 = camera.ray(point).ok_or(PathError::NoRay { sample, point })?;
     let Some(hit1) = tracer.closest(&ray0)? else {
         return Ok(PathSample { radiance: lighting.sky.radiance(), rays: count });
     };
-    let h1 = surface_hit(scene, &ray0, &hit1)?;
-    let d1 = direct(scene, tracer, &h1, &mut count)?;
-    let ray1 = h1.bounce_ray(sampler.point(sample, BOUNCE_PAIR)).ok_or(RenderError::Shading)?;
+    let h1 = Shade::at(scene, &ray0, &hit1)?;
+    let d1 = direct(scene, tracer, &h1.hit, &mut count)?;
+    let ray1 = h1.bounce(sampler.point(sample, BOUNCE_PAIR))?;
     count.closest += 1;
     let b = match tracer.closest(&ray1)? {
         None => lighting.sky.radiance(),
         Some(hit2) => {
-            let h2 = surface_hit(scene, &ray1, &hit2)?;
-            let d2 = direct(scene, tracer, &h2, &mut count)?;
-            albedo(scene, hit2.primitive)?.reflect(d2, ZERO).ok_or(RenderError::Shading)?
+            let h2 = Shade::at(scene, &ray1, &hit2)?;
+            let d2 = direct(scene, tracer, &h2.hit, &mut count)?;
+            h2.reflect(d2, ZERO)?
         }
     };
-    let radiance = albedo(scene, hit1.primitive)?.reflect(d1, b).ok_or(RenderError::Shading)?;
+    let radiance = h1.reflect(d1, b)?;
     Ok(PathSample { radiance, rays: count })
 }
 
-/// Bunny's `SurfaceHit::new` for a hit the tracer reported.
-fn surface_hit(scene: &Scene, ray: &TraceRay, hit: &Hit) -> Result<SurfaceHit, RenderError> {
-    let surface = scene.surface(hit.primitive).ok_or(RenderError::Shading)?;
-    SurfaceHit::new(surface, ray, &hit.hit).ok_or(RenderError::Shading)
+/// A hit the tracer reported, ready to shade: Bunny's `SurfaceHit` and the triangle's albedo.
+///
+/// Each step calls Bunny's fast `Option` form, and only after a `None` its `try_` form, for the
+/// reason: carrying a reason through every hit costs time (Bunny measured 4 % per hit), and a
+/// refusal is never on the path of an image that renders.
+struct Shade<'a> {
+    primitive: PrimitiveIndex,
+    hit: SurfaceHit,
+    albedo: &'a Albedo,
+}
+
+impl<'a> Shade<'a> {
+    /// The surface hit and albedo of `hit`, the tracer's answer for `ray`.
+    ///
+    /// `Scene::new` checked every material index, so `Scene::albedo` is `None` only past the
+    /// last triangle, and then `Scene::surface` is `None` only for a zero-area triangle.
+    fn at(scene: &'a Scene, ray: &TraceRay, hit: &Hit) -> Result<Self, PathError> {
+        let primitive = hit.primitive;
+        let Some(albedo) = scene.albedo(primitive) else {
+            let triangles = scene.triangles().len();
+            return Err(PathError::UnknownPrimitive { primitive, triangles });
+        };
+        let surface = scene.surface(primitive).ok_or(PathError::NoSurface { primitive })?;
+        let hit = match SurfaceHit::new(surface, ray, &hit.hit) {
+            Some(hit) => hit,
+            None => SurfaceHit::try_new(surface, ray, &hit.hit)
+                .map_err(|error| PathError::SurfaceHit { primitive, error })?,
+        };
+        Ok(Self { primitive, hit, albedo })
+    }
+
+    /// Bunny's bounce ray for the unit-square point `sample`.
+    fn bounce(&self, sample: [FixedQ32_32; 2]) -> Result<TraceRay, PathError> {
+        match self.hit.bounce_ray(sample) {
+            Some(ray) => Ok(ray),
+            None => self
+                .hit
+                .try_bounce_ray(sample)
+                .map_err(|error| PathError::BounceRay { primitive: self.primitive, error }),
+        }
+    }
+
+    /// Bunny's `Albedo::reflect` of `direct` and `indirect`.
+    fn reflect(
+        &self,
+        direct: [FixedQ32_32; 3],
+        indirect: [FixedQ32_32; 3],
+    ) -> Result<[FixedQ32_32; 3], PathError> {
+        match self.albedo.reflect(direct, indirect) {
+            Some(radiance) => Ok(radiance),
+            None => {
+                Err(PathError::RadianceOverflow { primitive: self.primitive, direct, indirect })
+            }
+        }
+    }
 }
 
 /// The direct term at a surface hit: Bunny's light sample, made visible by an any-hit query of
@@ -310,7 +288,7 @@ fn direct<T: Tracer + ?Sized>(
     tracer: &T,
     hit: &SurfaceHit,
     rays: &mut RayCount,
-) -> Result<[FixedQ32_32; 3], RenderError> {
+) -> Result<[FixedQ32_32; 3], PathError> {
     let Some(sun) = scene.lighting().sun else { return Ok(ZERO) };
     let light = hit.light_sample(&sun);
     let visible = match light.shadow_ray() {
@@ -323,10 +301,6 @@ fn direct<T: Tracer + ?Sized>(
     Ok(light.radiance(visible))
 }
 
-fn albedo(scene: &Scene, primitive: PrimitiveIndex) -> Result<&bunny_optics::Albedo, RenderError> {
-    scene.albedo(primitive).ok_or(RenderError::Shading)
-}
-
 /// The resolved linear radiance of pixel `(x, y)` and the rays it traced: samples `0` to
 /// `samples_per_pixel - 1` of [`trace_path`] with the scene as its own tracer, each added to a
 /// Bunny `PixelAccumulator`, then `resolve` (the mean, rounded to nearest, ties to even).
@@ -336,14 +310,14 @@ fn albedo(scene: &Scene, primitive: PrimitiveIndex) -> Result<&bunny_optics::Alb
 ///
 /// # Errors
 ///
-/// Any error of [`trace_path`] or of the accumulator.
+/// Any error of [`trace_path`], and [`PathError::Pixel`] if the accumulator refuses a sample.
 pub fn pixel_radiance(
     scene: &Scene,
     camera: &PinholeCamera,
     settings: RenderSettings,
     x: u32,
     y: u32,
-) -> Result<([FixedQ32_32; 3], RayCount), RenderError> {
+) -> Result<([FixedQ32_32; 3], RayCount), PathError> {
     Frame { scene, tracer: scene, camera, settings }.radiance(x, y)
 }
 
@@ -367,7 +341,7 @@ struct Frame<'a, T: ?Sized> {
 
 impl<T: Tracer + ?Sized> Frame<'_, T> {
     /// [`pixel_radiance`] with the frame's tracer.
-    fn radiance(&self, x: u32, y: u32) -> Result<([FixedQ32_32; 3], RayCount), RenderError> {
+    fn radiance(&self, x: u32, y: u32) -> Result<([FixedQ32_32; 3], RayCount), PathError> {
         let sampler = self.settings.sampler(x, y);
         let mut accumulator = PixelAccumulator::new();
         let mut rays = RayCount::default();
@@ -381,7 +355,7 @@ impl<T: Tracer + ?Sized> Frame<'_, T> {
 
     /// The four RGBA8 bytes of pixel `(x, y)`: its radiance through [`TONE_CURVE`] and
     /// `write_rgba8`.
-    fn rgba(&self, x: u32, y: u32) -> Result<([u8; 4], RayCount), RenderError> {
+    fn rgba(&self, x: u32, y: u32) -> Result<([u8; 4], RayCount), PathError> {
         let (radiance, rays) = self.radiance(x, y)?;
         let mut rgba = [0_u8; 4];
         write_rgba8(&mut rgba, TONE_CURVE, radiance)?;
@@ -400,8 +374,9 @@ impl<T: Tracer + ?Sized> Frame<'_, T> {
 ///
 /// # Errors
 ///
-/// [`RenderError::Camera`] if Bunny refuses the camera at this size; the error of
-/// [`pixel_radiance`] or `write_rgba8` for the first failing pixel in raster order;
+/// [`RenderError::Camera`] if Bunny refuses the camera at this size;
+/// [`RenderError::Pixel`] with the coordinates and the [`PathError`] of the first failing pixel
+/// in raster order (an error of [`pixel_radiance`] or of `write_rgba8`);
 /// [`RenderError::OutOfMemory`] if a buffer cannot be reserved; [`RenderError::Spawn`] if a
 /// worker thread cannot be started.
 pub fn render_traced<T: Tracer + Sync + ?Sized>(
@@ -415,7 +390,7 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
     let frame = Frame { scene, tracer, camera: &camera, settings };
     match render_pixels(size, schedule, RayCount::default(), |x, y| frame.rgba(x, y)) {
         Ok((image, rays)) => Ok(Render { image, rays }),
-        Err(WorkerError::Pixel { error, .. }) => Err(error),
+        Err(WorkerError::Pixel { x, y, error }) => Err(RenderError::Pixel { x, y, error }),
         Err(WorkerError::OutOfMemory) => Err(RenderError::OutOfMemory),
         Err(WorkerError::Spawn) => Err(RenderError::Spawn),
     }

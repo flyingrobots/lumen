@@ -8,6 +8,19 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- A failed path says what failed (part of flyingrobots/lumen#21). `trace_path` and
+  `pixel_radiance` return the new `PathError`, and `RenderError::Shading`, which merged four
+  causes and carried nothing, is gone: `PathError::UnknownPrimitive` (the index and the scene's
+  triangle count), `NoSurface` (a zero-area triangle), `SurfaceHit` and `BounceRay` (the
+  triangle and Bunny's `SecondaryRayError`), `RadianceOverflow` (the triangle and both terms),
+  `NoRay` (the sample index and Bunny's `PixelSample`), `Trace` and `Pixel`. Lumen calls Bunny's
+  fast `Option` forms and only after a `None` the `try_` form for the reason, so a render that
+  succeeds runs the same code (render time unchanged within noise; see the pull request). A
+  failed render keeps the failing pixel's coordinates: `RenderError::Pixel { x, y, error }`
+  replaces `RenderError::NoRay`, `Trace` and `Pixel`, which `render_traced` returned without
+  them. `RenderError` and `PathError` are `#[non_exhaustive]` and implement `source()`. No pixel,
+  hash, digest or line of the command's output changes, and no message the command prints.
+
 - The command-line tests are hermetic and one-behaviour-each (part of flyingrobots/lumen#24): every
   test that runs `lumen` owns a scratch directory named for the test and the process id, used as
   the working directory with absolute paths, and removed at the end, so refusal tests cannot
