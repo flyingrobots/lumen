@@ -27,8 +27,14 @@ fn scene_construction_refuses_bad_input() {
     let camera = reference_camera();
     let materials = [grey()];
     let spec = |triangles: &[[FixedVec3; 3]], material_of: &[u32]| {
-        let spec =
-            SceneSpec { triangles, material_of, materials: &materials, lighting: dark(), camera };
+        let spec = SceneSpec {
+            triangles,
+            material_of,
+            materials: &materials,
+            normals: &[],
+            lighting: dark(),
+            camera,
+        };
         Scene::new(&spec).err()
     };
     assert_eq!(spec(&[], &[]), Some(SceneError::Empty));
@@ -54,6 +60,7 @@ fn scene_construction_refuses_bad_input() {
         triangles: &[good, flat],
         material_of: &[0, 0],
         materials: &materials,
+        normals: &[],
         lighting: dark(),
         camera,
     })
@@ -65,6 +72,34 @@ fn scene_construction_refuses_bad_input() {
     assert_eq!(normal(0), Some(at(0, 0, U)));
     assert_eq!(normal(1), None);
     assert_eq!(normal(2), None);
+}
+
+/// Vertex normals are none or one entry per triangle, and a scene returns each triangle's as
+/// given.
+#[test]
+fn a_scene_keeps_one_entry_of_vertex_normals_per_triangle_or_none() {
+    use bunny_linalg::FixedUnitVec3;
+    let materials = [grey()];
+    let good = [at(0, 0, 0), at(U, 0, 0), at(0, U, 0)];
+    let up = Some(FixedUnitVec3::UNIT_Z);
+    let build = |normals: &[[Option<FixedUnitVec3>; 3]]| {
+        Scene::new(&SceneSpec {
+            triangles: &[good, good],
+            material_of: &[0, 0],
+            materials: &materials,
+            normals,
+            lighting: dark(),
+            camera: reference_camera(),
+        })
+    };
+    let refused = build(&[[up; 3]]).err();
+    assert_eq!(refused, Some(SceneError::NormalCount { triangles: 2, normals: 1 }));
+    let smooth = build(&[[up, None, up], [None; 3]]).expect("builds");
+    assert_eq!(smooth.vertex_normals(PrimitiveIndex::new(0)), Some(&[up, None, up]));
+    assert_eq!(smooth.vertex_normals(PrimitiveIndex::new(1)), Some(&[None; 3]));
+    assert_eq!(smooth.vertex_normals(PrimitiveIndex::new(2)), None);
+    let flat = build(&[]).expect("builds");
+    assert_eq!(flat.vertex_normals(PrimitiveIndex::new(0)), None);
 }
 
 /// `Scene::new` refuses a camera placement that Bunny's `PinholeCamera::new` refuses, with
@@ -80,6 +115,7 @@ fn scene_construction_refuses_each_invalid_camera_field() {
             triangles: &[triangle],
             material_of: &[0],
             materials: &materials,
+            normals: &[],
             lighting: dark(),
             camera,
         };
@@ -129,6 +165,7 @@ fn a_one_triangle_scene_traces() {
         triangles: &[triangle],
         material_of: &[0],
         materials: &[grey()],
+        normals: &[],
         lighting: dark(),
         camera: reference_camera(),
     })
@@ -161,6 +198,7 @@ fn coincident_triangles_resolve_to_the_lowest_index_so_order_matters() {
             triangles,
             material_of,
             materials: &[red, blue],
+            normals: &[],
             lighting: dark(),
             camera: reference_camera(),
         })

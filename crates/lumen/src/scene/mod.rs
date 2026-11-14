@@ -9,7 +9,7 @@
 //! reference scene is in [`crate::reference`].
 
 use bunny_geom::FixedAabb3;
-use bunny_linalg::FixedVec3;
+use bunny_linalg::{FixedUnitVec3, FixedVec3};
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
     Albedo, CameraError, CameraSpec, DirectionalLight, PinholeCamera, SkyLight, TriangleSurface,
@@ -90,6 +90,11 @@ pub struct SceneSpec<'a> {
     pub material_of: &'a [u32],
     /// The diffuse materials.
     pub materials: &'a [Albedo],
+    /// The vertex normals of each triangle, in primitive order and in the order of its
+    /// vertices: either empty, for a scene with no vertex normals, or one entry per triangle. A
+    /// vertex with `None` has no normal; Bunny's smooth shading falls back to the triangle's
+    /// geometric frame for a triangle with any vertex missing a normal.
+    pub normals: &'a [[Option<FixedUnitVec3>; 3]],
     /// The light and the sky.
     pub lighting: Lighting,
     /// The camera placement.
@@ -110,6 +115,7 @@ pub struct Scene {
     surfaces: Vec<Option<TriangleSurface>>,
     material_of: Vec<u32>,
     materials: Vec<Albedo>,
+    normals: Vec<[Option<FixedUnitVec3>; 3]>,
     lighting: Lighting,
     camera: CameraPlacement,
     tree: Tree,
@@ -136,6 +142,7 @@ impl Scene {
     ///
     /// [`SceneError::Empty`] for no triangles, [`SceneError::TooManyTriangles`] for more than
     /// `u32::MAX`, [`SceneError::MaterialCount`] when `material_of` has the wrong length,
+    /// [`SceneError::NormalCount`] when `normals` is neither empty nor one entry per triangle,
     /// [`SceneError::Camera`] when Bunny refuses the camera placement (checked at a one-pixel
     /// image, before anything is allocated),
     /// [`SceneError::OutsideTraceDomain`] for the first triangle Bunny's `TraceTriangle::new`
@@ -163,6 +170,7 @@ impl Scene {
     ///     triangles: &triangles,
     ///     material_of: &[0],
     ///     materials: &reference_materials()?,
+    ///     normals: &[],
     ///     lighting: reference_lighting()?,
     ///     camera: reference_camera(),
     /// })?;
@@ -180,6 +188,9 @@ impl Scene {
         let material_indices = spec.material_of.len();
         if material_indices != count {
             return Err(SceneError::MaterialCount { triangles: count, material_indices });
+        }
+        if !spec.normals.is_empty() && spec.normals.len() != count {
+            return Err(SceneError::NormalCount { triangles: count, normals: spec.normals.len() });
         }
         spec.camera.camera(PROBE_SIZE, PROBE_SIZE).map_err(SceneError::Camera)?;
         let mut triangles = reserved(SceneBuffer::Triangles, count)?;
@@ -209,12 +220,15 @@ impl Scene {
         material_of.extend_from_slice(spec.material_of);
         let mut materials = reserved(SceneBuffer::Materials, spec.materials.len())?;
         materials.extend_from_slice(spec.materials);
+        let mut normals = reserved(SceneBuffer::VertexNormals, spec.normals.len())?;
+        normals.extend_from_slice(spec.normals);
         Ok(Self {
             content,
             triangles,
             surfaces,
             material_of,
             materials,
+            normals,
             lighting: spec.lighting,
             camera: spec.camera,
             tree,
@@ -239,6 +253,13 @@ impl Scene {
     pub fn albedo(&self, primitive: PrimitiveIndex) -> Option<&Albedo> {
         let material = *self.material_of.get(primitive.to_usize())?;
         self.materials.get(widen(material))
+    }
+
+    /// The vertex normals of the triangle at `primitive`, in the order of its vertices, or
+    /// `None` for an index out of range or a scene given no vertex normals.
+    #[must_use]
+    pub fn vertex_normals(&self, primitive: PrimitiveIndex) -> Option<&[Option<FixedUnitVec3>; 3]> {
+        self.normals.get(primitive.to_usize())
     }
 
     /// The light and the sky.

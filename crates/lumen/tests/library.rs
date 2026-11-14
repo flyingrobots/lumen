@@ -175,48 +175,60 @@ property float z\nelement face 1\nproperty list uchar int vertex_indices\nend_he
     assert_eq!(lumen::mesh::PlaceError::Ply(refused), lumen::mesh::PlaceError::Ply(refused));
 }
 
-/// One triangle, one albedo, a sun, a sky and a camera, with the content identity computed
-/// outside lumen: Python built the byte stream from the table in ADR 0005 and hashed it with
-/// `hashlib`, so this does not rest on lumen's SHA-256 or its encoder agreeing with themselves.
-/// The script, with `ONE = 1 << 32` and `i64 = lambda *v: struct.pack('<%dq' % len(v), *v)`:
+/// One triangle, one albedo, a sun, a sky and a camera, without and with vertex normals, with the
+/// content identities computed outside lumen: Python built the byte streams from the table in ADR
+/// 0005 (`lumen-scene-content/2`) and hashed them with `hashlib`, so this does not rest on lumen's
+/// SHA-256 or its encoder agreeing with themselves. The script, with `ONE = 1 << 32` and
+/// `i64 = lambda *v: struct.pack('<%dq' % len(v), *v)`:
 ///
 /// ```text
-/// b = struct.pack('<Q', 21) + b'lumen-scene-content/1'
+/// b = struct.pack('<Q', 21) + b'lumen-scene-content/2'
 /// b += struct.pack('<Q', 1)                                        # one triangle
 /// b += i64(0, 0, 0, ONE, 0, 0, 0, ONE, 0) + struct.pack('<I', 0)   # its vertices, material 0
 /// b += struct.pack('<Q', 1) + i64(ONE // 2, ONE // 2, ONE // 2)    # one albedo
 /// b += b'\x01' + i64(0, 0, ONE) + i64(ONE, ONE, ONE)               # sun: direction, irradiance
 /// b += i64(ONE // 4, ONE // 4, ONE // 4)                           # sky
 /// b += i64(0, 0, 5 * ONE, 0, 0, -ONE, 0, ONE, 0, ONE // 2)         # camera
-/// hashlib.sha256(b).hexdigest()  # 298 bytes
+/// flat = b + struct.pack('<Q', 0)                                  # no vertex normals
+/// hashlib.sha256(flat).hexdigest()  # 306 bytes
+/// smooth = b + struct.pack('<Q', 1)                                # one entry: +Z, none, +Y
+/// smooth += b'\x01' + i64(0, 0, ONE) + b'\x00' + b'\x01' + i64(0, ONE, 0)
+/// hashlib.sha256(smooth).hexdigest()  # 357 bytes
 /// ```
 #[test]
 fn a_one_triangle_scene_has_the_content_identity_python_computed() {
-    use bunny_linalg::FixedVec3;
+    use bunny_linalg::{FixedUnitVec3, FixedVec3};
     use bunny_num::FixedQ32_32;
     use bunny_optics::{Albedo, DirectionalLight, SkyLight};
     use lumen::{CameraPlacement, Lighting, Scene, SceneSpec};
     let raw = FixedQ32_32::from_raw;
     let one = 1_i64 << 32;
     let at = |x: i64, y: i64, z: i64| FixedVec3::new(raw(x), raw(y), raw(z));
-    let scene = Scene::new(&SceneSpec {
-        triangles: &[[at(0, 0, 0), at(one, 0, 0), at(0, one, 0)]],
-        material_of: &[0],
-        materials: &[Albedo::new([raw(one / 2); 3]).expect("valid albedo")],
-        lighting: Lighting {
-            sun: Some(DirectionalLight::new(at(0, 0, one), [raw(one); 3]).expect("valid sun")),
-            sky: SkyLight::new([raw(one / 4); 3]).expect("valid sky"),
-        },
-        camera: CameraPlacement {
-            position: at(0, 0, 5 * one),
-            look: at(0, 0, -one),
-            up: at(0, one, 0),
-            tan_half_fov: raw(one / 2),
-        },
-    })
-    .expect("the scene builds");
+    let scene = |normals: &[[Option<FixedUnitVec3>; 3]]| {
+        Scene::new(&SceneSpec {
+            triangles: &[[at(0, 0, 0), at(one, 0, 0), at(0, one, 0)]],
+            material_of: &[0],
+            materials: &[Albedo::new([raw(one / 2); 3]).expect("valid albedo")],
+            normals,
+            lighting: Lighting {
+                sun: Some(DirectionalLight::new(at(0, 0, one), [raw(one); 3]).expect("valid sun")),
+                sky: SkyLight::new([raw(one / 4); 3]).expect("valid sky"),
+            },
+            camera: CameraPlacement {
+                position: at(0, 0, 5 * one),
+                look: at(0, 0, -one),
+                up: at(0, one, 0),
+                tan_half_fov: raw(one / 2),
+            },
+        })
+    };
+    let id = |normals: &[[Option<FixedUnitVec3>; 3]]| {
+        scene(normals).expect("the scene builds").content_id().to_string()
+    };
+    assert_eq!(id(&[]), "sha256:9241f863968f50ae6c6ad6d828e0d5b57d91781e5b27be76f1bbd906087b0f6b");
+    let normals = [Some(FixedUnitVec3::UNIT_Z), None, Some(FixedUnitVec3::UNIT_Y)];
     assert_eq!(
-        scene.content_id().to_string(),
-        "sha256:07521627c32f46d72500489dea606fdc043acf9eef08655f9f3f7993c8e827c3"
+        id(&[normals]),
+        "sha256:74ee72e21d66eb96e9efece03eb7722895785dd46bf1af23d80cded65dd457c5"
     );
 }
