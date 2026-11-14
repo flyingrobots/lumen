@@ -34,6 +34,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- The canyon scene's craft and planet (part of flyingrobots/lumen#40): three craft of lumen's own
+  design (`scenes::canyon::craft`: the skiff, the tug and the kite, 170 triangles of convex
+  solids posed by rational rotations, each a painted hull and dark engines) and a banded planet
+  (`scenes::canyon::planet`: 16 128 triangles from Bunny's `FixedAngle::sin_cos`, eight latitude
+  bands, each its own material), appended by `push_craft` and `push_planet` to a
+  `CanyonContent`, the scene's triangle list with each triangle's part, material and normals.
+  `fixed_point::solids` is now visible to the crate (no change to Fixed Point).
+
 - The canyon scene's terrain (part of flyingrobots/lumen#40): `scenes::canyon::terrain` places
   `CANYON_HEIGHTFIELD` (seed 2009, a 513 by 470 vertex grid an eighth of a unit apart across the
   canyon and three eighths along it, a floor 14 units across, four-tier walls, a ragged plateau
