@@ -12,7 +12,7 @@ use lumen::{
 };
 
 mod golden;
-use golden::GOLDEN_96X54_4SPP;
+use golden::{GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_CONTENT, GOLDEN_REFERENCE_CONTENT};
 
 /// The PNG `lumen render --width 5 --height 3 --samples 1 --seed 4294967295` wrote at commit
 /// d8deec4 (before flyingrobots/lumen#19), in hex: 131 bytes, SHA-256
@@ -74,9 +74,10 @@ fn on_webassembly_a_second_worker_is_a_spawn_error() {
 
 #[test]
 fn the_provenance_lists_what_the_command_prints_in_its_order() {
+    let scene = reference_scene().expect("the reference scene builds");
     let size = ImageSize::new(40, 24).expect("valid size");
     let settings = RenderSettings::new(2, 5).expect("valid settings");
-    let provenance = RenderProvenance::new(REFERENCE_SCENE_ID, size, settings);
+    let provenance = RenderProvenance::named(REFERENCE_SCENE_ID, &scene, size, settings);
     let id = ProvenanceValue::Identity;
     let number = ProvenanceValue::Number;
     assert_eq!(
@@ -94,8 +95,28 @@ fn the_provenance_lists_what_the_command_prints_in_its_order() {
             ("samples", number(2)),
             ("seed", number(5)),
             ("bounces", number(1)),
+            ("scene-content", ProvenanceValue::Content(scene.content_id())),
         ]
     );
+    let unnamed = RenderProvenance::new(&scene, size, settings);
+    assert_eq!(unnamed.fields()[0], ("scene", ProvenanceValue::Unnamed));
+    assert_eq!(unnamed.fields()[1..], provenance.fields()[1..]);
+}
+
+/// The issue this field closes (flyingrobots/lumen#38): two scenes under one label used to have
+/// equal provenance. Now the content identity tells them apart.
+#[test]
+fn two_scenes_under_one_name_have_different_provenance() {
+    let size = ImageSize::new(8, 4).expect("valid size");
+    let settings = RenderSettings::new(1, 0).expect("valid settings");
+    let under_one_name = |scene: BuiltinScene| {
+        let built = scene.build().expect("the scene builds");
+        RenderProvenance::named("one-label", &built, size, settings)
+    };
+    let (reference, fixed_point) =
+        (under_one_name(BuiltinScene::Reference), under_one_name(BuiltinScene::FixedPoint));
+    assert_eq!(reference.name(), fixed_point.name());
+    assert_ne!(reference, fixed_point);
 }
 
 #[test]
@@ -122,7 +143,13 @@ fn every_builtin_scene_builds_renders_and_has_its_own_identity() {
         let schedule = Schedule::new(1, BandRows::new(4).expect("valid band")).expect("valid");
         let rendered = render_scheduled(&built, size, settings, schedule).expect("renders");
         assert_eq!(scene.name().parse(), Ok(scene), "the name round-trips");
-        assert_eq!(RenderProvenance::new(scene.id(), size, settings).scene(), scene.id());
+        let provenance = RenderProvenance::named(scene.id(), &built, size, settings);
+        assert_eq!(provenance.name(), Some(scene.id()));
+        let golden = match scene {
+            BuiltinScene::Reference => GOLDEN_REFERENCE_CONTENT,
+            BuiltinScene::FixedPoint => GOLDEN_FIXED_POINT_CONTENT,
+        };
+        assert_eq!(provenance.scene_content().to_string(), golden, "{}", scene.name());
         ids.insert(scene.id());
         names.insert(scene.name());
         hashes.insert(rendered.image.hash());
@@ -143,4 +170,50 @@ property float z\nelement face 1\nproperty list uchar int vertex_indices\nend_he
     let refused = lumen::mesh::read_ascii_ply(&text[..text.len() - 8]).expect_err("truncated");
     assert_eq!(refused.kind(), bunny_codec::AsciiPlyErrorKind::PayloadTooShort);
     assert_eq!(lumen::mesh::PlaceError::Ply(refused), lumen::mesh::PlaceError::Ply(refused));
+}
+
+/// One triangle, one albedo, a sun, a sky and a camera, with the content identity computed
+/// outside lumen: Python built the byte stream from the table in ADR 0005 and hashed it with
+/// `hashlib`, so this does not rest on lumen's SHA-256 or its encoder agreeing with themselves.
+/// The script, with `ONE = 1 << 32` and `i64 = lambda *v: struct.pack('<%dq' % len(v), *v)`:
+///
+/// ```text
+/// b = struct.pack('<Q', 21) + b'lumen-scene-content/1'
+/// b += struct.pack('<Q', 1)                                        # one triangle
+/// b += i64(0, 0, 0, ONE, 0, 0, 0, ONE, 0) + struct.pack('<I', 0)   # its vertices, material 0
+/// b += struct.pack('<Q', 1) + i64(ONE // 2, ONE // 2, ONE // 2)    # one albedo
+/// b += b'\x01' + i64(0, 0, ONE) + i64(ONE, ONE, ONE)               # sun: direction, irradiance
+/// b += i64(ONE // 4, ONE // 4, ONE // 4)                           # sky
+/// b += i64(0, 0, 5 * ONE, 0, 0, -ONE, 0, ONE, 0, ONE // 2)         # camera
+/// hashlib.sha256(b).hexdigest()  # 298 bytes
+/// ```
+#[test]
+fn a_one_triangle_scene_has_the_content_identity_python_computed() {
+    use bunny_linalg::FixedVec3;
+    use bunny_num::FixedQ32_32;
+    use bunny_optics::{Albedo, DirectionalLight, SkyLight};
+    use lumen::{CameraPlacement, Lighting, Scene, SceneSpec};
+    let raw = FixedQ32_32::from_raw;
+    let one = 1_i64 << 32;
+    let at = |x: i64, y: i64, z: i64| FixedVec3::new(raw(x), raw(y), raw(z));
+    let scene = Scene::new(&SceneSpec {
+        triangles: &[[at(0, 0, 0), at(one, 0, 0), at(0, one, 0)]],
+        material_of: &[0],
+        materials: &[Albedo::new([raw(one / 2); 3]).expect("valid albedo")],
+        lighting: Lighting {
+            sun: Some(DirectionalLight::new(at(0, 0, one), [raw(one); 3]).expect("valid sun")),
+            sky: SkyLight::new([raw(one / 4); 3]).expect("valid sky"),
+        },
+        camera: CameraPlacement {
+            position: at(0, 0, 5 * one),
+            look: at(0, 0, -one),
+            up: at(0, one, 0),
+            tan_half_fov: raw(one / 2),
+        },
+    })
+    .expect("the scene builds");
+    assert_eq!(
+        scene.content_id().to_string(),
+        "sha256:07521627c32f46d72500489dea606fdc043acf9eef08655f9f3f7993c8e827c3"
+    );
 }

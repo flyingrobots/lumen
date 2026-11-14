@@ -98,7 +98,7 @@ fn run(
         total,
     };
     let report = Report {
-        provenance: RenderProvenance::new(scene.id(), size, settings),
+        provenance: RenderProvenance::named(scene.id(), &built_scene, size, settings),
         schedule,
         workers: schedule.workers(size),
         rays: render.rays,

@@ -12,7 +12,10 @@ use std::process::{Command, Output};
 use lumen::{render_reference, write_png, BuiltinScene, RenderSettings};
 
 mod golden;
-use golden::{GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP};
+use golden::{
+    GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP, GOLDEN_FIXED_POINT_CONTENT,
+    GOLDEN_REFERENCE_CONTENT,
+};
 
 fn text(bytes: &[u8]) -> String {
     String::from_utf8(bytes.to_vec()).expect("utf-8")
@@ -414,18 +417,22 @@ fn each_scene_reports_its_own_identity() {
     }
 }
 
-/// The image is the one the library's golden hash records for the scene (96 by 54 pixels, 4
-/// samples, seed 0).
+/// The `scene-content` line (the last provenance line, after `bounces`) is the scene's golden
+/// content identity, and the image is the one the library's golden hash records for it (96 by
+/// 54 pixels, 4 samples, seed 0).
 #[test]
 fn each_scene_renders_its_golden_image() {
     let dir = Scratch::new("scene-golden");
     let golden = |scene: BuiltinScene| match scene {
-        BuiltinScene::Reference => GOLDEN_96X54_4SPP,
-        BuiltinScene::FixedPoint => GOLDEN_FIXED_POINT_96X54_4SPP,
+        BuiltinScene::Reference => (GOLDEN_96X54_4SPP, GOLDEN_REFERENCE_CONTENT),
+        BuiltinScene::FixedPoint => (GOLDEN_FIXED_POINT_96X54_4SPP, GOLDEN_FIXED_POINT_CONTENT),
     };
     for scene in BuiltinScene::ALL {
         let stdout = render_scene(&dir, ["96", "54"], &["--scene", scene.name()]);
-        assert_eq!(field(&stdout, "image"), golden(scene), "{}", scene.name());
+        let (image, content) = golden(scene);
+        assert_eq!(field(&stdout, "image"), image, "{}", scene.name());
+        let after_bounces = stdout.lines().skip_while(|line| *line != "bounces 1").nth(1);
+        assert_eq!(after_bounces, Some(format!("scene-content {content}").as_str()));
     }
 }
 
@@ -434,6 +441,7 @@ fn without_scene_the_reference_scene_is_rendered() {
     let dir = Scratch::new("default-scene");
     let stdout = render_scene(&dir, ["96", "54"], &[]);
     assert_eq!(field(&stdout, "scene"), BuiltinScene::Reference.id());
+    assert_eq!(field(&stdout, "scene-content"), GOLDEN_REFERENCE_CONTENT);
     assert_eq!(field(&stdout, "image"), GOLDEN_96X54_4SPP);
 }
 
