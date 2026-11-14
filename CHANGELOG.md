@@ -8,6 +8,10 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- A float type under another name is refused (flyingrobots/lumen#156): `clippy.toml` bans
+  `c_double` and `c_float` of `core::ffi` (which `std::ffi` re-exports) and of `std::os::raw`, and the
+  scan names `c_double`, `c_float`, `f16` and `f128` (and names with the word `f16` or `f128`).
+  Before, `<core::ffi::c_double as From<u32>>::from(x).sin()` passed both layers in the core.
 - The nondeterminism gate checks the workspace boundary (flyingrobots/lumen#158, ADR 0006's
   amendment of 2026-11-14): `xtask nondeterminism` reads `cargo metadata` and fails on a workspace
   member that is neither reached by `lumen`'s normal and build dependencies nor classified as
