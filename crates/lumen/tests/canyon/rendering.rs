@@ -129,7 +129,8 @@ impl Tracer for Checked<'_> {
 /// 1 sample: 1 296 samples.
 ///
 /// Size class: large. Each brute-force query reads every triangle, so this runs only in the
-/// release profile, where it takes about 10 seconds; the test profile skips it (CI runs both).
+/// release profile; the test profile skips it (CI runs both). It takes tens of seconds: how many
+/// depends on the machine, so no figure is kept here.
 #[test]
 #[cfg_attr(
     debug_assertions,

@@ -1,6 +1,7 @@
 # ADR 0004: How WebAssembly is tested
 
-Status: accepted (flyingrobots/lumen#23)
+Status: accepted (flyingrobots/lumen#23); the list of what runs there brought up to date (see
+[Clarification, 2026-11-14](#clarification-2026-11-14-what-runs-there-now)).
 
 ## Context
 
@@ -50,3 +51,17 @@ There are two common ways to run Rust tests on WebAssembly:
   JavaScript API; then its tests move to `wasm-bindgen-test`, and this record is superseded.
 - Node's WASI is marked experimental by Node. If it changes or is withdrawn, the runner is the
   one file to replace (for example with `wasmtime`, which Bunny's performance job uses).
+
+## Clarification, 2026-11-14: what runs there now
+
+Added for flyingrobots/lumen#163; the decision is unchanged. The list under "What runs there"
+was the first one. The job (`.github/workflows/ci.yml`) now runs, in both profiles, the
+library's unit tests, `tests/render.rs`, `tests/library.rs`, `tests/fixed_point/`,
+`tests/generated.rs`, `tests/smooth.rs` and `tests/statistics.rs`, and in a step of its own the
+canyon's golden test alone (`tests/canyon/`, `rendering::the_canyon_image_has_its_golden_hash`):
+the rest of that binary holds a brute-force test of every ray against all 566 005 triangles,
+far too slow here. So all three built-in scenes' golden images are checked on WebAssembly. The
+tests that start threads or processes still do not run there: `tests/threads.rs`,
+`tests/cli.rs`, `tests/tutorial.rs`, `tests/counts.rs`, `tests/ray_statistics.rs` and
+`tests/run_statistics.rs`. The workflow file is the authority; the requirement-to-evidence map
+in [the explanation](../explanation.md#requirements-and-their-evidence) follows it.
