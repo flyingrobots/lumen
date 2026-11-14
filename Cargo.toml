@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/lumen", "xtask"]
+members = ["crates/lumen", "xtask", "xtask/clippy-fixture"]
 resolver = "2"
 
 [workspace.package]

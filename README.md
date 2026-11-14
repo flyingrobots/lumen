@@ -295,10 +295,12 @@ The library computes the counts (`Scene::statistics()`, a `SceneStatistics`) and
 formats them; nothing is counted while a ray is traced, and nothing in the scene changes.
 `Scene::statistics` is described under [Library and command](#library-and-command);
 [ADR 0008](docs/adr/0008-statistics.md) records what is counted and why it cannot change a pixel.
-Run and traversal statistics are decided there and not yet built.
+Traversal statistics (nodes visited and triangles tested per ray) are decided there and wait for
+flyingrobots/bunny#335.
 
 `lumen render ... --stats` prints the report unchanged, then the same scene block (every line of
-`lumen stats` after its first three, which the report already gives), then what the rays found.
+`lumen stats` after its first three, which the report already gives), then what the rays found,
+then how the work was spread over the workers.
 Without `--stats` the output is the report alone, byte for byte as before statistics existed.
 The command first checks the ray statistics against the size and settings (one record per pixel,
 `--samples` samples per pixel, exactly one camera ray per sample, at most four rays per sample)
@@ -348,6 +350,19 @@ same at every thread count and band height:
 | `rays.pixels`, `rays.samples-per-pixel`, `rays.samples` | pixels rendered, samples asked for per pixel, and samples traced in all |
 | `rays.per-pixel-min`, `rays.per-pixel-max` | the fewest and most rays any one pixel traced |
 | `rays.per-pixel-mean` | `rays.total / rays.pixels`, with two places, rounded to nearest, ties up |
+
+The run lines (`render --stats`), last. The band height, the band count and the worker count follow
+from the size and `--threads` and `--band-rows`; which worker took which band depends on timing, so
+every per-worker line ends in `(information only: differs from run to run)`. The per-worker
+figures add up to the totals, which do not differ. Workers report counts only: there is no
+per-worker busy time, since the library reads no clock (ADR 0008); `render-seconds` is the whole
+render's.
+
+| Key | Value |
+| --- | --- |
+| `run.band-rows`, `run.bands` | the rows in a band and the bands the image is cut into (the height over the band height, rounded up) |
+| `run.workers` | the workers that rendered, the `threads` line's count |
+| `run.worker.N.bands`, `.rows`, `.pixels`, `.rays` | what worker `N` (0 is the calling thread) took and traced: information only |
 
 Not counted in `memory.`: the `Scene` value and its vectors' headers, spare capacity, the
 allocator's overhead, the buffers dropped after the build (the boxes and the uncompacted tree of
@@ -1117,23 +1132,27 @@ rules use Echo's `ban-nondeterminism` rule IDs, plus Lumen's `thread-spawn` and 
 
 | Rule | Banned | Enforced by |
 |---|---|---|
-| `time-system`, `time-instant` | `SystemTime`, `Instant` and their `now` and `elapsed` | `clippy.toml`, in `fmt, clippy` |
-| `thread-sleep`, `host-parallelism`, `thread-spawn` | `std::thread::sleep`, `available_parallelism`, `spawn`, `scope`, `Builder` | the same |
+| `time-system`, `time-instant` | `SystemTime`, `SystemTimeError`, `Instant` and their `now` and `elapsed` | `clippy.toml`, in `fmt, clippy` |
+| `thread-sleep`, `host-parallelism`, `thread-spawn` | `std::thread::sleep`, `sleep_ms`, `park_timeout`, `park_timeout_ms`, `available_parallelism`, `spawn`, `scope`, `Builder` | the same |
 | `unordered-container` | `HashMap`, `HashSet`, `RandomState` | the same |
-| `std-env`, `std-fs`, `std-process`, `network` | arguments, environment variables, `env!` and `option_env!`, files and `Path::exists`, processes, sockets | the same |
-| `float-type` | `f32`, `f64`, Bunny's `to_f32`; float arithmetic in the library (`clippy::float_arithmetic`) | the same, and `lib.rs` |
+| `std-env`, `std-fs`, `std-process`, `network` | every stable function and type of `std::env`, `std::fs`, `std::process` and `std::net` (except the address types), the `Path` methods that touch files, `env!` and `option_env!` | the same |
+| `float-type` | `f32`, `f64`, the float methods of `Duration`, Bunny's float bridge (`Scalar`, `Vec3`, `Ray3`, `PlyVertex`, `to_f32`, `into_float`, ...); float arithmetic in the library (`clippy::float_arithmetic`) | the same, and `lib.rs` |
 | `random`, `host-callback`, `json-serialization`, `wasm-serde`, crate forms of the rest | any crates.io crate | `deny.toml` (`allow-registry = []`), in `Gates / cargo-deny` |
-| `float-type`, `float-literal`, `float-cast`, the names and `std` paths above, `hand-hashed-table` | in the core, also under a `cfg` that is not built and in macro bodies: `f32`, `f64`, float literals, `as f64`; `Instant`, `SystemTime`, `HashMap` and the other banned names wherever spelled; `std::env`, `fs`, `process`, `net`, `thread::sleep` paths through `use` trees and renames; any line naming open addressing | `cargo run -p xtask -- nondeterminism`, in `Gates / nondeterminism` |
+| `float-type`, `float-literal`, `float-cast`, the names and `std` paths above, `hand-hashed-table` | in the core, also under a `cfg` that is not built and in macro bodies: `f32`, `f64`, float literals, `as f64`; `Instant`, `SystemTime`, `HashMap` and the other banned names wherever spelled; names with the word `f32` or `f64` (`as_secs_f64`); `std::env`, `fs`, `process`, `net` and `thread` sleep paths through `use` trees, renames and `extern crate` aliases; any line naming open addressing | `cargo run -p xtask -- nondeterminism`, in `Gates / nondeterminism` |
 
-The bans apply to the whole workspace. The deterministic core is the library, `src/` without
-`src/bin/`; the command (the only clock and the only `available_parallelism`), the examples,
+The bans apply to the whole workspace. The deterministic core is every file the library
+compiles outside `#[cfg(test)]`, found by following its module tree from `src/lib.rs` as `rustc`
+does, not by file name (ADR 0006); the command (the only clock and the only `available_parallelism`), the examples,
 `tests/cli.rs` and `xtask` are outside it and each carries one crate-level waiver. Inside it, the
 scheduler's threads (`render_pixels`, ADR 0003) and two unit tests carry their own. A waiver is
 `#[expect(<clippy lints>, reason = "<rule-ids>: <why it cannot reach a pixel>")]` on the
 smallest item that needs it: `expect`, so one that stops matching fails the build; the scan
-fails an `allow` of a ban lint or a reason that does not start with rule IDs. A scan finding is
-waived by `// nondeterminism: allow <rule-id> -- <reason>` on its line or the line above; the scan
-fails one with an unknown rule, without a reason, or that waives nothing. There is none today.
+fails an `allow` or `warn` of a ban lint, a ban lint's old name, any lowering of a lint group that
+holds one (`clippy::all`, `clippy::style`, `clippy::restriction`, `warnings`), a lint list built
+by a macro, and a reason that does not start with rule IDs. A scan finding is waived by the
+comment `// nondeterminism: allow <rule-id> -- <reason>` on its line or the line above (the same
+text in a string or a doc comment is not a waiver); the scan fails one with an unknown rule,
+without a reason, or that waives nothing. There is none today.
 Not covered: a `usize`-dependent value reaching the hash, which the WebAssembly leg (32-bit
 `usize`) tests.
 
@@ -1142,6 +1161,20 @@ Run the scan with `make nondeterminism`, or:
 ```sh
 python3 $D lumen ~/git/lumen --worktree -- cargo run --locked -q -p xtask -- nondeterminism
 ```
+
+Clippy only warns about a `clippy.toml` path that does not resolve, so the `fmt, clippy` job also
+runs `cargo run --locked -q -p xtask -- clippy-bans` (`make clippy-bans`). It runs Clippy on
+`xtask/clippy-fixture`, a workspace member whose seeded uses of every banned item compile only
+under `--cfg lumen_clippy_fixture`, and fails when an entry produces a diagnostic about
+`clippy.toml` or never fires there, when a module marked `// seeded: <rule-id>` is not reported
+under its rule or one marked `// accepted` is reported, when there is any Clippy configuration
+file besides the root `clippy.toml` (a crate's own replaces it), and when the toolchain's lint
+groups holding a ban lint change. A new ban is a line in `clippy.toml` and a use in the fixture.
+The std part of the list is checked against `xtask/bans/std-items.txt`, every public item of the
+banned std modules in the pinned toolchain's documentation: an item decided banned without an
+entry, an item without a decision, or a list made for another toolchain fails the check. ADR 0006
+gives the commands that regenerate the list when the toolchain moves
+(`cargo run -p xtask -- std-items <rust-docs std dir> <version>`).
 
 ## Bunny dependency
 
@@ -1222,11 +1255,12 @@ Lint posture mirrors Bunny: `unsafe` is forbidden, clippy `all` is denied and
 |---|---|---|
 | `Gates / cargo-deny` | `cargo deny --locked check` against `deny.toml` | an advisory, a yanked crate, a licence other than Apache-2.0, a second version of a crate, a wildcard version, any crate from a registry (crates.io included), a git repository other than `https://github.com/flyingrobots/bunny`, or a git dependency not pinned by `rev` |
 | `Gates / cargo-audit` | `cargo audit --deny warnings` on `Cargo.lock` | a RustSec advisory or warning for a locked crate |
-| `Gates / file length` | `cargo run -p xtask -- file-length` | a source file over 300 lines of code without a listed exception, or over 500 at all; a test file (under `tests/` or named `tests.rs`) over 750; a listed file grown past its exception; an exception no longer needed |
-| `Gates / nondeterminism` | `cargo run -p xtask -- nondeterminism` (see "Nondeterminism bans") | a float, a banned name or `std` path in the deterministic core, a malformed or unused scan waiver, or a ban lint waived with `allow` or without rule IDs in its reason |
+| `Gates / file length` | `cargo run -p xtask -- file-length` | a source file over 300 lines of code without a listed exception, or over 500 at all; a test file (one compiled only under `#[cfg(test)]`, or an integration test) over 750; a listed file grown past its exception; an exception no longer needed; an `include!`, or a `#[path]` to anything but a `.rs` file the gate reads |
+| `Gates / nondeterminism` | `cargo run -p xtask -- nondeterminism` (see "Nondeterminism bans") | a float, a banned name or `std` path in the deterministic core, a malformed or unused scan waiver, a ban lint waived with `allow` or without rule IDs in its reason, or the `include!` and `#[path]` forms above |
 | `Signal / coverage` | `cargo llvm-cov --workspace --summary-only`, in the job summary | never: coverage is reported, not gated |
 
-A line of code is a line with a character outside a comment; doc comments are comments. The
+A line of code is a line with a character outside a comment; doc comments are comments, and so
+is a shebang line, which both gates skip exactly as `rustc` does (ADR 0006). The
 exceptions live in `xtask/src/file_length/exceptions.rs`, each with the count it was granted at,
 the date and the issue that splits the file.
 

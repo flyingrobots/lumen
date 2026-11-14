@@ -5,13 +5,16 @@ use super::{
     code_lines, judge, Exception, Measured, Verdict, EXCEPTIONS, SOURCE_MAX, SOURCE_REVIEW,
     TEST_MAX,
 };
+use crate::layout::Role;
 
 const SRC: &str = "crates/lumen/src/big.rs";
 const TEST: &str = "crates/lumen/tests/big.rs";
 const UNIT: &str = "crates/lumen/src/big/tests.rs";
 
+/// A measured file; its role is what `crate::layout` decides (tested there), here by the path.
 fn file(path: &str, lines: usize) -> Measured {
-    Measured { path: path.to_owned(), lines }
+    let role = if path == SRC { Role::Source } else { Role::Test };
+    Measured { path: path.to_owned(), role, lines }
 }
 
 fn exception(path: &'static str, allowed: usize) -> Exception {
@@ -52,6 +55,20 @@ fn a_lifetime_is_not_a_character_literal() {
 fn a_multi_line_string_counts_its_lines_with_text() {
     assert_eq!(code_lines("let s = \"one\n\ntwo\";\n"), 2);
     assert_eq!(code_lines("let s = \"one \\\n  two\";\n"), 2);
+}
+
+#[test]
+fn a_character_literal_quote_does_not_open_a_string() {
+    assert_eq!(code_lines("let q = '\"';\n// a comment \"\n"), 1);
+}
+
+#[test]
+fn a_shebang_line_is_skipped_as_rustc_skips_it() {
+    let body = "fn a() {}\n".repeat(603);
+    assert_eq!(code_lines(&format!("#!/bin/x /*\n{body}")), 603);
+    assert_eq!(code_lines(&format!("\u{feff}#!/usr/bin/env run\n{body}")), 603);
+    assert_eq!(failures(&[file(SRC, code_lines(&format!("#!/bin/x /*\n{body}")))], &[]), 1);
+    assert_eq!(code_lines("#![allow(dead_code)]\nfn a() {}\n"), 2);
 }
 
 #[test]
