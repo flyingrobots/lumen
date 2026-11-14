@@ -227,3 +227,6 @@ impl fmt::Display for Ratio {
 
 #[cfg(test)]
 mod tests;
+mod traversal;
+
+pub(crate) use traversal::write_traversal;

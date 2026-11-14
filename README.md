@@ -929,6 +929,9 @@ records flyingrobots/lumen#40: 566 005 triangles, a tree of 575 687 nodes, the i
 render of 14.5 seconds with 18 CPUs, and 40.7 ns per ray against 15.0 for the reference scene
 and 18.0 for Fixed Point at the same settings in the same session.
 Each states its commit and conditions and applies to that commit only.
+[Traversal work per ray in the three built-in scenes, 2026-11-14](docs/measurements/2026-11-14-traversal-cost.md)
+gives, from `render --stats`, the mean box tests and primitive tests per camera, bounce and
+shadow ray beside each scene's triangles and tree depth.
 
 ### Readings
 
