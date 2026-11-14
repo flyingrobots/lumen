@@ -3,7 +3,7 @@
 use bunny_linalg::FixedVec3;
 
 use super::*;
-use crate::mesh::decimal_to_q32_32;
+use crate::mesh::read_ascii_ply;
 use crate::reference::shapes::GROUND_Y;
 use crate::reference::{reference_scene, REFERENCE_TRIANGLE_COUNT};
 use crate::vertex_grid::{grid, GRID_RAW, U};
@@ -21,7 +21,7 @@ fn bunny_raw_bounds(triangles: &[[FixedVec3; 3]]) -> ([i64; 3], [i64; 3]) {
 }
 
 /// The placed bunny's bounds in grid steps, derived by hand from the converted file bounds
-/// (`mesh::decimal::tests`): coordinate `c` is placed at `floor(s * c * 8 / 2^16) + offset`, with
+/// (`mesh::loaded::tests`): coordinate `c` is placed at `floor(s * c * 8 / 2^16) + offset`, with
 /// `s = -1` on X and Z (the half turn).
 ///
 /// - min X from the file's max X, raw `261 712 114`: `-2 093 696 912 / 65 536 = -31 947.28`,
@@ -44,7 +44,7 @@ fn the_bunny_is_placed_where_stated() {
     assert_eq!(hi, [-106_174, 5_649, 65_101]);
     assert_eq!(lo[1], GROUND_Y);
     // Exactly one vertex rests on the ground: the file's vertex 1748.
-    let mesh = parse_ascii_ply(STANFORD_BUNNY_PLY).expect("reads");
+    let mesh = read_ascii_ply(STANFORD_BUNNY_PLY.as_bytes()).expect("reads");
     let on_ground: Vec<usize> = (0..mesh.vertices.len())
         .filter(|&i| BUNNY_PLACEMENT.place(mesh.vertices[i]).expect("places").y == grid(GROUND_Y))
         .collect();
@@ -89,7 +89,7 @@ fn the_bunny_keeps_every_face_and_none_is_degenerate() {
 #[test]
 fn the_bunny_winding_is_consistent_and_its_holes_are_counted() {
     use std::collections::HashMap;
-    let mesh = parse_ascii_ply(STANFORD_BUNNY_PLY).expect("reads");
+    let mesh = read_ascii_ply(STANFORD_BUNNY_PLY.as_bytes()).expect("reads");
     let mut directed: HashMap<(u32, u32), u32> = HashMap::new();
     for &[a, b, c] in &mesh.faces {
         for edge in [(a, b), (b, c), (c, a)] {
@@ -138,7 +138,7 @@ fn the_bunny_winding_is_consistent_and_its_holes_are_counted() {
 
 #[test]
 fn the_stanford_bunny_reads_with_its_declared_counts() {
-    let mesh = parse_ascii_ply(STANFORD_BUNNY_PLY).expect("the bunny reads");
+    let mesh = read_ascii_ply(STANFORD_BUNNY_PLY.as_bytes()).expect("the bunny reads");
     assert_eq!(mesh.vertices.len(), 1889);
     assert_eq!(mesh.faces.len(), 3851);
     let first = mesh.vertices[0];
@@ -153,10 +153,11 @@ fn the_stanford_bunny_reads_with_its_declared_counts() {
 #[test]
 fn the_bunny_bounds_equal_the_manifest_bounds_exactly() {
     let manifest = |values: [&str; 3]| {
-        let [x, y, z] = values.map(|v| decimal_to_q32_32(v).expect("a decimal"));
+        let [x, y, z] =
+            values.map(|v| bunny_codec::parse_decimal_q32_32(v.as_bytes()).expect("a decimal"));
         FixedVec3::new(x, y, z)
     };
-    let mesh = parse_ascii_ply(STANFORD_BUNNY_PLY).expect("the bunny reads");
+    let mesh = read_ascii_ply(STANFORD_BUNNY_PLY.as_bytes()).expect("the bunny reads");
     let (lo, hi) = mesh.bounds().expect("vertices");
     assert_eq!(lo, manifest(["-0.0943643", "0.0334143", "-0.0616721"]));
     assert_eq!(hi, manifest(["0.0609346", "0.184813", "0.0584651"]));

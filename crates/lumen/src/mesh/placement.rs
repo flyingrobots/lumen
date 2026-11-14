@@ -12,7 +12,9 @@ use bunny_num::FixedQ32_32;
 use bunny_optics::TriangleSurface;
 use bunny_query::TraceTriangle;
 
-use super::ply::{PlyError, PlyMesh};
+use bunny_codec::AsciiPlyError;
+
+use super::loaded::PlyMesh;
 use crate::vertex_grid::{snap, GRID_RAW};
 
 /// A turn applied to a mesh before it is scaled: only turns that are exact in fixed point.
@@ -105,8 +107,8 @@ pub struct PlacedMesh {
 /// Why a mesh could not be placed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlaceError {
-    /// The PLY text was refused.
-    Ply(PlyError),
+    /// Bunny's ASCII PLY reader refused the file.
+    Ply(AsciiPlyError),
     /// A face names a vertex the mesh does not have.
     MissingVertex {
         /// The face index.
@@ -139,7 +141,14 @@ impl fmt::Display for PlaceError {
     }
 }
 
-impl std::error::Error for PlaceError {}
+impl std::error::Error for PlaceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Ply(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 /// Places every face of `mesh` with `placement`, in face order, dropping each face whose placed
 /// triangle has zero area: one for which Bunny's `TriangleSurface::new` returns `None` (its exact

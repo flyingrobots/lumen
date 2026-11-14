@@ -918,7 +918,7 @@ fn the_reference_image_has_its_golden_hash() {
     assert_eq!(bunny_optics::SHADING_ID, "bunny-diffuse-shading/1");
     assert_eq!(TONE_CURVE.identity(), "bunny-tone-srgb/1");
     assert_eq!(bunny_optics::RGBA8_OPAQUE_IDENTITY, "bunny-rgba8-opaque/1");
-    assert_eq!(BUNNY_REV, "3c395f9950ac63d5ecfbd2055c306954111daf9d");
+    assert_eq!(BUNNY_REV, "3c0dab3e77c0d45de8904906a134e846dfe5ec6c");
     let render = render_reference(96, 54, settings(4, 0)).expect("renders");
     assert_eq!(render.image.hash(), GOLDEN_96X54_4SPP);
 }
@@ -938,6 +938,9 @@ fn the_lockfile_resolves_bunny_to_the_recorded_commit() {
     let pinned = format!("?rev={BUNNY_REV}#{BUNNY_REV}\"");
     let bunny_sources: Vec<&str> =
         lock.lines().filter(|line| line.contains("flyingrobots/bunny")).collect();
-    assert_eq!(bunny_sources.len(), 6, "six Bunny crates: {bunny_sources:?}");
+    assert_eq!(bunny_sources.len(), 8, "eight Bunny crates: {bunny_sources:?}");
     assert!(bunny_sources.iter().all(|line| line.ends_with(&pinned)), "{bunny_sources:?}");
+    // Lumen's only dependencies are Bunny's: no crate comes from a registry.
+    let registry: Vec<&str> = lock.lines().filter(|line| line.contains("registry+")).collect();
+    assert!(registry.is_empty(), "registry crates in the lock: {registry:?}");
 }
