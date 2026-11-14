@@ -19,7 +19,7 @@ pub(crate) enum Decision {
 use Decision::{Ban, Keep, Scan};
 
 /// The items of `std::thread` the bans cover, and their rules.
-const THREAD_BANS: [(&str, &str); 12] = [
+const THREAD_BANS: &[(&str, &str)] = &[
     ("sleep", "thread-sleep"),
     ("sleep_ms", "thread-sleep"),
     ("park_timeout", "thread-sleep"),
@@ -35,7 +35,7 @@ const THREAD_BANS: [(&str, &str); 12] = [
 ];
 
 /// The items of `std::thread` kept: scheduling, with no time, identity or host value.
-const THREAD_KEPT: [&str; 8] = [
+const THREAD_KEPT: &[&str] = &[
     "panicking",
     "park",
     "yield_now",
@@ -47,7 +47,7 @@ const THREAD_KEPT: [&str; 8] = [
 ];
 
 /// The items of `std::net` kept: core's address data, with no socket and no lookup.
-const NET_KEPT: [&str; 8] = [
+const NET_KEPT: &[&str] = &[
     "AddrParseError",
     "IpAddr",
     "Ipv4Addr",
@@ -60,7 +60,7 @@ const NET_KEPT: [&str; 8] = [
 
 /// The items of `std::io` banned (`host-io`): the process's own streams and pipes, and whether
 /// a stream is a terminal. The rest reads or writes what the caller passes.
-const IO_BANS: [&str; 13] = [
+const IO_BANS: &[&str] = &[
     "stdin",
     "Stdin",
     "StdinLock",
@@ -77,15 +77,15 @@ const IO_BANS: [&str; 13] = [
 ];
 
 /// The std modules whose items the list holds and decides one by one ([`super::MODULES`]).
-pub(super) const ENUMERATED: [&str; 10] =
-    ["env", "fs", "process", "net", "thread", "time", "io", "hash", "any", "panic"];
+pub(super) const ENUMERATED: &[&str] =
+    &["env", "fs", "process", "net", "thread", "time", "io", "hash", "any", "panic"];
 
 /// The std modules banned whole by the scan, and their rules.
-const MODULE_SCAN: [(&str, &str); 3] =
-    [("os", "std-os"), ("arch", "host-cpu"), ("backtrace", "address")];
+const MODULE_SCAN: &[(&str, &str)] =
+    &[("os", "std-os"), ("arch", "host-cpu"), ("backtrace", "address")];
 
 /// The std modules kept whole, each with why nothing in it needs a ban beyond the named ones.
-const MODULE_KEPT: [(&[&str], &str); 9] = [
+const MODULE_KEPT: &[(&[&str], &str)] = &[
     (&["i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize"], "integer constants and their modules"),
     (&["f32", "f64", "primitive"], "the float modules and primitives: the scan's float-type names them"),
     (&["array", "slice", "str", "string", "vec", "boxed", "rc", "borrow", "char", "ascii"], "values and their containers"),
@@ -98,7 +98,7 @@ const MODULE_KEPT: [(&[&str], &str); 9] = [
 ];
 
 /// The macros at the root of std, and their decisions.
-const ROOT_MACROS: [(&str, Decision); 9] = [
+const ROOT_MACROS: &[(&str, Decision)] = &[
     ("env", Ban("std-env")),
     ("option_env", Ban("std-env")),
     ("thread_local", Ban("shared-state")),
@@ -111,11 +111,11 @@ const ROOT_MACROS: [(&str, Decision); 9] = [
 ];
 
 /// The root macros that print to the process's streams.
-const PRINTING: [&str; 4] = ["print", "println", "eprint", "eprintln"];
+const PRINTING: &[&str] = &["print", "println", "eprint", "eprintln"];
 
 /// The root macros kept: assertions, formatting into a value, and values of the source text
 /// alone (`line!`, `column!`, `module_path!`).
-const MACROS_KEPT: [&str; 27] = [
+const MACROS_KEPT: &[&str] = &[
     "assert",
     "assert_eq",
     "assert_matches",

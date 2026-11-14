@@ -414,6 +414,14 @@ used on the pinned toolchain and are kept. The items of modules kept whole are n
 so a new dangerous item inside one (a new `std::sync` global, say) is found only if a rule or a
 name of the scan covers it; that is the list's limit.
 
+**Every rule keeps a form.** A test (`every_rule_the_scan_reports_has_a_seeded_form_that_reports_it`)
+runs every seeded form of the scan's tests and fails if a rule ID in `RULES` is reported by none
+of them, so removing a rule's last form, or a rule that stops firing, fails. The IDs the scan
+never reports are listed with their reason in `VOCABULARY_ONLY` (`random`, `host-callback`,
+`json-serialization`, `wasm-serde`, `float-sentinel`, `float-op`, enforced by `cargo-deny` or as
+other float rules, and `thread-spawn`, Clippy's alone); the test also fails if one of those is
+reported. The scan's tables and fixture lists are slices, not arrays of a stated length.
+
 What the lexical rules cannot see: a pointer compared or ordered (`a.as_ptr() < b.as_ptr()`),
 hashed through a hasher of the core's own, or cast to an integer through a binding
 (`let p = x.as_ptr(); p as usize`), since the scan knows no types; `addr` and the other

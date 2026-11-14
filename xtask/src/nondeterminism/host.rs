@@ -5,7 +5,7 @@
 use super::tokens::{Located, Token};
 
 /// Macros, by name, and their rules. `dbg!` prints to standard error with the source path.
-const MACROS: [(&str, &str); 9] = [
+const MACROS: &[(&str, &str)] = &[
     ("thread_local", "shared-state"),
     ("file", "source-path"),
     ("dbg", "host-io"),
@@ -21,7 +21,7 @@ const MACROS: [(&str, &str); 9] = [
 /// property of it (`is_aligned`, `align_offset`), and whether a stream is a terminal. The
 /// receiver's type is not known, so a method of the core's own with one of these names is a
 /// finding too.
-const METHODS: [(&str, &str); 7] = [
+const METHODS: &[(&str, &str)] = &[
     ("addr", "address"),
     ("expose_provenance", "address"),
     ("expose_addr", "address"),
@@ -34,15 +34,14 @@ const METHODS: [(&str, &str); 7] = [
 /// The `cfg` predicates that do not depend on the target, the host or the profile: `test`,
 /// `doc` and `doctest` are how the code is built for checking, and `feature` is the caller's
 /// choice, written in its manifest.
-const NEUTRAL_CFGS: [&str; 7] = ["all", "any", "not", "test", "feature", "doc", "doctest"];
+const NEUTRAL_CFGS: &[&str] = &["all", "any", "not", "test", "feature", "doc", "doctest"];
 
 /// The integer types a pointer can be cast to.
-const INTEGERS: [&str; 12] =
-    ["usize", "isize", "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128"];
+const INTEGERS: &[&str] =
+    &["usize", "isize", "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128"];
 
 /// The pointer-making functions whose result cast to an integer is an address.
-const POINTER_CALLS: [&str; 6] =
-    ["as_ptr", "as_mut_ptr", "from_ref", "from_mut", "addr_of", "cast"];
+const POINTER_CALLS: &[&str] = &["as_ptr", "as_mut_ptr", "from_ref", "from_mut", "addr_of", "cast"];
 
 /// The rule under which the scan refuses the macro `name` (`file`, `cfg`, `is_x86_feature_detected`,
 /// `env`), if it does.

@@ -128,8 +128,9 @@ pub(crate) fn core_findings(text: &str, aliases: &CrateAliases) -> Vec<Finding> 
             add(line, "hidden-path", &format!("{}: a glob of a std module", path.join("::")));
         }
         for (prefix, rule) in PATHS {
-            let under =
-                |p: &[String]| p.len() >= prefix.len() && p.iter().zip(prefix).all(|(a, b)| a == b);
+            let under = |p: &[String]| {
+                p.len() >= prefix.len() && p.iter().zip(*prefix).all(|(a, b)| a == b)
+            };
             if readings.iter().any(|p| under(p)) {
                 add(line, rule, &path.join("::"));
             }

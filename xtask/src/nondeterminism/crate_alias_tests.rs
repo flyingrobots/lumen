@@ -9,12 +9,12 @@
 use super::{core_findings, crate_aliases};
 
 /// The other files of the crate, the file read, the rule and line that must be reported in it.
-type Case = (&'static str, &'static [&'static str], &'static str, &'static str, usize);
+pub(super) type Case = (&'static str, &'static [&'static str], &'static str, &'static str, usize);
 
 const ROOT_HOST: &str = "extern crate std as host;\nmod probe_a;\nmod probe_b;";
 const REEXPORT: &str = "pub use std as reexported;";
 
-const CASES: [Case; 13] = [
+pub(super) const CASES: &[Case] = &[
     ("a crate-root extern crate alias under cfg(windows)", &[ROOT_HOST], "#[cfg(windows)]\npub fn f() -> bool { host::env::var_os(\"X\").is_some() }", "std-env", 2),
     ("a pub use std re-export under cfg(wasm32)", &[REEXPORT], "#[cfg(target_arch = \"wasm32\")]\npub fn f() -> bool { crate::probe_b::reexported::fs::metadata(\"x\").is_ok() }", "std-fs", 2),
     ("a private use std at the root", &["use std as s;"], "#[cfg(windows)]\npub fn f() -> bool { crate::s::env::var_os(\"X\").is_some() }", "std-env", 2),

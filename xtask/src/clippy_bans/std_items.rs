@@ -19,7 +19,7 @@ use super::Entry;
 pub(crate) use decisions::{decide, Decision};
 
 /// The modules whose items the list holds, as directories of the std docs.
-const MODULES: [&str; 10] = decisions::ENUMERATED;
+const MODULES: &[&str] = decisions::ENUMERATED;
 
 /// One documented item.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -76,7 +76,7 @@ pub(crate) fn check_with(
 }
 
 /// The kinds of item a list row may name.
-const KINDS: [&str; 11] = [
+const KINDS: &[&str] = &[
     "fn", "struct", "enum", "trait", "type", "constant", "static", "macro", "method", "module",
     "derive",
 ];

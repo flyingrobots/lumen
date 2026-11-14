@@ -8,6 +8,9 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- A test fails when a rule ID of the scan is reported by no seeded form (rules only Clippy or
+  `cargo-deny` enforce are listed in `VOCABULARY_ONLY`), and the scan's tables and fixture lists
+  in `xtask` are slices, so adding a form no longer edits a length.
 - `clippy.toml` bans `thread::current`, `Thread`, `ThreadId`, `thread_local!`, `LocalKey`,
   `panic::set_hook`/`take_hook`, `io::stdin`/`stdout`/`stderr`/`pipe` with their types and
   `IsTerminal`, `DefaultHasher`, `SipHasher`, `TypeId`, `type_name`, `type_name_of_val` and
