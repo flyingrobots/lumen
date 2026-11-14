@@ -396,9 +396,10 @@ impl<T: Tracer + ?Sized> Frame<'_, T> {
 ///
 /// Each pixel is the radiance of [`pixel_radiance`] (with `tracer` in place of the scene),
 /// written by `write_rgba8` through [`TONE_CURVE`]: opaque RGBA8, row-major, row 0 at the top.
-/// The scene and the tracer are shared read-only by every worker. [`render_pixels`] decides who
-/// computes which pixel and when, never its value: every pixel's samples go into its own
-/// `PixelAccumulator`, so the image and the ray count are the same for every schedule.
+/// The scene and the tracer are shared read-only by every worker.
+/// [`render_pixels`](crate::render_pixels) decides who computes which pixel and when, never its
+/// value: every pixel's samples go into its own `PixelAccumulator`, so the image and the ray
+/// count are the same for every schedule.
 ///
 /// # Errors
 ///
