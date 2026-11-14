@@ -4,12 +4,14 @@
 //! `source()` returns that error, so a program can walk the chain.
 
 use core::fmt;
+use std::collections::TryReserveError;
 
 use bunny_num::FixedQ32_32;
 use bunny_optics::{CameraError, PixelError, PixelSample, SecondaryRayError};
 
 use crate::image::SizeError;
 use crate::scene::{PrimitiveIndex, SceneError, TraceError};
+use crate::workers::{Reservation, SpawnError};
 
 /// Why one sample path, or the pixel it belongs to, could not be computed: the error of
 /// [`trace_path`](super::trace_path) and [`pixel_radiance`](super::pixel_radiance).
@@ -154,8 +156,9 @@ impl From<PixelError> for PathError {
 /// Why a render failed.
 ///
 /// Non-exhaustive: a later version may report a new failure, so a `match` outside this crate
-/// needs a wildcard arm.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// needs a wildcard arm. Not `Copy`: it can hold the allocator's and the operating system's
+/// errors.
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RenderError {
     /// The image size was refused.
@@ -175,10 +178,15 @@ pub enum RenderError {
         /// Why its path or its value failed.
         error: PathError,
     },
-    /// Memory for the image could not be reserved.
-    OutOfMemory,
+    /// Memory could not be reserved.
+    OutOfMemory {
+        /// What was being reserved, and how much.
+        reserving: Reservation,
+        /// The allocator's refusal.
+        error: TryReserveError,
+    },
     /// The operating system refused to start a worker thread.
-    Spawn,
+    Spawn(SpawnError),
 }
 
 impl fmt::Display for RenderError {
@@ -188,8 +196,10 @@ impl fmt::Display for RenderError {
             Self::Scene(error) => write!(f, "invalid scene: {error}"),
             Self::Camera(error) => write!(f, "invalid camera: {error}"),
             Self::Pixel { x, y, error } => write!(f, "pixel ({x}, {y}): {error}"),
-            Self::OutOfMemory => f.write_str("not enough memory for the image"),
-            Self::Spawn => f.write_str("a worker thread could not be started"),
+            Self::OutOfMemory { reserving, error } => {
+                write!(f, "not enough memory for {reserving}: {error}")
+            }
+            Self::Spawn(error) => write!(f, "{error}"),
         }
     }
 }
@@ -201,7 +211,8 @@ impl std::error::Error for RenderError {
             Self::Scene(error) => Some(error),
             Self::Camera(error) => Some(error),
             Self::Pixel { error, .. } => Some(error),
-            Self::OutOfMemory | Self::Spawn => None,
+            Self::OutOfMemory { error, .. } => Some(error),
+            Self::Spawn(error) => Some(error),
         }
     }
 }

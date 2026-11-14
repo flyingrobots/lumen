@@ -206,8 +206,7 @@ pub fn png_len(image: &Rgba8Image) -> u64 {
 /// ```
 /// use lumen::{png_len, write_png, ImageSize, Rgba8Image};
 ///
-/// let image = Rgba8Image::from_bytes(ImageSize::new(2, 1)?, vec![255, 0, 0, 255, 0, 0, 255, 255])
-///     .ok_or("eight bytes for two pixels")?;
+/// let image = Rgba8Image::from_bytes(ImageSize::new(2, 1)?, vec![255, 0, 0, 255, 0, 0, 255, 255])?;
 /// let mut png = Vec::new();
 /// write_png(&mut png, &image)?;
 /// assert_eq!(png[..8], *b"\x89PNG\r\n\x1a\n");

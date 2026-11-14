@@ -56,7 +56,7 @@ fn files_of_any_size_decode_to_the_same_pixels_and_have_the_length_png_len_gives
     for (case, (width, height)) in sizes().into_iter().enumerate() {
         let case_seed = Gen::case_seed(SEED, case as u64);
         let size = ImageSize::new(width, height).expect("a valid size");
-        let bytes = Gen::new(case_seed).bytes(size.byte_len().expect("fits"));
+        let bytes = Gen::new(case_seed).bytes(size.byte_len());
         let image = Rgba8Image::from_bytes(size, bytes).expect("right length");
         let mut file = Vec::new();
         write_png(&mut file, &image).expect("writes to memory");
