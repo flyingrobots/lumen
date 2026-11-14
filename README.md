@@ -96,7 +96,7 @@ See [determinism](docs/explanation.md#determinism).
 Lumen uses Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`, `bunny-broadphase`,
 `bunny-optics` and `bunny-codec` (with default features off, so it needs no crates.io crate) at
 version 0.7.1. The crates come in as git dependencies pinned to the full commit
-`d4fe51d38fa10f8d6496bd110955314edac30bbf` of `https://github.com/flyingrobots/bunny`, a commit of Bunny's
+`2cd551e248d55407a8f27e84dcb26d1b1d8768bd` of `https://github.com/flyingrobots/bunny`, a commit of Bunny's
 main after the 0.7.1 release (`bunny-codec` also brings in `bunny-mesh`). They move to the crates.io registry when a release holds what lumen
 needs. `BUNNY_REV` in `crates/lumen/src/lib.rs`
 records the commit, and a test checks that `Cargo.lock` resolves every Bunny crate to it and lists no registry crate.

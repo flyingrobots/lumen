@@ -15,7 +15,7 @@ fn reported(source: &str) -> Vec<(usize, &'static str)> {
     core_findings(source, &CrateAliases::default()).iter().map(|f| (f.line, f.rule)).collect()
 }
 
-const REJECTED: [Form; 81] = [
+const REJECTED: [Form; 82] = [
     ("instant: qualified call", "pub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 1),
     ("instant: use then bare call", "use std::time::Instant;\npub fn f() { let _ = Instant::now(); }", "time-instant", 1),
     ("instant: use group", "use std::time::{Duration, Instant};\npub fn f() -> Duration { Instant::now().elapsed() }", "time-instant", 1),
@@ -97,6 +97,7 @@ const REJECTED: [Form; 81] = [
     ("float: core::primitive::f128", "pub fn f(x: core::primitive::f128) -> u128 { x.to_bits() }", "float-type", 1),
     ("float: a cast to f128", "pub fn f(x: u32) -> u32 { (x as f128).to_bits() as u32 }", "float-cast", 1),
     ("float: a name with the word f16", "pub fn f(x: u16) -> u32 { from_f16_bits(x) }", "float-type", 1),
+    ("float: Bunny's is_finite of an inferred float", "pub fn f() -> bool { bunny_num::is_finite(Default::default()) }", "float-type", 1),
 ];
 
 const ACCEPTED: [(&str, &str); 20] = [

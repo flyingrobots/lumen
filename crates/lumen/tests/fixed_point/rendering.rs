@@ -10,7 +10,7 @@ use lumen::scenes::fixed_point::PartKind;
 use lumen::{fixed_point_scene, render, ImageSize, RenderSettings, Scene, BUNNY_REV};
 use lumen::{trace_path, Hit, PrimitiveIndex, TraceError, Tracer, FAR, TONE_CURVE};
 
-use crate::golden::GOLDEN_FIXED_POINT_96X54_4SPP;
+use crate::golden::{GOLDEN_BUNNY_REV, GOLDEN_FIXED_POINT_96X54_4SPP};
 use crate::support::content;
 
 fn settings(samples: u32, seed: u32) -> RenderSettings {
@@ -135,7 +135,7 @@ fn the_fixed_point_image_has_its_golden_hash() {
     assert_eq!(bunny_optics::SHADING_ID, "bunny-diffuse-shading/1");
     assert_eq!(TONE_CURVE.identity(), "bunny-tone-srgb/1");
     assert_eq!(bunny_optics::RGBA8_OPAQUE_IDENTITY, "bunny-rgba8-opaque/1");
-    assert_eq!(BUNNY_REV, "d4fe51d38fa10f8d6496bd110955314edac30bbf");
+    assert_eq!(BUNNY_REV, GOLDEN_BUNNY_REV);
     let scene = fixed_point_scene().expect("builds");
     let size = ImageSize::new(96, 54).expect("size");
     let rendered = render(&scene, size, settings(4, 0)).expect("renders");
