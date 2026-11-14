@@ -14,7 +14,7 @@ fn the_reference_scene_has_the_stated_triangles_and_materials() {
     assert_eq!(REFERENCE_TRIANGLE_COUNT, 31_511);
     let scene = reference_scene().expect("the reference scene builds");
     assert_eq!(scene.triangles().len(), 31_511);
-    let materials = reference_materials();
+    let materials = reference_materials().expect("Bunny accepts every reference albedo");
     for (primitive, want) in [(0, 0), (1, 0), (2, 1), (3, 1), (4, 2), (11, 2), (12, 3)] {
         assert_eq!(scene.albedo(primitive), Some(&materials[want]), "primitive {primitive}");
     }
@@ -26,7 +26,7 @@ fn the_reference_scene_has_the_stated_triangles_and_materials() {
     for (i, a) in REFERENCE_ALBEDO_256.iter().enumerate() {
         assert!(REFERENCE_ALBEDO_256[..i].iter().all(|b| b != a), "albedo {i} repeats");
     }
-    let lighting = reference_lighting();
+    let lighting = reference_lighting().expect("Bunny accepts the reference sun and sky");
     assert_eq!(scene.lighting(), lighting);
     let sun = lighting.sun.expect("a sun");
     assert_eq!(sun.toward_light().z, FixedQ32_32::ONE);

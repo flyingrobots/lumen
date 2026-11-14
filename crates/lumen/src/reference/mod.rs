@@ -87,18 +87,19 @@ pub const REFERENCE_TRIANGLE_COUNT: usize = BUNNY_FIRST_PRIMITIVE + BUNNY_TRIANG
 ///
 /// # Errors
 ///
-/// [`SceneError::Mesh`] if the embedded bunny does not read or place, and
+/// [`SceneError::Mesh`] if the embedded bunny does not read or place,
+/// [`SceneError::Constant`] if Bunny refuses a lighting or material constant, and
 /// [`SceneError::OutOfMemory`] when its buffers cannot be reserved. Neither these nor the other
 /// errors of [`Scene::new`] occur for this scene; a test checks it builds.
 pub fn reference_scene() -> Result<Scene, SceneError> {
     let triangles = reference_triangles().map_err(SceneError::Mesh)?;
     let material_of = reference_material_of();
-    let materials = reference_materials();
+    let materials = reference_materials().map_err(SceneError::Constant)?;
     Scene::new(&SceneSpec {
         triangles: &triangles,
         material_of: &material_of,
         materials: &materials,
-        lighting: reference_lighting(),
+        lighting: reference_lighting().map_err(SceneError::Constant)?,
         camera: reference_camera(),
     })
 }

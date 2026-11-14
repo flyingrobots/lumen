@@ -13,7 +13,8 @@ use bunny_geom::FixedAabb3;
 use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
-    Albedo, CameraError, CameraSpec, DirectionalLight, PinholeCamera, SkyLight, TriangleSurface,
+    Albedo, CameraError, CameraSpec, DirectionalLight, PinholeCamera, ShadingError, SkyLight,
+    TriangleSurface,
 };
 use bunny_query::TraceTriangle;
 
@@ -29,6 +30,10 @@ pub use tracer::{Hit, TraceError, Tracer, FAR};
 use tree::{build_tree, Tree};
 
 /// Where a pinhole camera stands and where it looks. The image size is chosen per render.
+///
+/// The fields are public, like those of [`SceneSpec`]: a placement is raw input, and
+/// [`Scene::new`] is where it is checked. A scene holds only a placement Bunny's camera accepts
+/// ([`SceneError::Camera`]), so at render time only the image size can still be refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CameraPlacement {
     /// The eye point, inside the trace domain.
@@ -87,8 +92,17 @@ pub struct SceneSpec<'a> {
     pub camera: CameraPlacement,
 }
 
+/// The image size [`Scene::new`] builds a camera at to check a placement: one pixel, inside
+/// Bunny's limits, so any refusal is the placement's. Bunny checks the position, the tangent,
+/// the look direction and the up hint independently of the size.
+const PROBE_SIZE: u32 = 1;
+
 /// Why a scene could not be built.
+///
+/// Non-exhaustive: a later version may refuse a scene for a new reason, so a `match` outside
+/// this crate needs a wildcard arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SceneError {
     /// The scene has no triangles.
     Empty,
@@ -113,6 +127,12 @@ pub enum SceneError {
     OutOfMemory,
     /// A mesh of the scene could not be read or placed.
     Mesh(PlaceError),
+    /// Bunny's `PinholeCamera::new` refused the camera placement: its position is outside the
+    /// trace domain, its tangent is not in `(0, 256]`, its look direction is zero, or its up
+    /// hint is zero or parallel to the look direction.
+    Camera(CameraError),
+    /// A lighting or material constant of a built-in scene is outside Bunny's accepted range.
+    Constant(ShadingError),
 }
 
 impl fmt::Display for SceneError {
@@ -130,6 +150,8 @@ impl fmt::Display for SceneError {
             Self::BvhBuild => f.write_str("the bounding volume hierarchy could not be built"),
             Self::OutOfMemory => f.write_str("not enough memory for the scene"),
             Self::Mesh(error) => write!(f, "a mesh could not be placed: {error}"),
+            Self::Camera(error) => write!(f, "invalid camera placement: {error}"),
+            Self::Constant(error) => write!(f, "a lighting or material constant: {error}"),
         }
     }
 }
@@ -166,6 +188,8 @@ impl Scene {
     ///
     /// [`SceneError::Empty`] for no triangles, [`SceneError::TooManyTriangles`] for more than
     /// `u32::MAX`, [`SceneError::MaterialCount`] when `material_of` has the wrong length,
+    /// [`SceneError::Camera`] when Bunny refuses the camera placement (checked at a one-pixel
+    /// image, before anything is allocated),
     /// [`SceneError::OutsideTraceDomain`] for the first triangle Bunny's `TraceTriangle::new`
     /// refuses, [`SceneError::UnknownMaterial`] for the first triangle whose material index is
     /// out of range, [`SceneError::OutOfMemory`] when a buffer cannot be reserved, and
@@ -190,12 +214,12 @@ impl Scene {
     /// let scene = Scene::new(&SceneSpec {
     ///     triangles: &triangles,
     ///     material_of: &[0],
-    ///     materials: &reference_materials(),
-    ///     lighting: reference_lighting(),
+    ///     materials: &reference_materials()?,
+    ///     lighting: reference_lighting()?,
     ///     camera: reference_camera(),
     /// })?;
     /// assert_eq!(scene.triangles().len(), 1);
-    /// # Ok::<(), lumen::SceneError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn new(spec: &SceneSpec<'_>) -> Result<Self, SceneError> {
         let count = spec.triangles.len();
@@ -208,6 +232,7 @@ impl Scene {
         if spec.material_of.len() != count {
             return Err(SceneError::MaterialCount);
         }
+        spec.camera.camera(PROBE_SIZE, PROBE_SIZE).map_err(SceneError::Camera)?;
         let mut triangles = reserved(count)?;
         let mut surfaces = reserved(count)?;
         let mut boxes: Vec<FixedAabb3> = reserved(count)?;

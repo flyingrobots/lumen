@@ -1,5 +1,6 @@
 //! The scene's unit tests: construction refusals and the tree's shape.
 
+use bunny_optics::TAN_HALF_FOV_LIMIT_RAW;
 use bunny_query::TraceRay;
 
 use super::*;
@@ -48,9 +49,64 @@ fn scene_construction_refuses_bad_input() {
         camera,
     })
     .expect("builds");
-    assert!(built.surface(0).is_some());
-    assert!(built.surface(1).is_none());
-    assert!(built.surface(2).is_none());
+    // `good` winds counter-clockwise seen from +Z, so its unit normal is exactly +Z.
+    let normal = |primitive| built.surface(primitive).map(|surface| surface.frame().normal());
+    assert_eq!(normal(0), Some(at(0, 0, U)));
+    assert_eq!(normal(1), None);
+    assert_eq!(normal(2), None);
+}
+
+/// `Scene::new` refuses a camera placement that Bunny's `PinholeCamera::new` refuses, with
+/// Bunny's reason, one invalid field at a time; the oracle is the refusal `PinholeCamera::new`
+/// documents for that field. The limits themselves are accepted.
+#[test]
+fn scene_construction_refuses_each_invalid_camera_field() {
+    let good = reference_camera();
+    let triangle = [at(-U, -U, 0), at(U, -U, 0), at(0, U, 0)];
+    let materials = [grey()];
+    let refusal = |camera: CameraPlacement| {
+        let spec = SceneSpec {
+            triangles: &[triangle],
+            material_of: &[0],
+            materials: &materials,
+            lighting: dark(),
+            camera,
+        };
+        Scene::new(&spec).err()
+    };
+    let raw = FixedQ32_32::from_raw;
+    let edge = 256 * U;
+    let cases = [
+        (
+            CameraPlacement { position: at(edge, 0, 0), ..good },
+            CameraError::PositionOutsideTraceDomain,
+        ),
+        (
+            CameraPlacement { position: at(0, 0, -edge), ..good },
+            CameraError::PositionOutsideTraceDomain,
+        ),
+        (CameraPlacement { look: at(0, 0, 0), ..good }, CameraError::ZeroLook),
+        (CameraPlacement { up: at(0, 0, 0), ..good }, CameraError::UpParallelToLook),
+        (CameraPlacement { up: good.look, ..good }, CameraError::UpParallelToLook),
+        (
+            CameraPlacement { tan_half_fov: FixedQ32_32::ZERO, ..good },
+            CameraError::TangentNotPositive,
+        ),
+        (CameraPlacement { tan_half_fov: grid(-U), ..good }, CameraError::TangentNotPositive),
+        (
+            CameraPlacement { tan_half_fov: raw(TAN_HALF_FOV_LIMIT_RAW + 1), ..good },
+            CameraError::TangentTooLarge,
+        ),
+    ];
+    for (camera, reason) in cases {
+        assert_eq!(refusal(camera), Some(SceneError::Camera(reason)), "{camera:?}");
+    }
+    let limits = CameraPlacement {
+        position: at(edge - 1, 0, -(edge - 1)),
+        tan_half_fov: raw(TAN_HALF_FOV_LIMIT_RAW),
+        ..good
+    };
+    assert_eq!(refusal(limits), None);
 }
 
 /// A one-triangle scene is a one-leaf tree, which the compact layout stores in its root
