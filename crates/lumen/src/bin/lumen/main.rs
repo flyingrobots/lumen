@@ -10,9 +10,10 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use cli::{Command, USAGE};
-use lumen::png::write_png;
 use lumen::{
-    reference_scene, render_scheduled, ImageSize, RenderSettings, Schedule, BUNNY_REV, MAX_THREADS,
+    png_len, reference_scene, render_scheduled, write_png, ImageSize, RenderError,
+    RenderProvenance, RenderSettings, Rgba8Image, Schedule, BUNNY_REV, MAX_THREADS,
+    REFERENCE_SCENE_ID,
 };
 use report::{Report, Times};
 
@@ -72,9 +73,9 @@ fn run(
     out: Option<&Path>,
 ) -> Result<(), String> {
     let started = Instant::now();
-    let size = ImageSize::new(width, height)
-        .map_err(|error| lumen::RenderError::Size(error).to_string())?;
-    let scene = reference_scene().map_err(|error| lumen::RenderError::Scene(error).to_string())?;
+    let size =
+        ImageSize::new(width, height).map_err(|error| RenderError::Size(error).to_string())?;
+    let scene = reference_scene().map_err(|error| RenderError::Scene(error).to_string())?;
     let built = started.elapsed();
     let render =
         render_scheduled(&scene, size, settings, schedule).map_err(|error| error.to_string())?;
@@ -97,8 +98,7 @@ fn run(
         total,
     };
     let report = Report {
-        size,
-        settings,
+        provenance: RenderProvenance::new(REFERENCE_SCENE_ID, size, settings),
         schedule,
         workers: schedule.workers(size),
         rays: render.rays,
@@ -111,9 +111,9 @@ fn run(
 }
 
 /// Writes the PNG file and returns its length.
-fn write_file(path: &Path, image: &lumen::Rgba8Image) -> io::Result<u64> {
+fn write_file(path: &Path, image: &Rgba8Image) -> io::Result<u64> {
     let mut file = BufWriter::new(File::create(path)?);
     write_png(&mut file, image)?;
     file.into_inner().map_err(io::IntoInnerError::into_error)?.sync_all()?;
-    Ok(lumen::png::png_len(image))
+    Ok(png_len(image))
 }

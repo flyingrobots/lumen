@@ -14,6 +14,7 @@
 pub mod image;
 pub mod mesh;
 pub mod png;
+mod provenance;
 pub mod reference;
 pub mod render;
 pub mod scene;
@@ -28,10 +29,12 @@ pub mod workers;
 pub const BUNNY_REV: &str = "dcd6bd37613738de93f7084e7c8aa0283de964ea";
 
 pub use image::{ImageSize, Rgba8Image, SizeError};
+pub use png::{png_len, write_png};
+pub use provenance::{ProvenanceValue, RenderProvenance, PROVENANCE_FIELDS};
 pub use reference::{reference_scene, REFERENCE_SCENE_ID};
 pub use render::{
-    render, render_reference, render_scheduled, render_traced, Render, RenderError, RenderSettings,
-    SettingsError, INTEGRATOR_ID,
+    render, render_reference, render_scheduled, render_traced, RayCount, Render, RenderError,
+    RenderSettings, SettingsError, INTEGRATOR_ID, MAX_BOUNCES, TONE_CURVE,
 };
 pub use scene::{Scene, SceneError, SceneSpec, Tracer};
 pub use schedule::{Schedule, ScheduleError, TileSize, DEFAULT_TILE, MAX_THREADS};
