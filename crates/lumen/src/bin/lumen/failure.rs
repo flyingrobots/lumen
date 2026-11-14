@@ -6,7 +6,9 @@ use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use lumen::{BuiltinSceneError, RenderError, ScheduleError, SizeError};
+use lumen::{
+    BuiltinSceneError, RayCheckError, RenderError, ScheduleError, SizeError, StatisticsError,
+};
 
 use crate::cli::{UsageError, USAGE};
 use crate::publish::PublishError;
@@ -20,12 +22,17 @@ pub(crate) enum Failure {
     /// The thread count the system reported was refused: exit code 2. `available_threads`
     /// clamps it to the accepted range, so this happens for no host.
     Threads(ScheduleError),
-    /// The image size was refused: exit code 1.
+    /// The image size was refused: exit code 2, like every other refused argument value.
     Size(SizeError),
     /// The chosen scene could not be built: exit code 1.
     Scene(BuiltinSceneError),
+    /// The scene's statistics could not be read: exit code 1.
+    Statistics(StatisticsError),
     /// The render failed: exit code 1.
     Render(RenderError),
+    /// The render's ray statistics contradict its size and settings: exit code 1. A render the
+    /// library produced never does.
+    RayCheck(RayCheckError),
     /// The PNG file could not be published, or the destination was refused before the render:
     /// exit code 1, with the path.
     Output {
@@ -39,14 +46,16 @@ pub(crate) enum Failure {
 }
 
 impl Failure {
-    /// The process exit code: 2 for a refused command line (and thread count), 1 for anything
-    /// that fails once the command line is accepted.
+    /// The process exit code: 2 for a refused command line, image size or thread count (every
+    /// argument value the command refuses), 1 for anything that fails once the arguments are
+    /// accepted.
     pub(crate) fn exit_code(&self) -> ExitCode {
         match self {
-            Self::Usage(_) | Self::Threads(_) => ExitCode::from(2),
-            Self::Size(_)
-            | Self::Scene(_)
+            Self::Usage(_) | Self::Threads(_) | Self::Size(_) => ExitCode::from(2),
+            Self::Scene(_)
+            | Self::Statistics(_)
             | Self::Render(_)
+            | Self::RayCheck(_)
             | Self::Output { .. }
             | Self::Stdout(_) => ExitCode::FAILURE,
         }
@@ -61,7 +70,9 @@ impl fmt::Display for Failure {
             Self::Threads(error) => write!(f, "--threads: {error}"),
             Self::Size(error) => write!(f, "{}", RenderError::Size(*error)),
             Self::Scene(error) => write!(f, "{error}"),
+            Self::Statistics(error) => write!(f, "statistics: {error}"),
             Self::Render(error) => write!(f, "{error}"),
+            Self::RayCheck(error) => write!(f, "ray statistics: {error}"),
             Self::Output { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Stdout(error) => write!(f, "stdout: {error}"),
         }
@@ -75,7 +86,9 @@ impl std::error::Error for Failure {
             Self::Threads(error) => Some(error),
             Self::Size(error) => Some(error),
             Self::Scene(error) => Some(error),
+            Self::Statistics(error) => Some(error),
             Self::Render(error) => Some(error),
+            Self::RayCheck(error) => Some(error),
             Self::Output { error, .. } => Some(error),
             Self::Stdout(error) => Some(error),
         }
@@ -110,11 +123,21 @@ mod tests {
             (
                 Failure::Size(size),
                 "invalid image size: image width and height must be at least 1".to_owned(),
-                ExitCode::FAILURE,
+                ExitCode::from(2),
             ),
             (
                 Failure::Output { path: PathBuf::from("out/x.png"), error: png },
                 "out/x.png: disk full".to_owned(),
+                ExitCode::FAILURE,
+            ),
+            (
+                Failure::Statistics(StatisticsError::MalformedTree { node: 3 }),
+                "statistics: the scene's tree is malformed at compact node 3".to_owned(),
+                ExitCode::FAILURE,
+            ),
+            (
+                Failure::RayCheck(RayCheckError::CameraRays { expected: 4, observed: 3 }),
+                "ray statistics: 3 camera rays counted, expected one per sample, 4".to_owned(),
                 ExitCode::FAILURE,
             ),
             (

@@ -357,3 +357,52 @@ fn a_bare_file_name_lives_in_the_current_directory() {
     assert_eq!(directory_of(Path::new("d/a.png")), Path::new("d"));
     assert_eq!(directory_of(Path::new("/a.png")), Path::new("/"));
 }
+
+/// A writer that takes at most a few bytes per call.
+struct Short(Vec<u8>);
+
+impl Write for Short {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = buf.len().min(5);
+        self.0.extend_from_slice(&buf[..n]);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn the_count_is_what_the_writer_accepted_across_short_writes() {
+    let image = image(3);
+    let (short, bytes) = flush_png(Short(Vec::new()), &image, png_len(&image)).expect("writes");
+    assert_eq!(bytes, png_len(&image));
+    assert_eq!(u64::try_from(short.0.len()), Ok(bytes));
+}
+
+/// A count that differs from the expected length is an error, and nothing is published.
+#[test]
+fn a_count_that_differs_from_the_expected_length_publishes_nothing() {
+    let dir = Scratch::new("count");
+    let dest = dir.file("keep.png");
+    fs::write(&dest, OLD).expect("old file");
+    let image = image(3);
+    let expected = png_len(&image) + 1;
+    let error = publish_expecting(&Disk, &dest, &image, expected).expect_err("differs");
+    assert_eq!(
+        error.to_string(),
+        format!("wrote {} bytes where the PNG is {expected}", expected - 1)
+    );
+    assert_eq!(fs::read(&dest).expect("file"), OLD);
+    assert_eq!(dir.names(), ["keep.png"]);
+}
+
+/// The count `publish` returns is the length of the file it renamed into place.
+#[test]
+fn the_returned_count_is_the_length_of_the_published_file() {
+    let dir = Scratch::new("returned-count");
+    let dest = dir.file("a.png");
+    let bytes = publish(&Disk, &dest, &image(3)).expect("publishes");
+    assert_eq!(bytes, fs::metadata(&dest).expect("meta").len());
+}

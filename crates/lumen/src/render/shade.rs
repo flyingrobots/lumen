@@ -8,7 +8,7 @@ use bunny_optics::{
 };
 use bunny_query::TraceRay;
 
-use super::{PathError, RayCount, ZERO};
+use super::{PathError, RayOutcomes, ZERO};
 use crate::scene::{Hit, PrimitiveIndex, Scene, Tracer};
 
 /// How a hit is shaded.
@@ -119,14 +119,19 @@ pub(super) fn direct<T: Tracer + ?Sized>(
     scene: &Scene,
     tracer: &T,
     hit: &Shade<'_>,
-    rays: &mut RayCount,
+    found: &mut RayOutcomes,
 ) -> Result<[FixedQ32_32; 3], PathError> {
     let Some(sun) = scene.lighting().sun else { return Ok(ZERO) };
     let light = hit.light_sample(&sun);
     let visible = match light.shadow_ray() {
-        Some(shadow) => {
-            rays.shadow = rays.shadow.saturating_add(1);
-            !tracer.occluded(shadow, SHADOW_T_MAX)?
+        // At most two shadow rays per path, so neither count saturates.
+        Some(shadow) if tracer.occluded(shadow, SHADOW_T_MAX)? => {
+            found.shadow_occluded = found.shadow_occluded.saturating_add(1);
+            false
+        }
+        Some(_) => {
+            found.shadow_unoccluded = found.shadow_unoccluded.saturating_add(1);
+            true
         }
         None => false,
     };
