@@ -153,7 +153,14 @@ mod network {
 
 // seeded: float-type
 mod float_type {
-    pub type Types = (f32, f64);
+    pub type Types = (
+        f32,
+        f64,
+        core::ffi::c_double,
+        core::ffi::c_float,
+        std::os::raw::c_double,
+        std::os::raw::c_float,
+    );
     pub fn f(d: core::time::Duration, x: u32) {
         let _ = (d.as_secs_f32(), d.as_secs_f64(), d.div_duration_f32(d), d.div_duration_f64(d));
         let _ = (d.div_f32(2.0), d.div_f64(2.0), d.mul_f32(2.0), d.mul_f64(2.0));

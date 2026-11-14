@@ -217,9 +217,14 @@ relative to the macro's file, not the caller's. Outside the core, each for a rea
 - Not covered by the compiler layer: code under a `cfg` that is not built on the CI host, and
   macro bodies that are never invoked. The token scan reads them by name.
 - Not seen by either layer: a float whose type is only inferred, reached through an API that
-  neither list names and whose name has no `f32`, `f64` or `_float` (a generic `T: From<u32>`
-  instantiated by inference, or a float API a new dependency brings). A syntactic gate cannot see
-  an inferred type. The defences: no float type or literal can be written in the core, every
+  neither list names and whose name has no `f16`, `f32`, `f64`, `f128` or `_float` (a generic
+  `T: From<u32>` instantiated by inference, or a float API a new dependency brings). A syntactic
+  gate cannot see an inferred type. The defences: no float type can be written in the core under
+  the names the scan knows, which are every name std gives one (`f16`, `f32`, `f64`, `f128`,
+  also as `core::primitive::f64`, and the aliases `c_double` and `c_float` of `core::ffi`,
+  `std::ffi` and `std::os::raw`; amendment of 2026-11-14), and an alias the core or a
+  deterministic crate defines is a finding where it is defined, since its definition names one
+  of them; no float literal can be written; every
   float-taking and float-returning API the library can name today is listed, `float_arithmetic`
   catches arithmetic on such a float, and a new dependency fails `Gates / cargo-deny` until
   `deny.toml` is changed on purpose, which is when its float API must be listed.
@@ -295,3 +300,61 @@ looked at it), and a build script that sets a `cfg` the library branches on.
   `unexpected_cfgs` error, which `warnings = "deny"` makes fatal.
 - Failures print as `[workspace]` errors of `Gates / nondeterminism`, the root check as
   `[float-type]`.
+
+## Amendment, 2026-11-14: float types under other names
+
+flyingrobots/lumen#156 found `<core::ffi::c_double as From<u32>>::from(x).sin()` in the core,
+passing both layers: `c_double` is `f64` under another name, so no float token is written,
+`disallowed-types` banned the path `f64` and not the alias, and `float_arithmetic` sees no
+arithmetic operator. `c_float` was caught only because its name ends `_float`.
+
+- **Clippy** bans `core::ffi::c_double` and `core::ffi::c_float`, and `std::os::raw::c_double`
+  and `std::os::raw::c_float` (`float-type`). `std::ffi` re-exports the `core::ffi` aliases, so
+  those two entries catch it and any rename; `std::os::raw` defines aliases of its own, which
+  the `core::ffi` entries do not catch (checked with Clippy 0.1.96), hence four entries. The
+  fixture's forms spell all three.
+- **The scan** names `c_double` and `c_float` wherever they are spelled, and treats `f16` and
+  `f128` as float types like `f32` and `f64`, also as words of a longer name (`to_f16`). Both are
+  unstable on 1.96.0, so Clippy cannot ban them, and naming them keeps a toolchain that
+  stabilises them from bringing one in unseen. `core::primitive::f64` already ended in the token
+  `f64`.
+- An alias of a float type written in the core or in any deterministic crate
+  (`type Real = core::ffi::c_double;`) is a finding at its definition, which names a float type;
+  a use of the alias elsewhere is not a second finding, and need not be. std has no other float
+  alias, and Bunny's float bridge is listed by name.
+
+## Amendment, 2026-11-14: aliases across files, macro-built paths and `cfg`
+
+flyingrobots/lumen#157 found paths that pass both layers: an alias declared in one file
+(`extern crate std as host;` at the crate root, `pub use std as reexported;` in another module)
+used in another file under a `cfg` the Linux Clippy run does not build (`cfg(windows)`,
+`cfg(target_arch = "wasm32")`), and a path a macro builds from its argument (`std::$m::var_os`).
+Clippy caught the forms it compiled; the scan resolved aliases only within one file.
+
+- **Aliases are followed across the deterministic crates' files.** Before scanning, the gate
+  collects the aliases of every core file (`CrateAliases` in `xtask/src/nondeterminism/paths.rs`):
+  every `extern crate ... as` name, which a crate root puts in every module's scope (all are
+  taken, wherever declared), and every `use` name of every file. A path's first segment resolves
+  through its own file's imports and the `extern crate` names; a path through the crates' own
+  modules (starting `crate`, `self`, `super`, `$crate` or a deterministic crate's name) also
+  resolves through any later segment that is a `use` name of any file, so
+  `crate::probe_b::reexported::fs::metadata` is `std::fs::metadata`, and
+  `super::super::host::fs::read` is `std::fs::read`. Resolution is not by module, so it can only
+  over-report; it is bounded at eight steps and 256 readings a path.
+- **What cannot be followed is refused** (`hidden-path`, a Lumen rule): a glob import of a std
+  module (`use std::*`, `use core::ops::*`, and through an alias, `use host::thread::*`), since
+  it brings names into scope that the scan cannot list; a path of a macro body that starts at
+  `std`, `core` or `alloc` (directly or through an alias) and has a metavariable segment
+  (`std::$m::var_os`, `std::thread::$f`); and a path whose first segment is a metavariable other
+  than `$crate` with a later segment that is a metavariable or a std module holding a banned item
+  (`$root::fs::read`, `$a::$b::$c`). `<$t>::default()`, `$t::new()` and `$x + $x` pass.
+- **`cfg` does not matter to the scan.** It is lexical: code under `cfg(windows)`,
+  `cfg(target_arch = ...)` or inside `cfg_attr` is read like any other, and a
+  `#[cfg(...)] mod x;` (with or without `#[path]`) is followed by the module walk whatever its
+  `cfg`. Tests seed each form above under such a `cfg`.
+- **Clippy on more targets is not worth a CI change.** It would add exact resolution of the
+  core's paths under other targets' `cfg`s. The deterministic core has no code under a target
+  `cfg` today (only tests do), and #155's amendment below makes one a finding, so every leg
+  compiles the same core code the Linux run lints; the scan covers the rest. The cost would be
+  a Clippy step on four more legs, and the fixture's seeded forms would need a per-target
+  variant. Not done.
