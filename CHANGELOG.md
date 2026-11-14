@@ -13,7 +13,8 @@ All notable changes to lumen are recorded here. The format follows
   that located the 6a816ef slowdown in code generation, and what was rejected. It supersedes
   ADR 0001. A dated record, `docs/measurements/2026-11-13-4k-row-bands.md`: the 4K reference
   scene at `c731bb4`, three runs at 18 threads (total 5.983 to 6.582 s) and one at 1 thread
-  (66.156 s), with the same image hash as before.
+  (66.156 s), with the same image hash as before, and an interleaved Fixed Point 4K comparison
+  at 64 samples (median 20.734 s with row bands, 23.075 s with tiles, the same hash).
 - `lumen render --scene reference|fixed-point` (flyingrobots/lumen#15): the command renders the
   Fixed Point scene. The default is `reference`, whose output and golden hash are unchanged. An
   unknown name is a usage error (exit code 2) listing the valid names, and `--help` lists them.

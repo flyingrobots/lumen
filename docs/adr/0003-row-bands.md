@@ -177,8 +177,9 @@ bands with fat LTO and one codegen unit at c731bb4; six runs):
 
 In the same session, the band-height check with LTO at 18 threads gave these medians: 1 row
 0.622, 2 rows 0.598, 4 rows 0.646 and 8 rows 0.635. That is within noise, so the default stays
-at one row. The 4K render at that commit is recorded in
-`docs/measurements/2026-11-13-4k-row-bands.md`.
+at one row. The 4K renders are recorded in `docs/measurements/2026-11-13-4k-row-bands.md`. The reference
+scene's hash was unchanged, and so was Fixed Point's at 64 samples. Fixed Point was 10.1 %
+faster at 18 threads, interleaved against `main` (median 20.734 s against 23.075 s).
 
 ## Evidence for correctness
 

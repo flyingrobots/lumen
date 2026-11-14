@@ -566,7 +566,9 @@ The gain is fat LTO (Bunny's kernels inline into the render loop), not the chang
 row bands without LTO measured the same as tiles. That was also the cause of the 8 %
 multi-thread slowdown after the scheduler was split out in 6a816ef. The sessions, the band-height
 sweep and what was ruled out are in [ADR 0003](docs/adr/0003-row-bands.md). Across sessions the 18
-thread gain ranged from 6 to 16 %; runs at 18 threads spread the most.
+thread gain ranged from 6 to 16 %; runs at 18 threads spread the most. The Fixed Point scene at
+3840 by 2160 and 64 samples, also interleaved, took 20.734 s against 23.075 s (median of three,
+18 threads, -10.1 %), with the same hash.
 
 An earlier session, with the tile scheduler and the default release profile
 (`lumen-reference-scene/3`, 1280 by 720, 16 samples per pixel, seed 0, 39 479 111 rays, 32 by 32
