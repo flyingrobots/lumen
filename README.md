@@ -182,10 +182,18 @@ through the public API and checks its values and its chain.
   that none occurs. Lumen calls Bunny's fast `Option` forms and, only after a `None`, the `try_`
   form for the reason, so a render that succeeds pays nothing for it.
 - **A render** (`render`, `render_scheduled`, `render_traced`) fails with a `RenderError`: the
-  size, the scene or the camera refused, or `Pixel { x, y, error }` for the first failing pixel
-  in raster order with its `PathError`.
-- `RenderError`, `PathError`, `SceneError` and `TraceError` are `#[non_exhaustive]`
-  ([ADR 0002](docs/adr/0002-library-api-surface.md)).
+  size, the scene or the camera refused, `Pixel { x, y, error }` for the first failing pixel in
+  raster order with its `PathError`, `OutOfMemory { reserving, error }` with what was being
+  reserved (`Reservation::Image { bytes }` or `Reservation::Workers { handles }`) and the
+  allocator's `TryReserveError`, or `Spawn(SpawnError)` with the number of the worker the
+  operating system refused (from 1) and its `io::Error` as the source. `render_pixels` reports
+  the same through `WorkerError`.
+- **A size** is refused with a `SizeError` carrying the width and height (or the pixel count)
+  asked for and the limit; a buffer of the wrong length for `Rgba8Image::from_bytes` with a
+  `LengthError` carrying both lengths. `ImageSize::byte_len` cannot fail: `ImageSize::new`
+  computes and checks it once, at most `2^29`.
+- `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError` and
+  `TraceError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
 
 ## The reference scene
 
@@ -573,6 +581,11 @@ counts:
   scheduling, so the simulator checks the stop rule instead); and a tracer that fails real
   traversals in two regions with two different errors returns the one a raster-order loop over
   `trace_path` meets first, at every schedule.
+- a refused worker thread: helper threads are started through a spawner the unit tests can
+  replace, and one that refuses worker `n` (after starting workers 1 to `n - 1` on real threads)
+  makes the render return `Spawn` for worker `n` with the operating system's error, once the
+  started workers are joined. That workers begin no row after the halt a refusal calls is checked
+  in the simulator, under every hand-out order, band height and halt step.
 
 Each of these mutations makes tests fail in the release profile (checked by hand, each mutant's
 test run under a 120-second `timeout` as a guard, sources touched before every build so that no

@@ -66,7 +66,7 @@ mod workers;
 pub const BUNNY_REV: &str = "3c0dab3e77c0d45de8904906a134e846dfe5ec6c";
 
 pub use builtin_scene::{BuiltinScene, BuiltinSceneError, ParseSceneError};
-pub use image::{ImageSize, Rgba8Image, SizeError, MAX_DIMENSION, MAX_PIXELS};
+pub use image::{ImageSize, LengthError, Rgba8Image, SizeError, MAX_DIMENSION, MAX_PIXELS};
 pub use png::{png_len, write_png};
 pub use provenance::{ProvenanceValue, RenderProvenance, PROVENANCE_FIELDS};
 pub use reference::{reference_scene, REFERENCE_SCENE_ID};
@@ -81,4 +81,4 @@ pub use scene::{
 };
 pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
 pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};
-pub use workers::{render_pixels, WorkerError};
+pub use workers::{render_pixels, Reservation, SpawnError, WorkerError};

@@ -48,7 +48,8 @@ record mutex is gone.
 `end: AtomicU32` starts at the image height. A worker begins row `y` only if `y < end`, and takes
 a band only if its first row is below `end`. A failure in row `y` lowers `end` to `y`
 (`fetch_min`). A worker that cannot be started sets it to 0, and the render returns
-`WorkerError::Spawn`. Relaxed ordering is enough. `end` only tells a worker when it may stop
+`WorkerError::Spawn` with the worker's number and the operating system's error. Threads are
+started through a spawner the unit tests replace, to refuse a chosen worker on real threads. Relaxed ordering is enough. `end` only tells a worker when it may stop
 early. Every value it takes is a failing row or 0. The results reach the caller through `join`,
 which orders them.
 

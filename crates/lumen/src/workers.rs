@@ -12,15 +12,49 @@
 use core::iter::{StepBy, Zip};
 use core::ops::{Add, Range};
 use core::slice::ChunksMut;
+use std::io;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::thread::{Scope, ScopedJoinHandle};
 
 use crate::image::{ImageSize, Rgba8Image};
 use crate::schedule::{widen, Schedule};
 
 mod error;
 
-pub use error::WorkerError;
+pub use error::{Reservation, SpawnError, WorkerError};
+
+/// How [`render_pixels`] starts its helper threads: the seam a test drives to refuse a spawn.
+pub(crate) trait Spawner {
+    /// Starts worker `worker` (from 1) running `run` in `scope`.
+    fn spawn<'scope, 'env, T, F>(
+        &self,
+        scope: &'scope Scope<'scope, 'env>,
+        worker: u32,
+        run: F,
+    ) -> io::Result<ScopedJoinHandle<'scope, T>>
+    where
+        T: Send + 'scope,
+        F: FnOnce() -> T + Send + 'scope;
+}
+
+/// The operating system's threads, named `lumen-worker-N`.
+pub(crate) struct OsThreads;
+
+impl Spawner for OsThreads {
+    fn spawn<'scope, 'env, T, F>(
+        &self,
+        scope: &'scope Scope<'scope, 'env>,
+        worker: u32,
+        run: F,
+    ) -> io::Result<ScopedJoinHandle<'scope, T>>
+    where
+        T: Send + 'scope,
+        F: FnOnce() -> T + Send + 'scope,
+    {
+        std::thread::Builder::new().name(format!("lumen-worker-{worker}")).spawn_scoped(scope, run)
+    }
+}
 
 /// One pixel of the image: its four RGBA8 bytes.
 type Rgba = [u8; 4];
@@ -242,8 +276,10 @@ where
 ///
 /// [`WorkerError::Pixel`] for the first failing pixel in raster order (top row first, left to
 /// right), the same at every thread count, band height and hand-out order. After a failure in
-/// row `y`, workers begin no row from `y` down. [`WorkerError::OutOfMemory`] if the image cannot
-/// be reserved, [`WorkerError::Spawn`] if a worker thread cannot be started.
+/// row `y`, workers begin no row from `y` down. [`WorkerError::OutOfMemory`] if the image or the
+/// worker handles cannot be reserved, [`WorkerError::Spawn`] with the worker's number and the
+/// operating system's error if a worker thread cannot be started; the workers already started
+/// stop at their next row.
 pub fn render_pixels<T, E, F>(
     size: ImageSize,
     schedule: Schedule,
@@ -255,25 +291,47 @@ where
     E: Send,
     F: Fn(u32, u32) -> Result<(Rgba, T), E> + Sync,
 {
-    let mut bytes = blank(size)?;
-    let helpers = widen(schedule.workers(size)).saturating_sub(1);
+    render_pixels_on(&OsThreads, size, schedule, zero, pixel)
+}
+
+/// [`render_pixels`] with `spawner` starting the helper threads.
+pub(crate) fn render_pixels_on<S, T, E, F>(
+    spawner: &S,
+    size: ImageSize,
+    schedule: Schedule,
+    zero: T,
+    pixel: F,
+) -> Result<(Rgba8Image, T), WorkerError<E>>
+where
+    S: Spawner,
+    T: Copy + Add<Output = T> + Send,
+    E: Send,
+    F: Fn(u32, u32) -> Result<(Rgba, T), E> + Sync,
+{
+    let mut image = blank(size)?;
+    let workers = schedule.workers(size);
+    // `Schedule::workers` is at least 1: the calling thread.
+    let helpers = widen(workers).saturating_sub(1);
     let outcome = {
-        let (pixels, _) = bytes.as_chunks_mut::<4>();
+        let (pixels, _) = image.bytes_mut().as_chunks_mut::<4>();
         let shared = &Shared::new(size, schedule, pixels);
         let pixel = &pixel;
         std::thread::scope(|scope| {
             let mut handles = Vec::new();
-            handles.try_reserve_exact(helpers).map_err(|_| WorkerError::OutOfMemory)?;
-            for n in 1..=helpers {
-                let spawned = std::thread::Builder::new()
-                    .name(format!("lumen-worker-{n}"))
-                    .spawn_scoped(scope, move || work(shared, pixel, zero));
-                let Ok(handle) = spawned else {
-                    // The scope joins the workers already started; they stop at their next row.
-                    shared.halt();
-                    return Err(WorkerError::Spawn);
-                };
-                handles.push(handle);
+            handles.try_reserve_exact(helpers).map_err(|error| WorkerError::OutOfMemory {
+                reserving: Reservation::Workers { handles: helpers },
+                error,
+            })?;
+            for worker in 1..workers {
+                match spawner.spawn(scope, worker, move || work(shared, pixel, zero)) {
+                    Ok(handle) => handles.push(handle),
+                    Err(error) => {
+                        // The scope joins the workers already started; they stop at their next
+                        // row.
+                        shared.halt();
+                        return Err(WorkerError::Spawn(SpawnError::new(worker, error)));
+                    }
+                }
             }
             let mine = work(shared, pixel, zero);
             let theirs = handles.into_iter().map(|handle| {
@@ -283,17 +341,15 @@ where
         })?
     };
     let total = outcome.into_result()?;
-    let image = Rgba8Image::from_bytes(size, bytes).ok_or(WorkerError::OutOfMemory)?;
     Ok((image, total))
 }
 
-/// A zeroed RGBA8 buffer for `size`, reserved without aborting on failure.
-fn blank<E>(size: ImageSize) -> Result<Vec<u8>, WorkerError<E>> {
-    let len = size.byte_len().ok_or(WorkerError::OutOfMemory)?;
-    let mut bytes = Vec::new();
-    bytes.try_reserve_exact(len).map_err(|_| WorkerError::OutOfMemory)?;
-    bytes.resize(len, 0);
-    Ok(bytes)
+/// A zeroed image of `size`, reserved without aborting on failure.
+fn blank<E>(size: ImageSize) -> Result<Rgba8Image, WorkerError<E>> {
+    Rgba8Image::zeroed(size).map_err(|error| WorkerError::OutOfMemory {
+        reserving: Reservation::Image { bytes: size.byte_len() },
+        error,
+    })
 }
 
 #[cfg(test)]
