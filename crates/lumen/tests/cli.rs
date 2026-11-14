@@ -5,6 +5,14 @@
 //! absolute paths, so a refusal that regressed into writing a file would write there, not into
 //! the source tree, and concurrent runs (test and release profiles) cannot meet.
 
+#![expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    clippy::disallowed_macros,
+    reason = "std-fs, std-process, std-env, float-type: runs the command in a scratch directory and \
+              reads its files and timing lines; a test outside the deterministic core"
+)]
+
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

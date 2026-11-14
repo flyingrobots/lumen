@@ -7,7 +7,7 @@
 //! file may shrink but not grow past it, and an exception that is no longer needed is itself a
 //! failure, so the list only gets shorter.
 
-mod count;
+pub(crate) mod count;
 mod exceptions;
 #[cfg(test)]
 mod tests;

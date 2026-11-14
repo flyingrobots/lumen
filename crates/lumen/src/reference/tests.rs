@@ -35,6 +35,11 @@ fn the_reference_scene_has_the_stated_triangles_and_materials() {
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "float-type: a test that each coordinate survives the f32 mesh format's boundary; the \
+              float never reaches the render"
+)]
 fn every_coordinate_is_on_the_f32_exact_grid_inside_the_trace_domain() {
     for triangle in reference_triangles().expect("the bunny places") {
         for vertex in triangle {
