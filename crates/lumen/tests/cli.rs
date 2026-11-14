@@ -736,3 +736,44 @@ fn render_stats_ends_with_what_each_worker_did() {
     assert_eq!(rows, 7);
     assert!(stdout.lines().last().is_some_and(|line| line.starts_with("run.worker.2.rays ")));
 }
+
+/// Oracle: the library's counting render of the same scene, size and settings. `render --stats`
+/// prints the traversal lines after the ray lines and before the run lines: per kind, each
+/// counter's total, mean and most, and the deepest stack, equal to the library's counts.
+#[test]
+fn render_stats_prints_the_traversal_work_of_each_kind_of_ray() {
+    let dir = Scratch::new("render-stats-traversal");
+    let args = ["render", "--width", "12", "--height", "6", "--samples", "2", "--threads", "2"];
+    let output = dir.lumen(&[&args[..], &["--stats"]].concat());
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let stdout = text(&output.stdout);
+    let scene = lumen::reference_scene().expect("builds");
+    let (size, settings) =
+        (lumen::ImageSize::new(12, 6).expect("size"), RenderSettings::new(2, 0).expect("settings"));
+    let schedule = lumen::Schedule::single();
+    let (render, _, work) =
+        lumen::render_traced_with_traversal(&scene, &scene, size, settings, schedule)
+            .expect("renders");
+    let camera = work.camera.total;
+    assert_eq!(field(&stdout, "traversal.camera.box-tests"), camera.box_tests.to_string());
+    assert_eq!(
+        field(&stdout, "traversal.camera.box-tests-max"),
+        work.camera.most.box_tests.to_string()
+    );
+    let shadow = work.shadow.total.primitive_tests;
+    assert_eq!(field(&stdout, "traversal.shadow.primitive-tests"), shadow.to_string());
+    assert_eq!(
+        field(&stdout, "traversal.bounce.peak-stack"),
+        work.bounce.total.peak_stack.to_string()
+    );
+    let rays = render.statistics.outcomes.camera();
+    let hundredths =
+        (u128::from(camera.box_tests) * 200 + u128::from(rays)) / (2 * u128::from(rays));
+    let mean = format!("{}.{:02}", hundredths / 100, hundredths % 100);
+    assert_eq!(field(&stdout, "traversal.camera.box-tests-mean"), mean);
+    let keys: Vec<&str> = stdout.lines().filter_map(|l| l.split(' ').next()).collect();
+    let position = |key: &str| keys.iter().position(|k| *k == key).expect(key);
+    assert!(position("rays.per-pixel-mean") < position("traversal.camera.box-tests"));
+    assert!(position("traversal.shadow.peak-stack") < position("run.band-rows"));
+    assert_eq!(keys.iter().filter(|k| k.starts_with("traversal.")).count(), 3 * 19);
+}
