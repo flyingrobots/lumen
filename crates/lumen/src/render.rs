@@ -19,7 +19,7 @@ use bunny_optics::{
 use crate::image::{ImageSize, Rgba8Image};
 use crate::scene::{Scene, Tracer};
 use crate::schedule::Schedule;
-use crate::workers::{render_pixels, render_pixels_by_worker, WorkerError};
+use crate::workers::{render_pixels, render_pixels_by_worker, Reservation, WorkerError};
 
 mod error;
 mod run;
@@ -443,12 +443,20 @@ pub fn render_traced_with_run<T: Tracer + Sync + ?Sized>(
     let done =
         render_pixels_by_worker(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y))
             .map_err(render_error)?;
+    // One record per worker, reserved without aborting on failure, as the scheduler's own list.
+    let mut workers = Vec::new();
+    let handles = done.workers.len();
+    workers.try_reserve_exact(handles).map_err(|error| RenderError::OutOfMemory {
+        reserving: Reservation::Workers { handles },
+        error,
+    })?;
+    workers.extend(done.workers.iter().map(|w| WorkerStatistics::of(w, size.width())));
     let statistics = done.total;
     let render = Render { image: done.image, rays: statistics.count(), statistics };
     let run = RunStatistics {
         band_rows: schedule.band().get(),
         bands: schedule.band().count(size),
-        workers: done.workers.iter().map(|w| WorkerStatistics::of(w, size.width())).collect(),
+        workers,
     };
     Ok((render, run))
 }
