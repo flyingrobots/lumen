@@ -644,3 +644,74 @@ fn help_lists_the_scenes() {
         assert!(help.contains(scene.name()), "{}", scene.name());
     }
 }
+
+/// Oracle: `lumen stats` against the library. The header is the scene's name and golden content
+/// identity; every other line is `key value...` with a key used once; the counts are those of
+/// `Scene::statistics`; the command writes no file.
+#[test]
+fn stats_prints_the_scenes_statistics_without_rendering() {
+    let dir = Scratch::new("stats");
+    for scene in BuiltinScene::ALL {
+        let output = dir.lumen(&["stats", "--scene", scene.name()]);
+        assert!(output.status.success(), "{}", text(&output.stderr));
+        let stdout = text(&output.stdout);
+        let content = match scene {
+            BuiltinScene::Reference => GOLDEN_REFERENCE_CONTENT,
+            BuiltinScene::FixedPoint => GOLDEN_FIXED_POINT_CONTENT,
+        };
+        let header = format!("scene {}\nscene-content {content}\nintegrator ", scene.id());
+        assert!(stdout.starts_with(&header), "{stdout}");
+        let keys: Vec<&str> =
+            stdout.lines().map(|line| line.split_once(' ').expect("key value").0).collect();
+        let unique: std::collections::BTreeSet<&str> = keys.iter().copied().collect();
+        assert_eq!(unique.len(), keys.len(), "a key repeats in {stdout}");
+        let stats = scene.build().expect("builds").statistics().expect("counts");
+        assert_eq!(field(&stdout, "scene.triangles"), stats.triangles.to_string());
+        assert_eq!(field(&stdout, "tree.nodes"), stats.tree.nodes.to_string());
+        let total = format!("{} (information only: this build's type sizes)", stats.memory.total());
+        assert_eq!(field(&stdout, "memory.total-bytes"), total);
+        assert!(!stdout.contains("image ") && !stdout.contains("seconds"), "{stdout}");
+        assert!(dir.is_empty());
+    }
+}
+
+/// Oracle: the report without `--stats`, from the same command line, and the library. With
+/// `--stats` the output is the plain report (timing values aside), then the scene block that
+/// `lumen stats` prints, then the ray lines, whose counts are the library's.
+#[test]
+fn render_stats_appends_the_statistics_after_the_unchanged_report() {
+    let dir = Scratch::new("render-stats");
+    let args = ["render", "--width", "12", "--height", "6", "--samples", "2", "--threads", "2"];
+    let plain = text(&dir.lumen(&args).stdout);
+    let output = dir.lumen(&[&args[..], &["--stats"]].concat());
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let with = text(&output.stdout);
+    // A timing line keeps its key; its value is a wall-clock reading.
+    let untimed = |report: &str| -> Vec<String> {
+        let mask = |line: &str| match line.split_once(' ') {
+            Some((key, rest))
+                if key.ends_with("seconds")
+                    || key.contains("per-") && rest.contains("information only") =>
+            {
+                key.to_owned()
+            }
+            _ => line.to_owned(),
+        };
+        report.lines().map(mask).collect()
+    };
+    let (plain, with) = (untimed(&plain), untimed(&with));
+    assert_eq!(with[..plain.len()], plain[..], "the report itself is unchanged");
+    let stats = text(&dir.lumen(&["stats"]).stdout);
+    let scene_block: Vec<&str> = stats.lines().skip(3).collect();
+    let after = &with[plain.len()..];
+    assert_eq!(after[..scene_block.len()], scene_block[..]);
+    let rays = after[scene_block.len()..].join("\n");
+    assert!(rays.starts_with("rays.camera 144\n"), "{rays}");
+    let scene = lumen::reference_scene().expect("builds");
+    let settings = RenderSettings::new(2, 0).expect("settings");
+    let size = lumen::ImageSize::new(12, 6).expect("size");
+    let render = lumen::render(&scene, size, settings).expect("renders");
+    assert!(rays.contains(&format!("\nrays.total {}\n", render.rays.total())), "{rays}");
+    let max = format!("\nrays.per-pixel-max {}\n", render.statistics.max_pixel_rays);
+    assert!(rays.contains(&max), "{rays}");
+}

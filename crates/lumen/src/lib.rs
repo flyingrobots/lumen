@@ -77,13 +77,14 @@ pub use provenance::{ProvenanceValue, RenderProvenance, PROVENANCE_FIELDS};
 pub use reference::{reference_scene, REFERENCE_SCENE_ID};
 pub use render::{
     pixel_radiance, render, render_reference, render_scheduled, render_traced, trace_path,
-    Integrator, PathError, PathSample, RayCount, Render, RenderError, RenderSettings,
-    SettingsError, BOUNCE_PAIR, CAMERA_PAIR, INTEGRATOR_ID, MAX_BOUNCES, SMOOTH_INTEGRATOR_ID,
-    SMOOTH_SHADING_IDS, TONE_CURVE,
+    Integrator, PathError, PathSample, RayCheckError, RayCount, RayOutcomes, RayStatistics, Render,
+    RenderError, RenderSettings, SettingsError, BOUNCE_PAIR, CAMERA_PAIR, INTEGRATOR_ID,
+    MAX_BOUNCES, SMOOTH_INTEGRATOR_ID, SMOOTH_SHADING_IDS, TONE_CURVE,
 };
 pub use scene::{
     CameraPlacement, Hit, Lighting, PrimitiveIndex, Scene, SceneBuffer, SceneContentId, SceneError,
-    SceneSpec, TraceError, Tracer, FAR, SCENE_CONTENT_ENCODING,
+    SceneMemory, SceneSpec, SceneStatistics, StatisticsError, TraceError, Tracer, TreeStatistics,
+    FAR, LEAF_SIZE_BUCKETS, SCENE_CONTENT_ENCODING, TREE_BUILDER, TREE_LAYOUT,
 };
 pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
 pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};
