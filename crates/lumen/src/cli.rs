@@ -8,9 +8,8 @@ use core::fmt;
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use crate::render::{
-    RenderSettings, Schedule, ScheduleError, SettingsError, TileSize, DEFAULT_TILE,
-};
+use crate::render::{RenderSettings, SettingsError};
+use crate::schedule::{Schedule, ScheduleError, TileSize, DEFAULT_TILE};
 
 /// The default image width: small enough to render in a few seconds in a debug build.
 pub const DEFAULT_WIDTH: u32 = 320;
@@ -193,15 +192,6 @@ where
     })
 }
 
-/// The schedule of a parsed `render`: `threads` workers (already checked by [`parse`]) or, for
-/// `None`, [`Schedule::available`]; tiles of `tile`.
-#[must_use]
-pub fn schedule(threads: Option<u32>, tile: TileSize) -> Schedule {
-    threads
-        .and_then(|threads| Schedule::new(threads, tile).ok())
-        .unwrap_or_else(|| Schedule::available().with_tile(tile))
-}
-
 /// A tile size: `N` (N by N) or `WxH`, each a decimal `u32` of at least 1.
 fn tile_size(value: &OsStr) -> Result<TileSize, UsageError> {
     let shown = || value.to_string_lossy().into_owned();
@@ -362,10 +352,6 @@ mod tests {
             assert_eq!(parse(args), Err(UsageError::InvalidTile(bad.into())), "{bad:?}");
         }
         assert_eq!(parse_str("render --tile 4 --tile 4"), Err(UsageError::Repeated("--tile")));
-        let tile = TileSize::new(8, 2).expect("valid");
-        assert_eq!(schedule(Some(3), tile), Schedule::new(3, tile).expect("valid"));
-        assert_eq!(schedule(None, tile), Schedule::available().with_tile(tile));
-        assert!(schedule(None, tile).threads() >= 1);
     }
 
     #[test]

@@ -8,8 +8,7 @@
 //! `PixelAccumulator`, so no accumulation order exists between threads.
 
 use core::fmt;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Mutex, PoisonError};
+use core::ops::Add;
 
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
@@ -20,6 +19,8 @@ use bunny_query::TraceRay;
 
 use crate::image::{ImageSize, Rgba8Image, SizeError};
 use crate::scene::{Hit, Scene, SceneError, TraceError, Tracer};
+use crate::schedule::Schedule;
+use crate::workers::{render_pixels, WorkerError};
 
 /// The stable name and version of lumen's integrator, [`trace_path`].
 ///
@@ -147,6 +148,8 @@ pub enum RenderError {
     OutOfMemory,
     /// The operating system refused to start a worker thread.
     Spawn,
+    /// A tile did not fit the image (an internal invariant of the scheduler, never expected).
+    TileGeometry,
 }
 
 impl fmt::Display for RenderError {
@@ -161,6 +164,7 @@ impl fmt::Display for RenderError {
             Self::Shading => f.write_str("a shading step refused its input"),
             Self::OutOfMemory => f.write_str("not enough memory for the image"),
             Self::Spawn => f.write_str("a worker thread could not be started"),
+            Self::TileGeometry => f.write_str("a tile did not fit the image (a lumen bug)"),
         }
     }
 }
@@ -212,9 +216,18 @@ impl RayCount {
     pub const fn total(self) -> u64 {
         self.closest + self.shadow
     }
+}
 
-    const fn add(self, other: Self) -> Self {
-        Self { closest: self.closest + other.closest, shadow: self.shadow + other.shadow }
+impl Add for RayCount {
+    type Output = Self;
+
+    /// The rays of both. Ray counts of a render stay far below `u64::MAX` (an image has at most
+    /// 2^27 pixels of at most 1024 samples of at most five rays), so the sums never saturate.
+    fn add(self, other: Self) -> Self {
+        Self {
+            closest: self.closest.saturating_add(other.closest),
+            shadow: self.shadow.saturating_add(other.shadow),
+        }
     }
 }
 
@@ -331,27 +344,7 @@ pub fn pixel_radiance(
     x: u32,
     y: u32,
 ) -> Result<([FixedQ32_32; 3], RayCount), RenderError> {
-    traced_pixel_radiance(scene, scene, camera, settings, x, y)
-}
-
-/// [`pixel_radiance`] with `tracer` answering the ray queries.
-fn traced_pixel_radiance<T: Tracer + ?Sized>(
-    scene: &Scene,
-    tracer: &T,
-    camera: &PinholeCamera,
-    settings: RenderSettings,
-    x: u32,
-    y: u32,
-) -> Result<([FixedQ32_32; 3], RayCount), RenderError> {
-    let sampler = settings.sampler(x, y);
-    let mut accumulator = PixelAccumulator::new();
-    let mut rays = RayCount::default();
-    for sample in 0..settings.samples_per_pixel() {
-        let path = trace_path(scene, tracer, camera, sampler, sample)?;
-        accumulator.add_sample(path.radiance)?;
-        rays = rays.add(path.rays);
-    }
-    Ok((accumulator.resolve()?, rays))
+    Frame { scene, tracer: scene, camera, settings }.radiance(x, y)
 }
 
 /// A rendered image and the rays it took.
@@ -363,352 +356,37 @@ pub struct Render {
     pub rays: RayCount,
 }
 
-/// The most worker threads a render takes: 256, well above any core count lumen is run on, and
-/// low enough that a mistyped `--threads` cannot ask the system for thousands of threads.
-pub const MAX_THREADS: u32 = 256;
-
-/// The default tile: 32 by 32 pixels, chosen by measurement (see the README, "Performance").
-pub const DEFAULT_TILE: TileSize = TileSize { width: 32, height: 32 };
-
-/// Why a schedule was refused.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ScheduleError {
-    /// Zero threads were asked for.
-    NoThreads,
-    /// More than [`MAX_THREADS`] threads were asked for.
-    TooManyThreads(u32),
-    /// A tile width or height is zero.
-    EmptyTile,
+/// The pixels of one render, shared read-only by every worker: the scene, the tracer that
+/// answers its ray queries, the camera at the image size and the settings.
+struct Frame<'a, T: ?Sized> {
+    scene: &'a Scene,
+    tracer: &'a T,
+    camera: &'a PinholeCamera,
+    settings: RenderSettings,
 }
 
-impl fmt::Display for ScheduleError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoThreads => f.write_str("threads must be at least 1"),
-            Self::TooManyThreads(n) => {
-                write!(f, "threads must be at most {MAX_THREADS}, not {n}")
-            }
-            Self::EmptyTile => f.write_str("tile width and height must be at least 1"),
+impl<T: Tracer + ?Sized> Frame<'_, T> {
+    /// [`pixel_radiance`] with the frame's tracer.
+    fn radiance(&self, x: u32, y: u32) -> Result<([FixedQ32_32; 3], RayCount), RenderError> {
+        let sampler = self.settings.sampler(x, y);
+        let mut accumulator = PixelAccumulator::new();
+        let mut rays = RayCount::default();
+        for sample in 0..self.settings.samples_per_pixel() {
+            let path = trace_path(self.scene, self.tracer, self.camera, sampler, sample)?;
+            accumulator.add_sample(path.radiance)?;
+            rays = rays + path.rays;
         }
-    }
-}
-
-impl std::error::Error for ScheduleError {}
-
-/// A checked tile size: the rectangle of pixels one worker renders before taking the next.
-///
-/// Tiles cover the image in row-major order from the top left; the tiles in the last column and
-/// the last row are cut to the image. A tile larger than the image is the whole image.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TileSize {
-    width: u32,
-    height: u32,
-}
-
-impl TileSize {
-    /// A tile of `width` by `height` pixels.
-    ///
-    /// # Errors
-    ///
-    /// [`ScheduleError::EmptyTile`] if either is zero.
-    pub const fn new(width: u32, height: u32) -> Result<Self, ScheduleError> {
-        if width == 0 || height == 0 {
-            return Err(ScheduleError::EmptyTile);
-        }
-        Ok(Self { width, height })
+        Ok((accumulator.resolve()?, rays))
     }
 
-    /// The tile width.
-    #[must_use]
-    pub const fn width(self) -> u32 {
-        self.width
+    /// The four RGBA8 bytes of pixel `(x, y)`: its radiance through [`TONE_CURVE`] and
+    /// `write_rgba8`.
+    fn rgba(&self, x: u32, y: u32) -> Result<([u8; 4], RayCount), RenderError> {
+        let (radiance, rays) = self.radiance(x, y)?;
+        let mut rgba = [0_u8; 4];
+        write_rgba8(&mut rgba, TONE_CURVE, radiance)?;
+        Ok((rgba, rays))
     }
-
-    /// The tile height.
-    #[must_use]
-    pub const fn height(self) -> u32 {
-        self.height
-    }
-}
-
-/// How a render is spread over threads: the number of worker threads and the tile size.
-///
-/// A schedule never changes a pixel; it decides only which worker computes which tile and when.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Schedule {
-    threads: u32,
-    tile: TileSize,
-}
-
-impl Schedule {
-    /// `threads` workers (`1..=MAX_THREADS`) taking tiles of `tile`.
-    ///
-    /// # Errors
-    ///
-    /// [`ScheduleError::NoThreads`] for zero, [`ScheduleError::TooManyThreads`] above
-    /// [`MAX_THREADS`].
-    pub const fn new(threads: u32, tile: TileSize) -> Result<Self, ScheduleError> {
-        if threads == 0 {
-            return Err(ScheduleError::NoThreads);
-        }
-        if threads > MAX_THREADS {
-            return Err(ScheduleError::TooManyThreads(threads));
-        }
-        Ok(Self { threads, tile })
-    }
-
-    /// One worker (the calling thread) and the default tile.
-    #[must_use]
-    pub const fn single() -> Self {
-        Self { threads: 1, tile: DEFAULT_TILE }
-    }
-
-    /// As many workers as `std::thread::available_parallelism` reports (inside a container, the
-    /// CPU limit), at most [`MAX_THREADS`], and one if it reports nothing; the default tile.
-    #[must_use]
-    pub fn available() -> Self {
-        let threads = std::thread::available_parallelism()
-            .map_or(1, |n| u32::try_from(n.get()).unwrap_or(MAX_THREADS))
-            .clamp(1, MAX_THREADS);
-        Self { threads, tile: DEFAULT_TILE }
-    }
-
-    /// The threads asked for.
-    #[must_use]
-    pub const fn threads(self) -> u32 {
-        self.threads
-    }
-
-    /// The tile size.
-    #[must_use]
-    pub const fn tile(self) -> TileSize {
-        self.tile
-    }
-
-    /// The same schedule with another tile size.
-    #[must_use]
-    pub const fn with_tile(self, tile: TileSize) -> Self {
-        Self { threads: self.threads, tile }
-    }
-
-    /// The workers a render of `size` uses: the threads asked for, but never more than there
-    /// are tiles. The calling thread is one of them.
-    #[must_use]
-    pub fn workers(self, size: ImageSize) -> u32 {
-        let tiles = Tiles::new(size, self.tile).count;
-        u32::try_from(tiles).map_or(self.threads, |tiles| self.threads.min(tiles).max(1))
-    }
-}
-
-/// The tiles of an image: how many per row and in all.
-#[derive(Clone, Copy)]
-struct Tiles {
-    size: ImageSize,
-    tile: TileSize,
-    across: usize,
-    count: usize,
-}
-
-/// One tile's pixels: columns `x0..x1` of rows `y0..y1`.
-#[derive(Clone, Copy)]
-struct TileRect {
-    x0: u32,
-    y0: u32,
-    x1: u32,
-    y1: u32,
-}
-
-impl Tiles {
-    fn new(size: ImageSize, tile: TileSize) -> Self {
-        let across = size.width().div_ceil(tile.width) as usize;
-        let down = size.height().div_ceil(tile.height) as usize;
-        Self { size, tile, across, count: across * down }
-    }
-
-    /// Tile `index`, counted row-major from the top left.
-    #[allow(clippy::cast_possible_truncation)] // index < count, so each quotient fits u32.
-    fn rect(self, index: usize) -> TileRect {
-        let x0 = (index % self.across) as u32 * self.tile.width;
-        let y0 = (index / self.across) as u32 * self.tile.height;
-        TileRect {
-            x0,
-            y0,
-            x1: x0.saturating_add(self.tile.width).min(self.size.width()),
-            y1: y0.saturating_add(self.tile.height).min(self.size.height()),
-        }
-    }
-
-    /// The index of the last tile in the same row of tiles as tile `index`.
-    fn row_end(self, index: usize) -> usize {
-        (index / self.across + 1) * self.across - 1
-    }
-}
-
-/// The first failing pixel found so far, in raster order (row, then column).
-#[derive(Clone, Copy)]
-struct Failure {
-    y: u32,
-    x: u32,
-    error: RenderError,
-}
-
-/// What the workers share: the next tile to hand out, the last tile still worth rendering, the
-/// first failure, an abort flag, the image and the ray counts.
-struct Shared<'a> {
-    tiles: Tiles,
-    next: AtomicUsize,
-    last: AtomicUsize,
-    failure: Mutex<Option<Failure>>,
-    abort: Mutex<Option<RenderError>>,
-    aborted: AtomicBool,
-    image: Mutex<&'a mut [u8]>,
-    closest: AtomicU64,
-    shadow: AtomicU64,
-}
-
-impl Shared<'_> {
-    /// Whether tile `index` still matters: no failure in an earlier row of tiles and no abort.
-    fn wanted(&self, index: usize) -> bool {
-        index <= self.last.load(Ordering::SeqCst) && !self.aborted.load(Ordering::SeqCst)
-    }
-
-    /// Records a failure at `(x, y)` in tile `index`. Every pixel before `(x, y)` in raster
-    /// order lies in this row of tiles or an earlier one, so tiles after this row's end are no
-    /// longer needed, and the earliest failure among the rest is the one a raster-order render
-    /// would meet first.
-    fn fail(&self, index: usize, x: u32, y: u32, error: RenderError) {
-        self.last.fetch_min(self.tiles.row_end(index), Ordering::SeqCst);
-        let mut failure = self.failure.lock().unwrap_or_else(PoisonError::into_inner);
-        if failure.is_none_or(|f| (y, x) < (f.y, f.x)) {
-            *failure = Some(Failure { y, x, error });
-        }
-    }
-
-    /// Stops every worker for a reason that is not a pixel's (no memory, no thread).
-    fn abort(&self, error: RenderError) {
-        self.abort.lock().unwrap_or_else(PoisonError::into_inner).get_or_insert(error);
-        self.aborted.store(true, Ordering::SeqCst);
-    }
-}
-
-/// One worker: takes the next tile until none is left or none is wanted, renders it into its own
-/// buffer, and copies the finished tile into the image at the tile's place.
-fn work<F>(shared: &Shared<'_>, pixel: &F)
-where
-    F: Fn(u32, u32) -> Result<([u8; 4], RayCount), RenderError> + Sync,
-{
-    let tiles = shared.tiles;
-    let tile_bytes = tiles.tile.width.min(tiles.size.width()) as usize
-        * tiles.tile.height.min(tiles.size.height()) as usize
-        * 4;
-    let mut buffer = Vec::new();
-    if buffer.try_reserve_exact(tile_bytes).is_err() {
-        shared.abort(RenderError::OutOfMemory);
-        return;
-    }
-    let mut rays = RayCount::default();
-    'tiles: loop {
-        let index = shared.next.fetch_add(1, Ordering::SeqCst);
-        if index >= tiles.count || !shared.wanted(index) {
-            break;
-        }
-        let rect = tiles.rect(index);
-        buffer.clear();
-        for y in rect.y0..rect.y1 {
-            if !shared.wanted(index) {
-                continue 'tiles;
-            }
-            for x in rect.x0..rect.x1 {
-                match pixel(x, y) {
-                    Ok((rgba, pixel_rays)) => {
-                        buffer.extend_from_slice(&rgba);
-                        rays = rays.add(pixel_rays);
-                    }
-                    Err(error) => {
-                        shared.fail(index, x, y, error);
-                        continue 'tiles;
-                    }
-                }
-            }
-        }
-        let row_bytes = (rect.x1 - rect.x0) as usize * 4;
-        let stride = tiles.size.width() as usize * 4;
-        let mut image = shared.image.lock().unwrap_or_else(PoisonError::into_inner);
-        for (row, src) in (rect.y0..rect.y1).zip(buffer.chunks_exact(row_bytes)) {
-            let at = row as usize * stride + rect.x0 as usize * 4;
-            image[at..at + row_bytes].copy_from_slice(src);
-        }
-    }
-    shared.closest.fetch_add(rays.closest, Ordering::SeqCst);
-    shared.shadow.fetch_add(rays.shadow, Ordering::SeqCst);
-}
-
-/// The scheduler: renders every pixel of `size` with `pixel` on `schedule.workers(size)`
-/// workers, the calling thread being one of them, and returns the image and the summed rays.
-///
-/// `pixel(x, y)` gives the four RGBA8 bytes of pixel `(x, y)` and the rays it traced. Tiles of
-/// `schedule.tile()` are handed out one at a time from a shared counter, in row-major order, to
-/// whichever worker asks next, so a slow region or a slow core never holds up the others. A
-/// worker renders a whole tile into its own buffer, then copies it into the image at the tile's
-/// place. Each pixel is written exactly once, by the worker that computed it, so the image is
-/// the same bytes for every thread count, tile size and timing, as long as `pixel` is a pure
-/// function of `(x, y)`. With one thread no thread is started and the calling thread renders
-/// every tile in order: the same code path with one worker.
-///
-/// # Errors
-///
-/// If `pixel` fails, the error of the first failing pixel in raster order (top row first, left
-/// to right), the same error at every thread count and tile size: the error a one-pixel-at-a-time
-/// render in raster order would return. Once a pixel fails, workers stop taking tiles below that
-/// row of tiles and abandon such tiles at their next row. [`RenderError::OutOfMemory`] if a
-/// buffer cannot be reserved and [`RenderError::Spawn`] if a worker thread cannot be started.
-pub fn render_pixels<F>(
-    size: ImageSize,
-    schedule: Schedule,
-    pixel: F,
-) -> Result<Render, RenderError>
-where
-    F: Fn(u32, u32) -> Result<([u8; 4], RayCount), RenderError> + Sync,
-{
-    let len = size.byte_len().ok_or(RenderError::OutOfMemory)?;
-    let mut bytes = Vec::new();
-    bytes.try_reserve_exact(len).map_err(|_| RenderError::OutOfMemory)?;
-    bytes.resize(len, 0);
-    let tiles = Tiles::new(size, schedule.tile);
-    let shared = Shared {
-        tiles,
-        next: AtomicUsize::new(0),
-        last: AtomicUsize::new(tiles.count.saturating_sub(1)),
-        failure: Mutex::new(None),
-        abort: Mutex::new(None),
-        aborted: AtomicBool::new(false),
-        image: Mutex::new(&mut bytes),
-        closest: AtomicU64::new(0),
-        shadow: AtomicU64::new(0),
-    };
-    let helpers = schedule.workers(size).saturating_sub(1);
-    std::thread::scope(|scope| {
-        for n in 0..helpers {
-            let spawned = std::thread::Builder::new()
-                .name(format!("lumen-worker-{}", n + 1))
-                .spawn_scoped(scope, || work(&shared, &pixel));
-            if spawned.is_err() {
-                shared.abort(RenderError::Spawn);
-                return;
-            }
-        }
-        work(&shared, &pixel);
-    });
-    if let Some(error) = *shared.abort.lock().unwrap_or_else(PoisonError::into_inner) {
-        return Err(error);
-    }
-    if let Some(failure) = *shared.failure.lock().unwrap_or_else(PoisonError::into_inner) {
-        return Err(failure.error);
-    }
-    let rays =
-        RayCount { closest: shared.closest.into_inner(), shadow: shared.shadow.into_inner() };
-    let image = Rgba8Image::from_bytes(size, bytes).ok_or(RenderError::OutOfMemory)?;
-    Ok(Render { image, rays })
 }
 
 /// Renders `scene` at `size` with `settings` on the workers of `schedule`, with `tracer`
@@ -716,14 +394,16 @@ where
 ///
 /// Each pixel is the radiance of [`pixel_radiance`] (with `tracer` in place of the scene),
 /// written by `write_rgba8` through [`TONE_CURVE`]: opaque RGBA8, row-major, row 0 at the top.
-/// The scene and the tracer are shared read-only by every worker; [`render_pixels`] decides who
-/// computes which pixel, never its value.
+/// The scene and the tracer are shared read-only by every worker. [`render_pixels`] decides who
+/// computes which pixel and when, never its value: every pixel's samples go into its own
+/// `PixelAccumulator`, so the image and the ray count are the same for every schedule.
 ///
 /// # Errors
 ///
-/// [`RenderError::Camera`] if Bunny refuses the camera at this size, and any error of
-/// [`render_pixels`], [`pixel_radiance`] or `write_rgba8`, for the first failing pixel in
-/// raster order.
+/// [`RenderError::Camera`] if Bunny refuses the camera at this size; the error of
+/// [`pixel_radiance`] or `write_rgba8` for the first failing pixel in raster order;
+/// [`RenderError::OutOfMemory`] if a buffer cannot be reserved; [`RenderError::Spawn`] if a
+/// worker thread cannot be started.
 pub fn render_traced<T: Tracer + Sync + ?Sized>(
     scene: &Scene,
     tracer: &T,
@@ -732,12 +412,14 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
     schedule: Schedule,
 ) -> Result<Render, RenderError> {
     let camera = scene.camera().camera(size.width(), size.height())?;
-    render_pixels(size, schedule, |x, y| {
-        let (radiance, rays) = traced_pixel_radiance(scene, tracer, &camera, settings, x, y)?;
-        let mut rgba = [0_u8; 4];
-        write_rgba8(&mut rgba, TONE_CURVE, radiance)?;
-        Ok((rgba, rays))
-    })
+    let frame = Frame { scene, tracer, camera: &camera, settings };
+    match render_pixels(size, schedule, RayCount::default(), |x, y| frame.rgba(x, y)) {
+        Ok((image, rays)) => Ok(Render { image, rays }),
+        Err(WorkerError::Pixel { error, .. }) => Err(error),
+        Err(WorkerError::OutOfMemory) => Err(RenderError::OutOfMemory),
+        Err(WorkerError::Spawn) => Err(RenderError::Spawn),
+        Err(WorkerError::TileGeometry) => Err(RenderError::TileGeometry),
+    }
 }
 
 /// Renders `scene` at `size` with `settings` on the workers of `schedule`: [`render_traced`]
@@ -764,9 +446,7 @@ pub fn render_scheduled(
 ///
 /// # Errors
 ///
-/// [`RenderError::Camera`] if Bunny refuses the camera at this size,
-/// [`RenderError::OutOfMemory`] if the buffer cannot be reserved, and any error of
-/// [`pixel_radiance`] or `write_rgba8`, for the first failing pixel in raster order.
+/// Any error of [`render_traced`].
 pub fn render(
     scene: &Scene,
     size: ImageSize,

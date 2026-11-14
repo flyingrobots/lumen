@@ -206,17 +206,21 @@ thread in the same setting (about 175 ns per ray, 458 ns per sample, all work in
 ## Threads and tiles
 
 `render_scheduled` (and `lumen render`) split the image into tiles, 32 by 32 pixels by default
-(`--tile`), counted row-major from the top left; the tiles of the last column and row are cut to
-the image. A shared atomic counter hands the next tile to whichever worker asks, so a region that
+(`--tile`; `crates/lumen/src/schedule.rs`), counted row-major from the top left; the tiles of
+the last column and row are cut to the image. The design, what is shared and what was rejected
+are recorded in [ADR 0001](docs/adr/0001-tile-scheduling.md). A shared atomic counter hands the next tile to whichever worker asks, so a region that
 costs more (the sphere, a shadow edge) or a slower core never leaves the others idle. That matters
 on the Apple M5 Pro, whose 6 "super" and 12 "performance" cores run at different speeds: a
 static split would make every worker wait for the slowest share. Each worker renders a whole tile
 into its own buffer and then copies the finished tile into the image at the tile's place, under a
-lock held only for the copy. The code is safe Rust with the standard library only
-(`std::thread::scope`, atomics, a mutex); there is no `unsafe` and no thread-pool dependency.
+lock held only for the copy (`crates/lumen/src/workers.rs`, `render_pixels`, which runs any pixel
+function this way and knows nothing of rays). The code is safe Rust with the standard library
+only (`std::thread::scope`, atomics, mutexes); there is no `unsafe` and no thread-pool
+dependency.
 
 - **Threads**: `--threads N`, `1..=256`; by default the number `std::thread::available_parallelism`
-  reports, which inside a container is the CPU limit (`--cpus` of `devrun`). The calling thread is
+  reports, which inside a container is the CPU limit (`--cpus` of `devrun`). Only the `lumen`
+  binary asks the host; the library's `Schedule::new` takes an explicit count. The calling thread is
   one of the workers, and a render never uses more workers than there are tiles. With one thread
   no thread is started and the calling thread takes every tile in order: the same code path with
   one worker, not a separate renderer. `lumen::render` is that one-thread schedule.
@@ -242,18 +246,25 @@ copies the finished bytes to a position fixed by the tile's index. The ray count
 integers. Thread count, tile size, which worker takes which tile and when, and timing therefore
 decide nothing about the bytes.
 
-Tested in `crates/lumen/tests/threads.rs`, in the test and release profiles:
+Tested in the test and release profiles, with no clock, no dependence on the host's core count
+and no repeat-and-hope loop. Hand-out orders are explored deterministically: unit tests in
+`crates/lumen/src/workers/tests.rs` run 1, 2, 3, 7 and 200 simulated workers on one thread through
+the same claim, render-row, store and finish steps the threads run, in orders chosen by 200 seeds
+of a generator and by two scripted worst cases (one worker takes everything; tiles finish in
+reverse order, so the earliest failing tile is rendered last), each failure naming its order. The
+image must equal a raster-order loop byte for byte and the error must be the raster-first
+failure; a step budget ends a simulation that does not finish. `crates/lumen/tests/threads.rs`
+then runs real threads at fixed counts:
 
-- the golden 96 by 54 hash at 1, 2, 3, 4, 7 and the default number of threads, each with tiles of
+- the golden 96 by 54 hash at 1, 2, 3, 4, 7 and 18 threads, each with tiles of
   1 by 1, 7 by 5, 16 by 16, 32 by 32, 96 by 1, 1 by 54, 13 by 54 and 200 by 200 (larger than the
   image), with the same ray count as a raster-order loop over `pixel_radiance` that does not use
   the scheduler;
-- a 320 by 180 image at 8 samples: one thread equals that raster-order loop byte for byte, and the
-  default thread count, 5 threads with 24 by 10 tiles and 16 threads with one-row tiles give the
-  same image and ray count;
-- a stress test: the same 24 by 16 image rendered 200 times on 8 threads with 3 by 2 and 1 by 1
-  tiles, every one identical to the one-thread render;
-- errors, each test under a time limit so that a hang fails it: an injected pixel function that
+- a 320 by 180 image at 8 samples: one thread equals that raster-order loop byte for byte, and 18
+  threads with 32 by 32 tiles, 5 threads with 24 by 10 tiles and 16 threads with one-row tiles
+  give the same image and ray count;
+- errors, each test bounded by a count of work taken (pixels asked for, traversal queries) that
+  fails it if exceeded, never by a timeout: an injected pixel function that
   fails at chosen pixels returns the raster-first one at every thread count and tile size, also
   when it is not in the lowest-numbered failing tile (`(40, 0)` in tile 1 before `(3, 5)` in tile
   0); on one thread a failure in the first pixel renders exactly the rest of the first row of
@@ -261,9 +272,13 @@ Tested in `crates/lumen/tests/threads.rs`, in the test and release profiles:
   tracer that fails real traversals in two regions with two different errors returns the one a
   raster-order loop over `trace_path` meets first, at every schedule.
 
-Each of these mutations of the scheduler makes tests fail (checked by hand, each test run under a
-120-second `timeout`): copying a tile to the wrong column offset; skipping the last tile; dropping
-the last partial row of tiles; and sharing one accumulator between two neighbouring pixels.
+Each of these mutations makes tests fail in the release profile (checked by hand, each mutant's
+test run under a 120-second `timeout` as a guard for the checking script, sources touched before
+every build so that no stale build is tested):
+copying a tile to the wrong column offset; skipping the last tile; dropping the last partial row
+of tiles; sharing one accumulator between two neighbouring pixels (thread-local state);
+stopping after the failing tile instead of the end of its row of tiles; and choosing the first
+failure in column-major order.
 
 ## Image hash and PNG
 

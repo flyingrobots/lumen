@@ -11,7 +11,7 @@ use lumen::png::write_png;
 use lumen::render::{MAX_BOUNCES, TONE_CURVE};
 use lumen::{
     reference_scene, render_scheduled, ImageSize, RenderSettings, Schedule, BUNNY_REV,
-    INTEGRATOR_ID, REFERENCE_SCENE_ID,
+    INTEGRATOR_ID, MAX_THREADS, REFERENCE_SCENE_ID,
 };
 
 fn main() -> ExitCode {
@@ -25,7 +25,15 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::Render { width, height, settings, threads, tile, out }) => {
-            match run(width, height, settings, cli::schedule(threads, tile), out.as_deref()) {
+            let threads = threads.unwrap_or_else(available_threads);
+            let schedule = match Schedule::new(threads, tile) {
+                Ok(schedule) => schedule,
+                Err(error) => {
+                    eprintln!("lumen: --threads: {error}");
+                    return ExitCode::from(2);
+                }
+            };
+            match run(width, height, settings, schedule, out.as_deref()) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(message) => {
                     eprintln!("lumen: {message}");
@@ -38,6 +46,15 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// The default thread count: what `std::thread::available_parallelism` reports (inside a
+/// container, its CPU limit), within `1..=MAX_THREADS`, or 1 if it reports nothing. This is the
+/// only place lumen asks the host how many threads to use; the library takes a count.
+fn available_threads() -> u32 {
+    std::thread::available_parallelism()
+        .map_or(1, |n| u32::try_from(n.get()).unwrap_or(MAX_THREADS))
+        .clamp(1, MAX_THREADS)
 }
 
 /// Builds the reference scene, renders it, hashes the image, writes the PNG if asked, and prints
@@ -144,7 +161,10 @@ impl Report {
         }
         // Information only: wall-clock readings of this run, never part of the image.
         let render = times.render.as_secs_f64();
-        #[allow(clippy::cast_precision_loss)]
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a ray count below 2^53 converts exactly; the rate is information only"
+        )]
         let total_rays = rays.total() as f64;
         let per_second = if render > 0.0 { total_rays / render } else { 0.0 };
         let ns_per_ray = render * 1e9 / total_rays.max(1.0);

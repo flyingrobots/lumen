@@ -15,16 +15,25 @@ All notable changes to lumen are recorded here. The format follows
   only. The image is the same bytes at every thread count and tile size, and one thread is the
   same code path with one worker. A failing pixel gives the typed error of the first failing
   pixel in raster order at every schedule, and stops the other workers.
-- Library: `Schedule`, `TileSize`, `ScheduleError`, `MAX_THREADS`, `DEFAULT_TILE`,
-  `render_scheduled`, `render_traced` (any `Tracer + Sync`) and `render_pixels` (the scheduler
-  over any pixel function); `RenderError::Spawn`.
+- Library: the `schedule` module (`Schedule`, `TileSize`, `ScheduleError`, `MAX_THREADS`,
+  `DEFAULT_TILE`); the `workers` module (`render_pixels`, the scheduler over any pixel function
+  and any summable per-pixel value, and `WorkerError`, which names the failing pixel);
+  `render_scheduled` and `render_traced` (any `Tracer + Sync`); `RenderError::Spawn` and
+  `RenderError::TileGeometry`; `Add` for `RayCount`. The library takes an explicit thread count;
+  only the binary asks the host.
 - A timing report: `lumen render` prints the pixels, threads used and asked for, the tile, and
   wall-clock `scene-seconds`, `render-seconds`, `hash-seconds`, `png-seconds`, `total-seconds`,
   `rays-per-second` and `ns-per-ray`, all from a monotonic clock and never part of the image.
-- Tests (`crates/lumen/tests/threads.rs`): the golden hash at 1, 2, 3, 4, 7 and the default thread
-  count and eight tile sizes; a 320 by 180 image equal on one thread, on many and in a raster-order
-  loop without the scheduler; 200 threaded renders with one hash; deterministic errors with a time
-  limit, for injected pixel failures and for failing traversals; worker stop after a failure.
+- Tests: hand-out orders of simulated workers, through the scheduler's own steps on one thread,
+  chosen by 200 seeds and two scripted worst cases (one worker takes all; tiles finish in reverse
+  order), checked against a raster-order loop for the image and for the first failure; tile
+  geometry covering every pixel once. In `crates/lumen/tests/threads.rs`, at fixed thread counts:
+  the golden hash at 1, 2, 3, 4, 7 and 18 threads and eight tile sizes; a 320 by 180 image equal
+  on one thread, on many and in a raster-order loop without the scheduler; deterministic errors,
+  bounded by a count of work taken, for injected pixel failures and failing traversals; worker
+  stop after a failure.
+- `docs/adr/0001-tile-scheduling.md`: the concurrency model, why the image cannot depend on it,
+  how the first error is chosen, and what was rejected.
 - A "Performance" section in the README: how to reproduce the thread-scaling, tile and 4K
   measurements through `devrun` with `--cpus` and `--exclusive`.
 
