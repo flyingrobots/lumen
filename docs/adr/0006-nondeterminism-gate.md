@@ -156,6 +156,24 @@ relative to the macro's file, not the caller's. Outside the core, each for a rea
   macro bodies that are never invoked. The token scan reads them by name.
 - A Clippy waiver covers every ban of its lint on its item, not one rule; the rule IDs in its
   reason say which bans it is meant for.
-- A new ban is a line in `clippy.toml`. A path that does not resolve is only a warning about
-  `clippy.toml` itself, which `-D warnings` does not turn into an error: read Clippy's output
-  when adding one.
+- A new ban is a line in `clippy.toml` and a use of the banned item in `xtask/clippy-fixture`.
+  Clippy reports a path that does not resolve only as a warning about `clippy.toml` itself,
+  which `-D warnings` does not turn into an error (a misspelt `Path::exits` left `p.exists()`
+  unbanned, and `cargo clippy` exited 0), and a `clippy.toml` or `.clippy.toml` in a crate's
+  directory replaces the root one for everything under it (a one-line `xtask/.clippy.toml`
+  turned off all 53 bans there). So `cargo run -p xtask -- clippy-bans`, a step of the
+  `fmt, clippy` job, runs Clippy on the fixture and fails on: any item of a `disallowed-*`
+  array it cannot read as `{ path = "...", reason = "<rule-id>: ..." }` (a bare string, a
+  missing reason, any other key such as `allow-invalid`, which silences the warning below), so
+  a ban it cannot check is a failure, not a pass; any diagnostic located in `clippy.toml`; an entry that never fires on the fixture (misspelt, resolving to another item,
+  or not used there: this is the stronger of the two checks, since it does not depend on the
+  wording of Clippy's warning); a module marked `// seeded: <rule>` with no finding under that
+  rule, a finding in a module marked `// accepted` or outside every marked module; a fixture
+  that does not compile; any Clippy configuration file other than the root `clippy.toml`, and
+  `CLIPPY_CONF_DIR`; and a toolchain whose groups holding a ban lint (`cargo clippy -- -W help`)
+  differ from the ones the scan refuses. The fixture is a workspace member whose code is behind
+  `--cfg lumen_clippy_fixture`, which only the check passes, so it is linted with the
+  workspace's own lint levels and lock file, and ordinary builds compile an empty crate. It costs
+  the `fmt, clippy` job one `xtask` build and one Clippy run over a single small crate. It
+  checks that each listed ban works, not that the list is complete; nor does it read lint levels
+  set outside source files (`RUSTFLAGS`, `.cargo/config.toml`).

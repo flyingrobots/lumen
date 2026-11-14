@@ -1125,6 +1125,15 @@ Run the scan with `make nondeterminism`, or:
 python3 $D lumen ~/git/lumen --worktree -- cargo run --locked -q -p xtask -- nondeterminism
 ```
 
+Clippy only warns about a `clippy.toml` path that does not resolve, so the `fmt, clippy` job also
+runs `cargo run --locked -q -p xtask -- clippy-bans` (`make clippy-bans`). It runs Clippy on
+`xtask/clippy-fixture`, a workspace member whose seeded uses of every banned item compile only
+under `--cfg lumen_clippy_fixture`, and fails when an entry produces a diagnostic about
+`clippy.toml` or never fires there, when a module marked `// seeded: <rule-id>` is not reported
+under its rule or one marked `// accepted` is reported, when there is any Clippy configuration
+file besides the root `clippy.toml` (a crate's own replaces it), and when the toolchain's lint
+groups holding a ban lint change. A new ban is a line in `clippy.toml` and a use in the fixture.
+
 ## Bunny dependency
 
 Lumen uses Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`, `bunny-broadphase`,

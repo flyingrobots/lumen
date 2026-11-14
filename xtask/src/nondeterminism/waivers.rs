@@ -22,7 +22,8 @@ const BAN_LINTS: [&str; 6] = [
 /// Clippy 0.1.96): `clippy::all` and `clippy::style` hold the three `disallowed_*` lints and
 /// `clippy::restriction` holds `float_arithmetic`. `warnings` holds every lint at `warn`, so
 /// with a ban lowered to `warn` it turns the ban off.
-const BAN_GROUPS: [&str; 4] = ["clippy::all", "clippy::style", "clippy::restriction", "warnings"];
+pub(crate) const BAN_GROUPS: [&str; 4] =
+    ["clippy::all", "clippy::style", "clippy::restriction", "warnings"];
 
 /// The lint levels that can turn a ban off: everything below `deny`.
 const LOWERING: [&str; 3] = ["allow", "expect", "warn"];

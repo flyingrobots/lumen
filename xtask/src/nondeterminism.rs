@@ -28,7 +28,7 @@ mod waivers;
 use paths::{imports, paths, resolve};
 use tokens::{is_float, tokens, Token};
 use waivers::apply_waivers;
-pub(crate) use waivers::waiver_forms;
+pub(crate) use waivers::{waiver_forms, BAN_GROUPS};
 
 /// Every rule ID: Echo's `ban-nondeterminism` vocabulary, then Lumen's own.
 pub(crate) const RULES: [&str; 20] = [

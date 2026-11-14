@@ -35,6 +35,13 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      # The compiler layer's own check (docs/adr/0006-nondeterminism-gate.md): every clippy.toml
+      # ban resolves and fires on xtask/clippy-fixture, its seeded forms are reported under their
+      # rules and its look-alikes are not, there is exactly one clippy.toml, and the lint groups
+      # holding a ban lint are the ones the scan refuses. Clippy only warns on a misspelt ban.
+      - name: Clippy bans
+        run: cargo run --locked -q -p xtask -- clippy-bans
+
   # The same image on every platform lumen claims: each native leg runs the whole test suite,
   # which includes the golden image hash (crates/lumen/tests/golden/mod.rs, one constant for
   # every leg), in the test profile and in the release profile. The job names are stable: they
