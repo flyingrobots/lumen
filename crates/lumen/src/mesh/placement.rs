@@ -1,6 +1,6 @@
 //! Placing a triangle mesh on the reference scene's vertex grid.
 //!
-//! A [`MeshPlacement`] applies an exact [`MeshTurn`], a scale by a power of two, a floor to the
+//! A [`MeshPlacement`] applies an exact [`MeshTurn`] (none, a quarter or a half turn about `+Y`), a scale by a power of two, a floor to the
 //! `2^-16` vertex grid and a translation by whole grid steps. Every step is exact or a stated
 //! floor, so a placed vertex is a pure function of the mesh. Faces that have zero area once placed
 //! are dropped and listed ([`PlacedMesh::dropped`]); none reaches a scene.
@@ -22,6 +22,8 @@ pub enum MeshTurn {
     None,
     /// Half a turn about `+Y`: `(x, y, z)` to `(-x, y, -z)`.
     HalfAboutY,
+    /// A quarter turn about `+Y` that takes `-X` to `+Z`: `(x, y, z)` to `(z, y, -x)`.
+    QuarterAboutY,
 }
 
 /// How a mesh is placed in the scene: a [`MeshTurn`], a scale by `2^shift`, a floor to the
@@ -44,21 +46,23 @@ impl MeshPlacement {
     ///
     /// [`CoordinateOverflow`] when a placed coordinate does not fit a Q32.32 raw `i64`.
     pub fn place(&self, v: FixedVec3) -> Result<FixedVec3, CoordinateOverflow> {
-        let turn = match self.turn {
-            MeshTurn::None => 1,
-            MeshTurn::HalfAboutY => -1,
+        let (x, z) = (v.x.raw(), v.z.raw());
+        let (turned_x, turned_z) = match self.turn {
+            MeshTurn::None => (Some(x), Some(z)),
+            MeshTurn::HalfAboutY => (x.checked_neg(), z.checked_neg()),
+            MeshTurn::QuarterAboutY => (Some(z), x.checked_neg()),
         };
-        let one = |raw: i64, sign: i64, steps: i64| {
-            let scaled = raw.checked_mul(sign)?.checked_mul(1_i64.checked_shl(self.shift)?)?;
+        let one = |raw: Option<i64>, steps: i64| {
+            let scaled = raw?.checked_mul(1_i64.checked_shl(self.shift)?)?;
             let snapped = snap(FixedQ32_32::from_raw(scaled)).raw();
             snapped.checked_add(steps.checked_mul(GRID_RAW)?).map(FixedQ32_32::from_raw)
         };
         let [ox, oy, oz] = self.offset_steps;
         let overflow = |axis| move || CoordinateOverflow { axis };
         Ok(FixedVec3::new(
-            one(v.x.raw(), turn, ox).ok_or_else(overflow(Axis::X))?,
-            one(v.y.raw(), 1, oy).ok_or_else(overflow(Axis::Y))?,
-            one(v.z.raw(), turn, oz).ok_or_else(overflow(Axis::Z))?,
+            one(turned_x, ox).ok_or_else(overflow(Axis::X))?,
+            one(Some(v.y.raw()), oy).ok_or_else(overflow(Axis::Y))?,
+            one(turned_z, oz).ok_or_else(overflow(Axis::Z))?,
         ))
     }
 }
@@ -213,5 +217,20 @@ mod tests {
         assert_eq!(place_mesh(&missing, &flat), Err(PlaceError::MissingVertex { face: 0 }));
         let overflow = CoordinateOverflow { axis: Axis::X };
         assert_eq!(place_mesh(&mesh, &huge), Err(PlaceError::Overflow { face: 0, overflow }));
+    }
+
+    /// Oracle: the rotation matrix of a quarter turn about `+Y` taking `-X` to `+Z`:
+    /// `(x, y, z)` to `(z, y, -x)`, applied by hand to two constructed points.
+    #[test]
+    fn a_quarter_turn_takes_minus_x_to_plus_z() {
+        let quarter =
+            MeshPlacement { turn: MeshTurn::QuarterAboutY, shift: 1, offset_steps: [1, 2, 3] };
+        let p = |x: i64, y: i64, z: i64| FixedVec3::new(grid(x), grid(y), grid(z));
+        assert_eq!(quarter.place(p(-U, 0, 0)), Ok(p(1, 2, 2 * U + 3)));
+        assert_eq!(quarter.place(p(U, 2 * U, 3 * U)), Ok(p(6 * U + 1, 4 * U + 2, -2 * U + 3)));
+        let edge =
+            FixedVec3::new(FixedQ32_32::from_raw(i64::MIN), FixedQ32_32::ZERO, FixedQ32_32::ZERO);
+        let none = MeshPlacement { shift: 0, offset_steps: [0; 3], ..quarter };
+        assert_eq!(none.place(edge), Err(CoordinateOverflow { axis: Axis::Z }));
     }
 }
