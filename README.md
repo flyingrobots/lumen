@@ -801,6 +801,40 @@ that target starts no threads or processes. The same job compiles the library fo
 `wasm32-unknown-unknown`, the browser target, without running it. Why WebAssembly is tested
 this way is recorded in [ADR 0004](docs/adr/0004-webassembly-determinism-leg.md).
 
+### Nondeterminism bans
+
+The golden hashes find a difference only in the scenes they render, so the sources of one are
+banned before they can reach a pixel ([ADR 0006](docs/adr/0006-nondeterminism-gate.md)). The
+rules use Echo's `ban-nondeterminism` rule IDs, plus Lumen's `thread-spawn` and `float-type`:
+
+| Rule | Banned | Enforced by |
+|---|---|---|
+| `time-system`, `time-instant` | `SystemTime`, `Instant` and their `now` and `elapsed` | `clippy.toml`, in `fmt, clippy` |
+| `thread-sleep`, `host-parallelism`, `thread-spawn` | `std::thread::sleep`, `available_parallelism`, `spawn`, `scope`, `Builder` | the same |
+| `unordered-container` | `HashMap`, `HashSet`, `RandomState` | the same |
+| `std-env`, `std-fs`, `std-process`, `network` | arguments, environment variables, `env!` and `option_env!`, files and `Path::exists`, processes, sockets | the same |
+| `float-type` | `f32`, `f64`, Bunny's `to_f32`; float arithmetic in the library (`clippy::float_arithmetic`) | the same, and `lib.rs` |
+| `random`, `host-callback`, `json-serialization`, `wasm-serde`, crate forms of the rest | any crates.io crate | `deny.toml` (`allow-registry = []`), in `Gates / cargo-deny` |
+| `float-type`, `float-literal`, `float-cast`, the names and `std` paths above, `hand-hashed-table` | in the core, also under a `cfg` that is not built and in macro bodies: `f32`, `f64`, float literals, `as f64`; `Instant`, `SystemTime`, `HashMap` and the other banned names wherever spelled; `std::env`, `fs`, `process`, `net`, `thread::sleep` paths through `use` trees and renames; any line naming open addressing | `cargo run -p xtask -- nondeterminism`, in `Gates / nondeterminism` |
+
+The bans apply to the whole workspace. The deterministic core is the library, `src/` without
+`src/bin/`; the command (the only clock and the only `available_parallelism`), the examples,
+`tests/cli.rs` and `xtask` are outside it and each carries one crate-level waiver. Inside it, the
+scheduler's threads (`render_pixels`, ADR 0003) and two unit tests carry their own. A waiver is
+`#[expect(<clippy lints>, reason = "<rule-ids>: <why it cannot reach a pixel>")]` on the
+smallest item that needs it: `expect`, so one that stops matching fails the build; the scan
+fails an `allow` of a ban lint or a reason that does not start with rule IDs. A scan finding is
+waived by `// nondeterminism: allow <rule-id> -- <reason>` on its line or the line above; the scan
+fails one with an unknown rule, without a reason, or that waives nothing. There is none today.
+Not covered: a `usize`-dependent value reaching the hash, which the WebAssembly leg (32-bit
+`usize`) tests.
+
+Run the scan with `make nondeterminism`, or:
+
+```sh
+python3 $D lumen ~/git/lumen --worktree -- cargo run --locked -q -p xtask -- nondeterminism
+```
+
 ## Bunny dependency
 
 Lumen uses Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`, `bunny-broadphase`,
@@ -874,13 +908,14 @@ Lint posture mirrors Bunny: `unsafe` is forbidden, clippy `all` is denied and
 
 ### Supply-chain, size and coverage checks
 
-`.github/workflows/gates.yml` runs four jobs on every pull request:
+`.github/workflows/gates.yml` runs five jobs on every pull request:
 
 | Job | What it checks | Fails when |
 |---|---|---|
-| `Gates / cargo-deny` | `cargo deny --locked check` against `deny.toml` | an advisory, a yanked crate, a licence other than Apache-2.0, a second version of a crate, a wildcard version, a registry other than crates.io, a git repository other than `https://github.com/flyingrobots/bunny`, or a git dependency not pinned by `rev` |
+| `Gates / cargo-deny` | `cargo deny --locked check` against `deny.toml` | an advisory, a yanked crate, a licence other than Apache-2.0, a second version of a crate, a wildcard version, any crate from a registry (crates.io included), a git repository other than `https://github.com/flyingrobots/bunny`, or a git dependency not pinned by `rev` |
 | `Gates / cargo-audit` | `cargo audit --deny warnings` on `Cargo.lock` | a RustSec advisory or warning for a locked crate |
 | `Gates / file length` | `cargo run -p xtask -- file-length` | a source file over 300 lines of code without a listed exception, or over 500 at all; a test file (under `tests/` or named `tests.rs`) over 750; a listed file grown past its exception; an exception no longer needed |
+| `Gates / nondeterminism` | `cargo run -p xtask -- nondeterminism` (see "Nondeterminism bans") | a float, a banned name or `std` path in the deterministic core, a malformed or unused scan waiver, or a ban lint waived with `allow` or without rule IDs in its reason |
 | `Signal / coverage` | `cargo llvm-cov --workspace --summary-only`, in the job summary | never: coverage is reported, not gated |
 
 A line of code is a line with a character outside a comment; doc comments are comments. The
@@ -903,7 +938,9 @@ prebuilt binaries. To run them in the container, install them under `/tmp` first
 ## Contributing
 
 Run the gates under "Build and test" before opening a pull request, and add a line to
-`CHANGELOG.md` under `Unreleased`.
+`CHANGELOG.md` under `Unreleased`. A nondeterminism waiver (see "Nondeterminism bans") is asked
+for in the pull request: its reason says why the banned item cannot reach a pixel, a hash or a
+digest, and review accepts or refuses it there.
 
 ### Tests
 
