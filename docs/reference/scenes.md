@@ -365,13 +365,13 @@ Rendering tests (`crates/lumen/tests/canyon/rendering.rs`): the composition as p
 by 180 image, the camera ray through each pixel's centre meets the bunny in at least 900 pixels,
 each craft in at least 40 and the planet in at least 800); every camera, shadow and bounce ray
 of a 48 by 27 image at 1 sample (1 296 samples) equal to a test of all 566 005 triangles, a
-large test that runs in the release profile only (about 12 seconds; the test profile skips it
+large test that runs in the release profile only (tens of seconds, by machine; the test profile skips it
 with `#[cfg_attr(debug_assertions, ignore = ...)]`, and CI runs both profiles); and a golden
 hash: 96 by 54 pixels, 4 samples per pixel, seed 0,
 `sha256:019fcdddaaff8761f3f6e64dfe28d1ce7d2b07200b8c69663345ca4a495466c5`, under the same rules
 as the other scenes', the same at every thread count and band height (`tests/threads.rs`). The
-canyon's test binary is not in the WebAssembly job's list; that job checks the canyon's content
-identity and a small render through `tests/library.rs`.
+WebAssembly job runs this golden test on its own (its own step, in both profiles), not the rest of
+the canyon's test binary: the brute-force test would take far too long there.
 
 At 3840 by 2160 and 16 samples it renders in about 14.5 seconds with 18 CPUs, 2.7 times the
 reference scene's time per ray: [the measurement record](../measurements/2026-11-14-canyon.md)

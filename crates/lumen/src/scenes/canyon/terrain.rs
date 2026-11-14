@@ -31,7 +31,7 @@ pub const LEDGE_Y: i64 = 3 * U;
 /// the first tier's tread.
 pub const LEDGE: Shelf = Shelf { columns: [210, 231], rows: [20, 51], height: LEDGE_Y };
 
-/// Where the middle of the bunny's footprint stands on the ledge: column 219, row 39.
+/// Where the middle of the bunny's footprint stands on the ledge: column 220, row 39.
 pub const BUNNY_SPOT: (u32, u32) = (220, 39);
 
 /// The noise layers: lattice spacings from 128 vertices down to 1, each three quarters of the

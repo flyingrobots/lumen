@@ -117,7 +117,19 @@ jobs:
         run: cargo check -p lumen --lib --target wasm32-unknown-unknown --locked
 
       - name: Test on wasm32-wasip1
-        run: cargo test --locked -p lumen --target wasm32-wasip1 --lib --test render --test library --test fixed_point --test generated --test smooth -- --nocapture
+        run: cargo test --locked -p lumen --target wasm32-wasip1 --lib --test render --test library --test fixed_point --test generated --test smooth --test statistics -- --nocapture
+
+      # The canyon's golden image only: its test binary also holds a brute-force test of every
+      # ray against all 566 005 triangles, which the release profile runs and which is far too
+      # slow here.
+      - name: Canyon golden image on wasm32-wasip1
+        run: cargo test --locked -p lumen --target wasm32-wasip1 --test canyon -- --exact rendering::the_canyon_image_has_its_golden_hash --nocapture
 
       - name: Test on wasm32-wasip1 (release profile)
-        run: cargo test --locked -p lumen --target wasm32-wasip1 --release --lib --test render --test library --test fixed_point --test generated --test smooth -- --nocapture
+        run: cargo test --locked -p lumen --target wasm32-wasip1 --release --lib --test render --test library --test fixed_point --test generated --test smooth --test statistics -- --nocapture
+
+      # The canyon's golden image only: its test binary also holds a brute-force test of every
+      # ray against all 566 005 triangles, which the release profile runs and which is far too
+      # slow here.
+      - name: Canyon golden image on wasm32-wasip1 (release profile)
+        run: cargo test --locked -p lumen --target wasm32-wasip1 --release --test canyon -- --exact rendering::the_canyon_image_has_its_golden_hash --nocapture
