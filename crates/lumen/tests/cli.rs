@@ -6,7 +6,10 @@ use std::process::{Command, Output};
 use lumen::{render_reference, write_png, BuiltinScene, RenderSettings};
 
 mod golden;
-use golden::{GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP};
+use golden::{
+    GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP, GOLDEN_FIXED_POINT_CONTENT,
+    GOLDEN_REFERENCE_CONTENT,
+};
 
 fn lumen(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_lumen")).args(args).output().expect("lumen runs")
@@ -264,14 +267,15 @@ fn the_hash_is_the_same_at_every_thread_count_without_a_file() {
     assert!(seen.iter().all(|(_, rays)| *rays == seen[0].1), "{seen:?}");
 }
 
-/// `--scene` names the scene: the reported identity is that scene's, and the image is the one
-/// the library's golden hash records for it (96 by 54 pixels, 4 samples, seed 0). With no
+/// `--scene` names the scene: the reported name is that scene's, the `scene-content` line (the
+/// last provenance line, after `bounces`) is its golden content identity, and the image is the
+/// one the library's golden hash records for it (96 by 54 pixels, 4 samples, seed 0). With no
 /// `--scene` the reference scene is rendered.
 #[test]
 fn each_scene_renders_with_its_identity_and_golden_hash() {
     let golden = |scene: BuiltinScene| match scene {
-        BuiltinScene::Reference => GOLDEN_96X54_4SPP,
-        BuiltinScene::FixedPoint => GOLDEN_FIXED_POINT_96X54_4SPP,
+        BuiltinScene::Reference => (GOLDEN_96X54_4SPP, GOLDEN_REFERENCE_CONTENT),
+        BuiltinScene::FixedPoint => (GOLDEN_FIXED_POINT_96X54_4SPP, GOLDEN_FIXED_POINT_CONTENT),
     };
     let render = |extra: &[&str]| {
         let mut args = vec!["render", "--width", "96", "--height", "54", "--samples", "4"];
@@ -282,11 +286,15 @@ fn each_scene_renders_with_its_identity_and_golden_hash() {
     };
     for scene in BuiltinScene::ALL {
         let stdout = render(&["--scene", scene.name()]);
+        let (image, content) = golden(scene);
         assert_eq!(field(&stdout, "scene"), scene.id());
-        assert_eq!(field(&stdout, "image"), golden(scene), "{}", scene.name());
+        assert_eq!(field(&stdout, "image"), image, "{}", scene.name());
+        let after_bounces = stdout.lines().skip_while(|line| *line != "bounces 1").nth(1);
+        assert_eq!(after_bounces, Some(format!("scene-content {content}").as_str()));
     }
     let stdout = render(&[]);
     assert_eq!(field(&stdout, "scene"), BuiltinScene::Reference.id());
+    assert_eq!(field(&stdout, "scene-content"), GOLDEN_REFERENCE_CONTENT);
     assert_eq!(field(&stdout, "image"), GOLDEN_96X54_4SPP);
 }
 

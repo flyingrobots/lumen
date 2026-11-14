@@ -1,7 +1,6 @@
 # ADR 0005: A scene's content identity
 
-Status: accepted (flyingrobots/lumen#38, first part: the identity, its encoding and
-`Scene::content_id`)
+Status: accepted (flyingrobots/lumen#38)
 
 ## Context
 
@@ -111,14 +110,31 @@ every digest.
   would need interior mutability or a copy of the raw input kept beside the prepared one, to
   save milliseconds only for a caller that never asks.
 - **`SCENE_CONTENT_ENCODING`** is the version string, `lumen-scene-content/1`.
+- **`RenderProvenance` is built from `&Scene`**: `RenderProvenance::new(&scene, size, settings)`
+  for a scene without a name, `RenderProvenance::named(name, &scene, size, settings)` for one
+  with a name. It takes the content identity from the scene, so it cannot be built from a bare
+  string any more. The name is a label, not checked against the content. `name()` and
+  `scene_content()` return the two.
+- **The digest is the thirteenth field, `scene-content`** (`ProvenanceValue::Content`), at the
+  end of `fields()`. ADR 0002's rule that new fields go at the end wins over printing the digest
+  next to the name: every existing field keeps its position, and the command's report gains one
+  line after `bounces`, every other line unchanged. The `scene` field is the name, or
+  `ProvenanceValue::Unnamed` for a scene given none. `PROVENANCE_FIELDS` is 13. lumen is
+  unreleased, so this changes the API without a deprecation step.
+- **The built-in scenes' digests are golden values** (`tests/golden/mod.rs`), beside their image
+  hashes, checked by the library test on every Determinism leg (WebAssembly included) and by
+  the command's test. A third golden, for a one-triangle scene, was computed outside lumen
+  (Python's `struct` and `hashlib`, from the table above), so the encoder and lumen's SHA-256 are
+  not checked only against themselves.
 
 ## Consequences
 
 - A scene's identity no longer depends on a caller's label. The built-in scenes keep their names
   (`BuiltinScene::id()`), which stay human-readable labels.
 - Any change to a built-in scene's content changes its digest as well as its golden image hash.
-- `RenderProvenance` does not carry the digest yet; that is the second part of
-  flyingrobots/lumen#38.
+- Equal provenance now implies equal bytes for any scene, not only for the built-in ones whose
+  names are versioned: two scenes under one name have different provenance.
+- A front end that recorded provenance before this change has no `scene-content` field.
 
 ## Rejected
 
