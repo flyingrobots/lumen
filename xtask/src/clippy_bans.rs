@@ -7,9 +7,12 @@
 //! check runs Clippy on `xtask/clippy-fixture` (with `--cfg lumen_clippy_fixture`) and fails on
 //! any diagnostic located in `clippy.toml`, on an entry that never fires on the fixture (which
 //! also catches a path that resolves to some other item than the one used), and on a fixture
-//! that does not compile. This module parses and judges; `main.rs` runs Clippy.
+//! that does not compile. It also fails when `clippy.toml` lacks a std item that
+//! [`std_items`] decides banned, or the item list is for another toolchain. This module parses
+//! and judges; [`run`] runs Clippy.
 
 pub(crate) mod run;
+pub(crate) mod std_items;
 #[cfg(test)]
 mod tests;
 
@@ -19,6 +22,9 @@ use crate::nondeterminism::BAN_GROUPS;
 
 /// The fixture's sources, relative to the repository root.
 pub(crate) const FIXTURE_SRC: &str = "xtask/clippy-fixture/src";
+
+/// The std item list, relative to the repository root ([`std_items`]).
+pub(crate) const STD_ITEMS: &str = "xtask/bans/std-items.txt";
 
 /// The Clippy lints of the bans, as `cargo clippy -- -W help` spells them.
 const BAN_LINTS: [&str; 4] = [

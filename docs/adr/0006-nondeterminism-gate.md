@@ -76,6 +76,33 @@ them in CI (see Consequences), so this row is a check, not a recorded run.
   `lib.rs` denies `clippy::float_arithmetic`, which catches `+ - * / %` and negation on a float
   whose type is only inferred (not method calls, comparisons or conversions). The bans run in
   the existing `fmt, clippy` job.
+- **The std part of the lists is derived, not remembered.** `xtask/bans/std-items.txt`, checked
+  in, holds every public item of `std::env`, `fs`, `process`, `net`, `thread` and `time` and
+  every float method of `Duration`, with its stability, for the pinned toolchain.
+  `xtask/src/clippy_bans/std_items.rs` decides each one (a module rule, the kept lists of
+  `std::net` and `std::thread`, unstable items and constants kept), and
+  `cargo run -p xtask -- clippy-bans` fails when an item decided banned has no `clippy.toml`
+  entry under its rule, when an item has no decision (a new `std::thread` or `std::time`
+  item), when a row is not `<kind> std::<path> stable|unstable` or the list has no
+  `toolchain` line, and when the list's toolchain is not the one `rust-toolchain.toml` pins
+  (`std-items` stops on a documentation page it cannot read rather than guess). When the
+  toolchain moves, regenerate the list from that toolchain's documentation and commit it:
+
+  ```sh
+  T=rust-docs-<version>-x86_64-unknown-linux-gnu
+  curl -sSfO https://static.rust-lang.org/dist/$T.tar.xz
+  curl -sSfO https://static.rust-lang.org/dist/$T.tar.xz.sha256 && sha256sum -c $T.tar.xz.sha256
+  tar -xJf $T.tar.xz $T/rust-docs/share/doc/rust/html/std
+  cargo run --locked -q -p xtask -- std-items $T/rust-docs/share/doc/rust/html/std <version> \
+    > xtask/bans/std-items.txt
+  ```
+
+  (in the container, with `--network`), then decide every new item and add each new ban to
+  `clippy.toml` and a use of it to the fixture, until `clippy-bans` passes. The list of 1.96.0
+  is from the tarball with sha256
+  `75a89ce0e81e67d0134bd7adb1f0e312110b8eaef2fdd07e3bfb072a7211317b`, and regenerating it
+  reproduces the checked-in file byte for byte. Bunny's float bridge is listed by hand from its
+  sources at the pinned commit; when the pin moves, re-read them.
 - **Deny by default.** The bans apply to every crate in the workspace. Code outside the
   deterministic core carries `#[expect(<lints>, reason = "<rule-ids>: <why>")]`: the `lumen`
   binary, the examples, `tests/cli.rs` and `xtask` at crate level, and the scheduler and two

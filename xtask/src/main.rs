@@ -14,7 +14,9 @@
 //!
 //! `cargo run --locked -p xtask -- clippy-bans` checks the compiler layer itself
 //! ([`clippy_bans`]): every `clippy.toml` ban resolves and fires on a seeded fixture, there is one
-//! `clippy.toml`, and the lint groups holding a ban lint are the ones the scan refuses.
+//! `clippy.toml`, the lint groups holding a ban lint are the ones the scan refuses, and every
+//! std item the bans cover is listed. `cargo run --locked -p xtask -- std-items <dir> <version>`
+//! writes that std item list from the toolchain's documentation ([`clippy_bans::std_items`]).
 
 #![expect(
     clippy::disallowed_methods,
@@ -48,6 +50,18 @@ fn main() -> ExitCode {
     let gate = match args.as_slice() {
         [command] if command == "file-length" => file_length_gate as fn(&_, &_) -> bool,
         [command] if command == "nondeterminism" => nondeterminism_gate,
+        [command, docs, toolchain] if command == "std-items" => {
+            return match clippy_bans::run::std_items_list(Path::new(docs), toolchain) {
+                Ok(list) => {
+                    print!("{list}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("xtask: {error}");
+                    ExitCode::from(2)
+                }
+            };
+        }
         [command] if command == "clippy-bans" => {
             return match clippy_bans::run::gate(&root) {
                 Ok(true) => ExitCode::SUCCESS,
