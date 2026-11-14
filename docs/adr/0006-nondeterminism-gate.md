@@ -91,4 +91,6 @@ provenance. Outside it, each for a reason:
   macro bodies that are never invoked. The token scan reads them by name.
 - A Clippy waiver covers every ban of its lint on its item, not one rule; the rule IDs in its
   reason say which bans it is meant for.
-- A new ban is a line in `clippy.toml`; Clippy warns when a path in it does not resolve.
+- A new ban is a line in `clippy.toml`. A path that does not resolve is only a warning about
+  `clippy.toml` itself, which `-D warnings` does not turn into an error: read Clippy's output
+  when adding one.
