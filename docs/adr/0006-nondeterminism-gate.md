@@ -1,7 +1,6 @@
 # ADR 0006: How nondeterminism is kept out of the deterministic core
 
-Status: accepted (flyingrobots/lumen#17). The compiler layer and the dependency rule are in
-force; the token scan is the second pull request for the same issue.
+Status: accepted (flyingrobots/lumen#17).
 
 ## Context
 
@@ -32,6 +31,8 @@ literals. A form counts as caught when its file gets a finding under its rule.
 |---|---|---|
 | (1) Echo's patterns | 32 of 50 | 3 of 10 (`sin`/`sqrt`, `HashMap` in a comment, in a string) |
 | (3) Clippy with `clippy.toml` | 42 of 50 | 0 of 10 |
+| The token scan alone | 46 of 50 | 0 of 10 |
+| (3) and the token scan, as decided | 50 of 50 | 0 of 10 |
 
 Echo's patterns missed module imports (`use std::thread; thread::sleep`), module renames, glob
 imports, `std::hash::RandomState`, `option_env!`, `Path::exists`, every thread spawn (Echo has no
@@ -40,7 +41,9 @@ never sees as a path: three float literals with no float type written (`1.5 as u
 `1e3`), a float literal in `format!`, a float and a clock under a `cfg` that is not built, a
 `HashMap` in an unused `macro_rules!`, and the comment. Option (2) was not built: it would be a
 partial copy of name resolution that Clippy already does exactly, and it would still need the
-token-level float and text rules that close Clippy's gaps.
+token-level float and text rules that close Clippy's gaps. The token scan alone misses
+`Path::exists` and the three thread spawns, which it does not look for; the scan's forms are its
+unit tests (`xtask/src/nondeterminism/tests.rs`).
 
 ## Decision
 
@@ -65,7 +68,11 @@ token-level float and text rules that close Clippy's gaps.
   bodies and `cfg`-gated code included; the banned names (`Instant`, `SystemTime`, `HashMap`,
   `HashSet`, `RandomState`, `available_parallelism`) and `std::env`, `fs`, `process`, `net`
   paths wherever they are spelled; open addressing in any line; and the form of every Clippy
-  waiver (an `expect` with a reason that starts with a rule ID).
+  waiver (an `expect` with a reason that starts with a rule ID, never an `allow`). It resolves a
+  path's first segment through the file's `use` trees (groups, `self`, renames, globs), file-wide,
+  so it can only over-report. A scan finding is waived by
+  `// nondeterminism: allow <rule-id> -- <reason>` on its line or the line above; an unknown
+  rule, a missing reason or a waiver that waives nothing fails. It runs as `Gates / nondeterminism`.
 
 ## Scope
 
@@ -91,4 +98,6 @@ provenance. Outside it, each for a reason:
   macro bodies that are never invoked. The token scan reads them by name.
 - A Clippy waiver covers every ban of its lint on its item, not one rule; the rule IDs in its
   reason say which bans it is meant for.
-- A new ban is a line in `clippy.toml`; Clippy warns when a path in it does not resolve.
+- A new ban is a line in `clippy.toml`. A path that does not resolve is only a warning about
+  `clippy.toml` itself, which `-D warnings` does not turn into an error: read Clippy's output
+  when adding one.

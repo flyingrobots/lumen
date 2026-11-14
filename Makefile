@@ -9,6 +9,7 @@
 #   make 4k              the reference scene at 3840x2160, 16 samples
 #   make 4k-fixed-point  the Fixed Point scene at 3840x2160, 64 samples
 #   make test            the test suite, debug and release
+#   make nondeterminism  the nondeterminism scan (ADR 0006)
 #   make help            this list
 #
 # Override on the command line, for example:
@@ -27,7 +28,7 @@ OPEN    ?= 1
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 RUN   = python3 $(DEVRUN) lumen $(ROOT) --worktree --fetch --cpus $(CPUS) --memory $(MEMORY)
 
-.PHONY: help demo reference fixed-point 4k 4k-fixed-point test check-devrun
+.PHONY: help demo reference fixed-point 4k 4k-fixed-point test nondeterminism check-devrun
 
 help:
 	@sed -n '1,/^$$/p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
@@ -63,3 +64,6 @@ demo: reference fixed-point
 
 test: check-devrun
 	$(RUN) -- bash -c 'cargo test --locked --workspace && cargo test --locked --workspace --release'
+
+nondeterminism: check-devrun
+	$(RUN) -- cargo run --locked -q -p xtask -- nondeterminism
