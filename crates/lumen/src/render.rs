@@ -19,13 +19,15 @@ use bunny_optics::{
 use crate::image::{ImageSize, Rgba8Image};
 use crate::scene::{Scene, Tracer};
 use crate::schedule::Schedule;
-use crate::workers::{render_pixels, WorkerError};
+use crate::workers::{render_pixels, render_pixels_by_worker, Reservation, WorkerError};
 
 mod error;
+mod run;
 mod shade;
 mod statistics;
 
 pub use error::{PathError, RenderError};
+pub use run::{RunStatistics, WorkerStatistics};
 use shade::{direct, Shade};
 pub use statistics::{RayCheckError, RayOutcomes, RayStatistics};
 
@@ -394,9 +396,10 @@ impl<T: Tracer + ?Sized> Frame<'_, T> {
 ///
 /// Each pixel is the radiance of [`pixel_radiance`] (with `tracer` in place of the scene),
 /// written by `write_rgba8` through [`TONE_CURVE`]: opaque RGBA8, row-major, row 0 at the top.
-/// The scene and the tracer are shared read-only by every worker. [`render_pixels`] decides who
-/// computes which pixel and when, never its value: every pixel's samples go into its own
-/// `PixelAccumulator`, so the image and the ray count are the same for every schedule.
+/// The scene and the tracer are shared read-only by every worker.
+/// [`render_pixels`](crate::render_pixels) decides who computes which pixel and when, never its
+/// value: every pixel's samples go into its own `PixelAccumulator`, so the image and the ray
+/// count are the same for every schedule.
 ///
 /// # Errors
 ///
@@ -415,13 +418,58 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
 ) -> Result<Render, RenderError> {
     let camera = scene.camera().camera(size.width(), size.height())?;
     let frame = Frame { scene, tracer, camera: &camera, settings };
-    match render_pixels(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y)) {
-        Ok((image, statistics)) => Ok(Render { image, rays: statistics.count(), statistics }),
-        Err(WorkerError::Pixel { x, y, error }) => Err(RenderError::Pixel { x, y, error }),
-        Err(WorkerError::OutOfMemory { reserving, error }) => {
-            Err(RenderError::OutOfMemory { reserving, error })
+    // `render_pixels` counts nothing per worker: the render pays nothing for run statistics.
+    let (image, statistics) =
+        render_pixels(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y))
+            .map_err(render_error)?;
+    Ok(Render { image, rays: statistics.count(), statistics })
+}
+
+/// [`render_traced`], with what each worker did ([`RunStatistics`]): information about the run,
+/// which differs from run to run; the [`Render`] does not.
+///
+/// # Errors
+///
+/// Any error of [`render_traced`].
+pub fn render_traced_with_run<T: Tracer + Sync + ?Sized>(
+    scene: &Scene,
+    tracer: &T,
+    size: ImageSize,
+    settings: RenderSettings,
+    schedule: Schedule,
+) -> Result<(Render, RunStatistics), RenderError> {
+    let camera = scene.camera().camera(size.width(), size.height())?;
+    let frame = Frame { scene, tracer, camera: &camera, settings };
+    let done =
+        render_pixels_by_worker(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y))
+            .map_err(render_error)?;
+    // One record per worker, reserved without aborting on failure, as the scheduler's own list.
+    let mut workers = Vec::new();
+    let handles = done.workers.len();
+    workers.try_reserve_exact(handles).map_err(|error| RenderError::OutOfMemory {
+        reserving: Reservation::Workers { handles },
+        error,
+    })?;
+    workers.extend(done.workers.iter().map(|w| WorkerStatistics::of(w, size.width())));
+    let statistics = done.total;
+    let render = Render { image: done.image, rays: statistics.count(), statistics };
+    let run = RunStatistics {
+        band_rows: schedule.band().get(),
+        bands: schedule.band().count(size),
+        workers,
+    };
+    Ok((render, run))
+}
+
+/// A worker's failure as the render's: the pixel and its path error, or the reservation or
+/// spawn that failed.
+fn render_error(error: WorkerError<PathError>) -> RenderError {
+    match error {
+        WorkerError::Pixel { x, y, error } => RenderError::Pixel { x, y, error },
+        WorkerError::OutOfMemory { reserving, error } => {
+            RenderError::OutOfMemory { reserving, error }
         }
-        Err(WorkerError::Spawn(error)) => Err(RenderError::Spawn(error)),
+        WorkerError::Spawn(error) => RenderError::Spawn(error),
     }
 }
 
