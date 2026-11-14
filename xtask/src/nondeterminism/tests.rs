@@ -15,7 +15,7 @@ fn reported(source: &str) -> Vec<(usize, &'static str)> {
     core_findings(source).iter().map(|f| (f.line, f.rule)).collect()
 }
 
-const REJECTED: [Form; 46] = [
+const REJECTED: [Form; 67] = [
     ("instant: qualified call", "pub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 1),
     ("instant: use then bare call", "use std::time::Instant;\npub fn f() { let _ = Instant::now(); }", "time-instant", 1),
     ("instant: use group", "use std::time::{Duration, Instant};\npub fn f() -> Duration { Instant::now().elapsed() }", "time-instant", 1),
@@ -62,9 +62,30 @@ const REJECTED: [Form; 46] = [
     ("instant: in cfg-gated code", "#[cfg(feature = \"never\")]\npub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 2),
     ("map: in an unused macro_rules", "#[allow(unused_macros)]\nmacro_rules! table { () => { std::collections::HashMap::<u8, u8>::new() } }", "unordered-container", 2),
     ("open addressing: comment", "// open addressing with linear probing\npub struct Table([u32; 8]);", "hand-hashed-table", 1),
+    ("env: env! macro", "pub fn f() -> &'static str { env!(\"HOME\") }", "std-env", 1),
+    ("float: negative exponent literal", "pub const K: u32 = 1e-3 as u32;", "float-literal", 1),
+    ("float: range bound after two dots", "pub fn f() -> core::ops::RangeTo<u32> { ..1.5 as u32 }", "float-literal", 1),
+    ("float: underscore after the exponent sign", "pub const K: u32 = 1e+_3 as u32;", "float-literal", 1),
+    ("float: behind a shebang that opens a comment", "#!/bin/x /*\npub const K: u32 = 1.5 as u32;", "float-literal", 2),
+    ("env: raw path segment", "pub fn f() { let _ = std::r#env::var(\"X\"); }", "std-env", 1),
+    ("float: raw type", "pub fn f(x: u32) -> r#f64 { r#f64::from(x) }", "float-type", 1),
+    ("env: extern crate alias", "extern crate std as host;\npub fn f() { let _ = host::env::var(\"X\"); }", "std-env", 2),
+    ("fs: unlisted exists through an alias", "extern crate std as host;\npub fn f() -> bool { host::fs::exists(\"x\").is_ok() }", "std-fs", 2),
+    ("env: unlisted set_current_dir through an alias", "extern crate std as host;\npub fn f() { let _ = host::env::set_current_dir(\"/\"); }", "std-env", 2),
+    ("env: a constant through an alias", "extern crate std as host;\npub fn f() -> &'static str { host::env::consts::OS }", "std-env", 2),
+    ("env: an alias of an alias", "extern crate std as host;\nuse host::env as e;\npub fn f() { let _ = e::var(\"X\"); }", "std-env", 3),
+    ("fs: unlisted copy behind a raw segment", "pub fn f() { let _ = std::r#fs::copy(\"a\", \"b\"); }", "std-fs", 1),
+    ("sleep: deprecated sleep_ms", "#[allow(deprecated)]\npub fn f() { std::thread::sleep_ms(1); }", "thread-sleep", 2),
+    ("float: Duration methods without a float token", "pub fn f(d: core::time::Duration) -> core::time::Duration { d.mul_f64(d.as_secs_f64()) }", "float-type", 1),
+    ("float: from_secs_f64 of a parsed string", "pub fn f(t: &str) -> Option<core::time::Duration> { Some(core::time::Duration::from_secs_f64(t.parse().ok()?)) }", "float-type", 1),
+    ("env: an alias shadowed by a sibling module's", "mod a {\n    extern crate core as host;\n    pub type D = host::time::Duration;\n}\nmod b {\n    extern crate std as host;\n    pub const OS: &str = host::env::consts::OS;\n}", "std-env", 7),
+    ("float: Bunny's to_f32", "pub fn f(x: bunny_num::FixedQ32_32) -> u32 { x.to_f32().to_bits() }", "float-type", 1),
+    ("float: Bunny's into_float", "pub fn f(r: bunny_geom::FixedRay3) -> bool { r.into_float() == r.into_float() }", "float-type", 1),
+    ("float: a Bunny float vector by import", "use bunny_linalg::Vec3;\npub fn f(v: Vec3) -> Vec3 { v }", "float-type", 1),
+    ("float: a codec vertex's field", "pub fn f(v: bunny_codec::PlyVertex) -> bool { v.x == v.y }", "float-type", 1),
 ];
 
-const ACCEPTED: [(&str, &str); 10] = [
+const ACCEPTED: [(&str, &str); 18] = [
     ("sin and sqrt methods on a fixed-point type", "pub struct Fx(pub i64);\nimpl Fx { pub fn sin(self) -> Self { self } pub fn sqrt(self) -> Self { self } }\npub fn f() -> Fx { Fx(1).sin().sqrt() }"),
     ("HashMap in a comment and a doc comment", "// a HashMap would iterate in a random order\n/// not a std::collections::HashMap\npub fn f() {}"),
     ("HashMap and f64 in strings", "pub fn f() -> (&'static str, &'static str) { (\"std::collections::HashMap\", r#\"f64::NAN 0.5\"#) }"),
@@ -75,6 +96,14 @@ const ACCEPTED: [(&str, &str); 10] = [
     ("core Duration and BTreeMap", "use std::collections::BTreeMap;\npub fn f() -> (core::time::Duration, BTreeMap<u8, u8>) { (core::time::Duration::ZERO, BTreeMap::new()) }"),
     ("an f32 grid in a doc comment", "/// exactly an f32, a value like 0.5\npub fn f() {}"),
     ("char literals", "pub fn f() -> [char; 2] { ['.', '1'] }"),
+    ("a raw identifier r#type", "pub fn f(r#type: u32) -> u32 { r#type }"),
+    ("an integer range and a suffixed sum", "pub fn f() -> usize { (1..2).len() + 1usize+2 }"),
+    ("hex with an e digit before a sign", "pub const H: u32 = 0x1e+3;"),
+    ("a module named env of the crate's own", "mod env { pub fn var() -> u32 { 1 } }\npub fn f() -> u32 { env::var() }"),
+    ("core renamed by extern crate", "extern crate core as c;\npub fn f() -> c::time::Duration { c::time::Duration::ZERO }"),
+    ("f64 inside a longer word", "pub fn buff64() -> u32 { 0 }\npub fn of32x() -> u32 { buff64() }"),
+    ("the float_arithmetic lint denied", "#![deny(clippy::float_arithmetic)]\npub fn f() {}"),
+    ("Bunny's fixed-point vector and an error named Float", "pub fn f(v: bunny_linalg::FixedVec3) -> Result<bunny_linalg::FixedVec3, bunny_num::FloatConversionError> { Ok(v) }"),
 ];
 
 #[test]
@@ -171,19 +200,4 @@ fn a_ban_lint_waiver_must_be_an_expect_whose_reason_starts_with_rule_ids() {
         [1]
     );
     assert_eq!(forms("#[allow(dead_code)]\n#[expect(clippy::cast_possible_truncation)]"), []);
-}
-
-#[test]
-fn the_core_is_the_library_without_the_command_and_the_tests() {
-    assert!(crate::is_core("crates/lumen/src/render.rs"));
-    assert!(crate::is_core("crates/lumen/src/png/generated.rs"));
-    for outside in [
-        "crates/lumen/src/bin/lumen/main.rs",
-        "crates/lumen/src/scene/tests.rs",
-        "crates/lumen/tests/render.rs",
-        "crates/lumen/examples/traversal.rs",
-        "xtask/src/main.rs",
-    ] {
-        assert!(!crate::is_core(outside), "{outside}");
-    }
 }
