@@ -1,7 +1,8 @@
 # ADR 0008: Statistics: what is counted, where, and why it cannot change the image
 
-Status: accepted (flyingrobots/lumen#29). The scene, ray, run and traversal statistics, `lumen
-stats` and `render --stats` are built.
+Status: accepted (flyingrobots/lumen#29); what the measurements show stated (see
+[Clarification, 2026-11-14](#clarification-2026-11-14-what-the-cost-measurements-show)). The scene,
+ray, run and traversal statistics, `lumen stats` and `render --stats` are built.
 
 ## Context
 
@@ -136,6 +137,8 @@ Head and head `--stats` run the same render code (`--stats` only formats afterwa
 differ by as much as head and `main` (0.4 % at one thread, 0.7 % at 18): the difference is within
 the noise of these runs. So there is no counter type parameter and no second path; the uncounted
 render is gone, and `--stats` costs only the scene walk and the formatting after the clock stops.
+(No longer true since the run statistics below: `--stats` takes a second path, `BandTally`, and
+costs about 2.5 % at 18 threads; see the clarification of 2026-11-14 at the end.)
 
 ### Run statistics (built)
 
@@ -299,3 +302,40 @@ The per-ray figures for every built-in scene are in
 - `Scene` gains `CountingTracer`; the crate root gains `CountingTracer`,
   `render_traced_with_traversal`, `TraversalStatistics` and `TraversalWork`. `render --stats`
   gains the `traversal.` lines, between the ray lines and the run lines.
+
+## Clarification, 2026-11-14: what the cost measurements show
+
+Added for flyingrobots/lumen#161; the decisions are unchanged. These statements above say more
+than their measurements:
+
+- **"No second path"** (ray statistics) was true when written. Since the run statistics,
+  `lumen render --stats` calls `render_traced_with_run`, whose workers count bands
+  (`BandTally`), and a plain render calls `render_scheduled` (`NoTally`): two instantiations of
+  the scheduler. The table under "Run statistics" measures the counting one at +2.5 % (rank-sum
+  z 3.4) at 18 threads.
+- **"Pays nothing"** for a render that does not ask for run statistics: the measurement is one
+  session of 14 alternated runs per arm at 18 threads, +0.8 % (rank-sum z 1.33, the runs
+  spanning 0.576 to 0.666 s against 0.570 to 0.617 s), and five runs per arm at one thread,
+  -0.2 %. That shows no cost above the noise of those runs, about 1 to 2 %; it does not show
+  zero. `NoTally`'s counting is an empty function and its record flag a constant `false`, which
+  the optimiser can remove, but no IR or assembly comparison is recorded. The two rejected
+  versions (+2.3 % and +1.3 %) are not separated from the accepted one by these runs either:
+  they were rejected because they count on every render by construction, which the project's
+  rule forbids for a diagnostic nobody asked for, and the measurements only failed to clear
+  them.
+- **"Cost nothing measurable"** for the ray outcomes rests on three interleaved runs per arm
+  (the table under "Ray statistics"): within 0.4 % at one thread and 0.7 % at 18, no difference
+  those runs can resolve.
+- **"At 1, 2, 4 and 18 workers"** (run statistics): `Schedule::workers` gives at most one worker
+  per band, and the test's 23 by 17 image gave 17, 9 and 4 workers at 18 threads. The test's
+  image is now 23 by 90, so every band height it tries gives 18 workers, and it asserts the
+  worker count; the scheduler's own per-worker test is now 31 by 54 in bands of 3, 18 bands.
+- **The traversal entry point** follows the same rule. `render_traced_with_traversal` and
+  `render --stats` count through `CountingTracer`; a render that does not ask calls the
+  uncounted searches with a zero-sized record. Its measurement above ("What it costs", under
+  the traversal statistics) shows no cost above the noise of 14 runs at 18 threads (+1.1 %,
+  rank-sum z 1.10) and three at one thread (+0.2 %), not zero; the comments in `render.rs` and
+  `main.rs` and the CHANGELOG say that, not "pays nothing". Its tests do reach the workers they
+  name: `tests/traversal_statistics.rs` renders 96 by 54, so bands of 1 and 3 give 54 and 18
+  bands and 18 threads are 18 workers; its failure test renders 32 by 18, 18 workers at bands of
+  1 and 6 at bands of 3, and says "threads".
