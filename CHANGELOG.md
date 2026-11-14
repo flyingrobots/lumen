@@ -34,6 +34,18 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Independent oracles for what a render reports (flyingrobots/lumen#55), in
+  `crates/lumen/tests/counts.rs` (medium: real threads at 1, 2 and 4): a pixel at 64 and 1024
+  samples equals that many direct `trace_path` calls in one `PixelAccumulator`; `Render::rays` and
+  every `PathSample::rays` equal the queries a counting tracer that wraps the scene observed, per
+  kind, for both built-in scenes, a camera that sees only sky (camera rays only) and a smooth
+  floor where Bunny rejects bounces (a rejected bounce traces and counts no ray); camera rays are
+  exactly `width * height * samples` and the total at most four times that; seeds differing only
+  in bit 31 or bit 0 give different images, each equal to a recomputation with Bunny's
+  `PixelSampler::new`. `png/tests.rs` reads the stored-block headers at exactly 65 535 filtered
+  bytes (one block) and the next sizes up (two); the strict decoder now reports each block's
+  length. The sample cap at 32, the doubled shadow count, the uncounted bounce, `MAX_STORED =
+  65_534`, `MAX_STORED_U64 = 65_534` and the dropped top and lowest seed bits each fail a test.
 - Smooth shading (part of flyingrobots/lumen#39; ADR 0007): `trace_path` shades a hit on a
   triangle with at least one vertex normal with Bunny's `bunny-smooth-shading/1`
   (`SmoothHit::new` at the hit's exact barycentric numerators, its light sample and its bounce,

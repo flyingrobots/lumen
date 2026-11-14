@@ -826,7 +826,10 @@ not a contract value.
 
 **PNG encoder: hand-written, stored deflate blocks** (`crates/lumen/src/png.rs`). It writes
 8-bit RGBA with filter type 0 on every row and the zlib stream as uncompressed stored blocks of
-at most 65 535 bytes, one `IDAT` chunk each. Reasons:
+at most 65 535 bytes, one `IDAT` chunk each, every block but the last full. A unit test reads
+the block headers at exactly 65 535 filtered bytes (1 by 13 107, 64 by 255, 5 461 by 3: one full
+block) and at the next sizes up (a full block and the rest); no image has exactly 65 536, since
+`height * (1 + 4 * width)` has an odd factor above 1. Reasons:
 
 - the contract is the hash of the raw bytes, so compression buys only file size;
 - it needs no dependency and about 200 lines with its documentation, CRC-32 and Adler-32 included;
@@ -876,6 +879,20 @@ How it is tested (`crates/lumen/tests/`):
 - **Order independence**: a pixel's samples accumulated forwards, backwards, shuffled and in
   merged partial accumulators give the same bits; an image whose pixels are computed in a
   scrambled order has the same hash.
+- **Counts, against something other than the code that counts** (`crates/lumen/tests/counts.rs`):
+  at 64 and 1024 samples a pixel equals a `PixelAccumulator` filled by that many direct
+  `trace_path` calls, with the sum of their ray counts (and the mean of the first 32 samples
+  differs, so a loop that stopped early would show); a tracer that wraps the scene and counts
+  the queries it is asked, by kind (a closest-hit query from the camera's eye point is a camera
+  ray), agrees with `Render::rays` for small renders of both built-in scenes at 1, 2 and 4
+  threads, up to 1024 samples, and with `PathSample::rays` for every path of a 16 by 9 image;
+  camera rays are exactly `width * height * samples` and the total lies between that and four
+  times that; a camera that sees only sky traces exactly its camera rays; on a smooth floor
+  Bunny rejects some bounces, a rejected bounce traces no ray and none is counted. Seeds that
+  differ only in the top bit, or only in the lowest, give different images, each equal to a
+  recomputation that builds every pixel's sampler with `PixelSampler::new` itself. Five
+  mutations each fail these tests: the sample loop capped at 32, a shadow ray counted twice, the
+  bounce ray not counted, bit 31 of the seed dropped and its lowest bit forced to 1.
 - **Convergence** (a regression guard, not a proof): for six reference pixels the mean of 1024
   samples is within `5 / 256` of the mean of 256 per channel.
 - **The bunny**: the asset's SHA-256; the converted mesh (counts, the first vertex's raw values and a
@@ -1065,7 +1082,7 @@ digest, and review accepts or refuses it there.
   *Small*: in one process, no file, no network, no clock. The renderer's own worker threads are
   allowed because they are the code under test. *Medium*: spawns the `lumen` process, writes
   files, or runs real threads at fixed counts. Run one class by file: `cargo test --test cli
-  --test threads` is the medium set; `cargo test --lib --test render --test library --test
+  --test threads --test counts` is the medium set; `cargo test --lib --test render --test library --test
   fixed_point` the small set. There is no large class yet.
 - **Hermetic files** (rule 8). A test that writes files makes a `Scratch` directory (see
   `crates/lumen/tests/cli.rs`) named for the test and the process id under `CARGO_TARGET_TMPDIR`,
