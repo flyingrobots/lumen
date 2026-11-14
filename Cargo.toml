@@ -13,12 +13,12 @@ version = "0.1.0"
 # Bunny 0.7.0 is tagged but not yet on crates.io, so its crates come in as git dependencies
 # pinned to one full commit. They move to the registry once 0.7.0 is published there.
 [workspace.dependencies]
-bunny-broadphase = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
-bunny-geom = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
-bunny-linalg = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
-bunny-num = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
-bunny-optics = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
-bunny-query = { git = "https://github.com/flyingrobots/bunny", rev = "7fdd2e4926041b0a226567e0a6e1ec51e522304f" }
+bunny-broadphase = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
+bunny-geom = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
+bunny-linalg = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
+bunny-num = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
+bunny-optics = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
+bunny-query = { git = "https://github.com/flyingrobots/bunny", rev = "dcd6bd37613738de93f7084e7c8aa0283de964ea" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
