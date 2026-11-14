@@ -168,3 +168,58 @@ fn a_block_closes_only_at_its_own_fence() {
     let found: Vec<String> = links(text).into_iter().map(|(_, dest)| dest).collect();
     assert_eq!(found, ["b.md", "d.md"]);
 }
+
+/// Oracle: GFM's Setext headings, by hand. A paragraph underlined by `===` or `---` is a heading,
+/// its lines joined; `---` after a blank line, a list item or a table row is not.
+#[test]
+fn a_setext_heading_has_an_anchor() {
+    let text = "\
+Installation
+============
+
+Two-line
+title
+---
+
+- an item
+---
+
+| a |
+| --- |
+";
+    assert_eq!(anchors(text), ["installation", "two-line-title"]);
+}
+
+/// Oracle: the GFM emphasis rule over the whole heading. The underscores around a heading that
+/// holds a code span close each other; the code span keeps its underscore.
+#[test]
+fn emphasis_is_matched_across_a_code_span() {
+    let text = "# _Use `lumen` now_\n# `a_b` and _x_\n";
+    assert_eq!(anchors(text), ["use-lumen-now", "a_b-and-x"]);
+}
+
+/// Oracle: GFM's reference definitions, by hand. The destination may be on the next line, and
+/// one in angle brackets keeps its space; each is found on the line it is written on.
+#[test]
+fn a_reference_destination_may_follow_on_the_next_line() {
+    let text = "[guide]:\n  missing.md\n[other]: <docs/my guide.md> \"title\"\n";
+    let want = [(2, "missing.md"), (3, "docs/my guide.md")];
+    let want: Vec<(usize, String)> = want.iter().map(|(n, d)| (*n, (*d).to_owned())).collect();
+    assert_eq!(links(text), want);
+}
+
+/// Oracle: RFC 3986. A scheme is a letter, then letters, digits, `+`, `-` or `.`, then `:`, at
+/// the start; a colon in a fragment is none, so that link is checked and reported. A
+/// percent-encoded path is the file it names.
+#[test]
+fn only_a_leading_scheme_skips_a_link_and_a_path_is_percent_decoded() {
+    let docs = pages(&[(
+        "README.md",
+        "[bad](missing.md#section:1)\n[web](https://example.com/a:b)\n[mail](mailto:a@example.com)\n\
+         [ok](docs/my%20guide.md)\n[ok](<docs/my guide.md>)\n[odd](%+1.md)\n",
+    )]);
+    let files = ["README.md", "docs/my guide.md"];
+    let broken = check(&docs, |path| files.contains(&path));
+    let found: Vec<(usize, &str)> = broken.iter().map(|b| (b.line, b.link.as_str())).collect();
+    assert_eq!(found, [(1, "missing.md#section:1"), (6, "%+1.md")]);
+}
