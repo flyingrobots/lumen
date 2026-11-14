@@ -8,9 +8,10 @@ Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
 
 ## What lumen does today
 
-Lumen renders one built-in reference scene, which includes the Stanford bunny, to a PNG file:
+Lumen renders one built-in reference scene, which includes the Stanford bunny, prints its image
+hash and timing, and writes it to a PNG file if asked:
 
-- one thread;
+- in tiles on all cores (`--threads`, below), with the same bytes at every thread count;
 - a power-of-two number of samples per pixel (1 to 1024, default 4), placed by Bunny's
   `bunny-sobol-owen/1` sampler from a seed;
 - each sample one diffuse path (`lumen-diffuse-path/1`, below): the camera ray's nearest
@@ -22,8 +23,8 @@ Lumen renders one built-in reference scene, which includes the Stanford bunny, t
 - Bunny's pixel path: `PixelAccumulator` (the mean), the `bunny-tone-srgb/1` tone curve,
   `write_rgba8`.
 
-It does not yet use more than one thread (flyingrobots/lumen#4) or read scenes from files, such
-as a Geordi `geordi-ray-traced-scene/1` artifact (#6). Materials other than diffuse, more than one
+It does not yet read scenes from files, such as a Geordi `geordi-ray-traced-scene/1` artifact
+(flyingrobots/lumen#6). Materials other than diffuse, more than one
 light, textures, smooth normals and more than one bounce are not supported.
 
 ## Render an image
@@ -49,18 +50,30 @@ tone bunny-tone-srgb/1
 encoding bunny-rgba8-opaque/1
 bunny dcd6bd37613738de93f7084e7c8aa0283de964ea
 size 640x360
+pixels 230400
 samples 64
 seed 0
 bounces 1
+threads <workers used>
+threads-asked <--threads, or what the system reports available>
+tile 32x32
 rays <total> (closest <camera and bounce rays>, shadow <shadow rays>)
 image sha256:<64 hex digits>
 png /scratch/out/reference.png (922266 bytes)
+scene-seconds <time> (information only)
 render-seconds <time> (information only)
-ns-per-ray <time> (information only)
+hash-seconds <time> (information only)
+png-seconds <time> (information only)
+total-seconds <time> (information only: scene, render, hash and png)
+rays-per-second <rate> (information only: wall clock, all threads)
+ns-per-ray <time> (information only: wall clock, all threads)
 ```
 
-Usage: `lumen render --out FILE [--width W] [--height H] [--samples N] [--seed S]`; the
-defaults are 320 by 180, 4 samples per pixel and seed 0. Width and height are each `1..=32768`
+Usage: `lumen render [--out FILE] [--width W] [--height H] [--samples N] [--seed S]
+[--threads T] [--tile N | --tile WxH]`; the defaults are 320 by 180, 4 samples per pixel,
+seed 0, 32 by 32 tiles and as many threads as the system reports available. Without `--out`
+nothing is written and the report says `png none`: the hash and the timing are the whole
+result. Width and height are each `1..=32768`
 (the limit of Bunny's camera) with at most `2^27` pixels in all (a 512 MiB RGBA8 buffer, enough
 for 16K at 15360 by 8640). The sample count must be a power of two from 1 to 1024: Bunny's
 sampler states its stratification for aligned power-of-two blocks of samples, and its
@@ -69,7 +82,8 @@ settings. Arguments are read as OS strings, so an output path that is not valid 
 used as given; a non-Unicode number or option is refused like any other bad argument. Bad
 arguments exit with status 2 and the usage text; a refused size or an unwritable output path
 exits with status 1 and a message. The output file is written after the render, so nothing is
-written when the render fails.
+written when the render fails. `--threads` is `1..=256` (0 and anything larger are refused with
+status 2); a tile is `N` (N by N pixels) or `WxH`, each side at least 1.
 
 The PNG is uncompressed (see below), so it is about four bytes per pixel: 922 266 bytes at
 640 by 360, and 33 188 430 bytes (about 33 MB) at 3840 by 2160.
@@ -227,8 +241,8 @@ built.
 A pixel's value is the mean of its samples in a Bunny `PixelAccumulator` (exact integer sums,
 rounded once), toned by `bunny-tone-srgb/1` and written by `write_rgba8`
 (`bunny-rgba8-opaque/1`). Each sample is a pure function of (scene, pixel, sample index, seed):
-the per-pixel function holds no shared mutable state, so rendering tiles on threads
-(flyingrobots/lumen#4) is a change of schedule only.
+the per-pixel function holds no shared mutable state, so rendering tiles on threads (below) is a
+change of schedule only.
 
 Geordi's integrator identity is meant to pin this same composition.
 
@@ -273,6 +287,143 @@ costs about 7.5 % more, about 10 % more time in all. The scene has 14 % more tri
 bunny's are small and dense; this measurement does not separate the bunny's cost from the
 camera's.
 
+## Threads and tiles
+
+`render_scheduled` (and `lumen render`) split the image into tiles, 32 by 32 pixels by default
+(`--tile`; `crates/lumen/src/schedule.rs`), counted row-major from the top left; the tiles of
+the last column and row are cut to the image. The design, what is shared and what was rejected
+are recorded in [ADR 0001](docs/adr/0001-tile-scheduling.md). A shared atomic counter hands the next tile to whichever worker asks, so a region that
+costs more (the sphere, a shadow edge) or a slower core never leaves the others idle. That matters
+on the Apple M5 Pro, whose 6 "super" and 12 "performance" cores run at different speeds: a
+static split would make every worker wait for the slowest share. Each worker renders a whole tile
+into its own buffer and then copies the finished tile into the image at the tile's place, under a
+lock held only for the copy (`crates/lumen/src/workers.rs`, `render_pixels`, which runs any pixel
+function this way and knows nothing of rays). The code is safe Rust with the standard library
+only (`std::thread::scope`, atomics, mutexes); there is no `unsafe` and no thread-pool
+dependency.
+
+- **Threads**: `--threads N`, `1..=256`; by default the number `std::thread::available_parallelism`
+  reports, which inside a container is the CPU limit (`--cpus` of `devrun`). Only the `lumen`
+  binary asks the host; the library's `Schedule::new` takes an explicit count. The calling thread is
+  one of the workers, and a render never uses more workers than there are tiles. With one thread
+  no thread is started and the calling thread takes every tile in order: the same code path with
+  one worker, not a separate renderer. `lumen::render` is that one-thread schedule.
+- **The scene is shared read-only.** It is built once (triangles, per-triangle surfaces, the SAH
+  tree and its compact layout) before any worker starts, and every worker reads it through
+  `&Scene`. A compile-time assertion in `render.rs` checks that `Scene`, and so everything
+  reachable from it, is `Sync` as it is, with no lock or wrapper. Building it is timed separately
+  (`scene-seconds`) from rendering (`render-seconds`).
+- **Errors**: if a pixel fails (a traversal error, a ray outside Bunny's domain), the render
+  returns the typed error of the first failing pixel in raster order, top row first: the error a
+  one-pixel-at-a-time render in raster order meets, at every thread count and tile size. Every
+  pixel before it lies in the same row of tiles or an earlier one, so after a failure workers take
+  no tile past the end of that row of tiles and abandon such a tile at its next row of pixels. No
+  worker panics or waits on another.
+- **Progress** is not reported: there is nothing on stderr during a render.
+
+### Why the image does not depend on the threads
+
+Every pixel's samples are accumulated for that pixel alone, by the one worker that renders its
+tile, in a `PixelAccumulator` of its own, then resolved, toned and quantized; no sum ever crosses
+pixels or threads, so there is no accumulation order between threads to get wrong. The worker
+copies the finished bytes to a position fixed by the tile's index. The ray counts are sums of
+integers. Thread count, tile size, which worker takes which tile and when, and timing therefore
+decide nothing about the bytes.
+
+Tested in the test and release profiles, with no clock, no dependence on the host's core count
+and no repeat-and-hope loop. Hand-out orders are explored deterministically: unit tests in
+`crates/lumen/src/workers/tests.rs` run 1, 2, 3, 7 and 200 simulated workers on one thread through
+the same claim, render-row, store and finish steps the threads run, in orders chosen by 200 seeds
+of a generator and by two scripted worst cases (one worker takes everything; tiles finish in
+reverse order, so the earliest failing tile is rendered last), each failure naming its order. The
+image must equal a raster-order loop byte for byte and the error must be the raster-first
+failure; a step budget ends a simulation that does not finish. `crates/lumen/tests/threads.rs`
+then runs real threads at fixed counts:
+
+- the golden 96 by 54 hash at 1, 2, 3, 4, 7 and 18 threads, each with tiles of
+  1 by 1, 7 by 5, 16 by 16, 32 by 32, 96 by 1, 1 by 54, 13 by 54 and 200 by 200 (larger than the
+  image), with the same ray count as a raster-order loop over `pixel_radiance` that does not use
+  the scheduler;
+- a 320 by 180 image at 8 samples: one thread equals that raster-order loop byte for byte, and 18
+  threads with 32 by 32 tiles, 5 threads with 24 by 10 tiles and 16 threads with one-row tiles
+  give the same image and ray count;
+- errors, each test bounded by a count of work taken (pixels asked for, traversal queries) that
+  fails it if exceeded, never by a timeout: an injected pixel function that
+  fails at chosen pixels returns the raster-first one at every thread count and tile size, also
+  when it is not in the lowest-numbered failing tile (`(40, 0)` in tile 1 before `(3, 5)` in tile
+  0); on one thread a failure in the first pixel renders exactly the rest of the first row of
+  tiles and nothing more (on several threads, how much runs before the failure is recorded depends
+  on scheduling, so the simulator checks the stop rule instead: under every order, no pixel below
+  the failing pixel's row of tiles is computed after the failure); and a
+  tracer that fails real traversals in two regions with two different errors returns the one a
+  raster-order loop over `trace_path` meets first, at every schedule.
+
+Each of these mutations makes tests fail in the release profile (checked by hand, each mutant's
+test run under a 120-second `timeout` as a guard for the checking script, sources touched before
+every build so that no stale build is tested):
+copying a tile to the wrong column offset; skipping the last tile; dropping the last partial row
+of tiles; sharing one accumulator between two neighbouring pixels (thread-local state);
+stopping after the failing tile instead of the end of its row of tiles; and choosing the first
+failure in column-major order.
+
+## Performance
+
+Timings are information, never part of an image, and never taken from a run that shared the
+machine: every timing below ran in the `rust-dev:1.96.0` container through `devrun` with
+`--exclusive`, release profile. The Docker VM on the Apple M5 Pro used here has 18 CPUs (the
+host has 6 "super" and 12 "performance" cores); `devrun` limits a run to 4 CPUs unless told
+otherwise, so a threaded timing must raise the limit. `--cpus` is a CPU-time quota over all 18 VM
+CPUs, not a choice of cores: a run cannot be pinned to the fast cores.
+
+### Reproduce
+
+```sh
+D=~/git/devcontainers/bin/devrun
+# the 4K reference render on all 18 VM CPUs; prints every part of the time and the hash
+python3 $D lumen ~/git/lumen --commit HEAD --fetch --exclusive --cpus 18 --memory 12g -- \
+  bash -c 'cargo build --release --locked -q && mkdir -p /scratch/out && \
+    /target/release/lumen render --width 3840 --height 2160 --samples 16 --out /scratch/out/4k.png'
+# thread scaling on a mid-size image
+python3 $D lumen ~/git/lumen --commit HEAD --exclusive --cpus 18 --memory 12g -- \
+  bash -c 'cargo build --release --locked -q && for t in 1 2 4 6 8 12 18; do \
+    /target/release/lumen render --width 1280 --height 720 --samples 16 --threads $t | grep -E "^(threads|render-seconds)"; done'
+```
+
+Add `--export 4k.png --out "$(mktemp -d)"` to take the PNG out of the container. The interval to
+compare with a wall-clock target such as flyingrobots/lumen#5's 60 seconds is `total-seconds`:
+the whole command after argument parsing, that is scene build, render, hashing and writing the
+PNG; the report shows each part. `rays-per-second` and `ns-per-ray` divide the render's wall time
+by the rays traced on all threads, so they are not CPU time per ray; the single-thread figure is a
+run with `--threads 1`.
+
+### Readings
+
+One session (`lumen-reference-scene/3`, 1280 by 720, 16 samples per pixel, seed 0, 39 479 111
+rays, 32 by 32 tiles; three runs each, render seconds):
+
+| Threads | Runs | Mean | Speedup | Per thread |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | 8.164, 8.130, 8.170 | 8.155 | 1.00 | 1.00 |
+| 2 | 4.118, 4.144, 4.066 | 4.109 | 1.98 | 0.99 |
+| 4 | 2.064, 2.085, 2.103 | 2.084 | 3.91 | 0.98 |
+| 6 | 1.543, 1.472, 1.476 | 1.497 | 5.45 | 0.91 |
+| 8 | 1.168, 1.171, 1.177 | 1.172 | 6.96 | 0.87 |
+| 12 | 0.853, 0.857, 0.840 | 0.850 | 9.59 | 0.80 |
+| 18 | 0.627, 0.624, 0.627 | 0.626 | 13.03 | 0.72 |
+
+Scaling is near linear to 4 threads and falls off after 6. The likeliest reason, not proven
+here, is the two core classes: if the VM's busiest threads land on the 6 super cores first, the
+threads beyond 6 run on the slower performance cores. Shared memory bandwidth may add to it; the
+scene and its tree are small (31 511 triangles) and stay in cache, and the image is written once
+per tile.
+
+Tile sizes at 18 threads, same image (render seconds, three runs each): 4 by 4: 0.661; 8 by 8:
+0.661; 16 by 16: 0.646; 32 by 32: 0.648; 64 by 64: 0.661; 128 by 128: 0.832; 256 by 256: 1.761;
+1280 by 1 (one row): 0.637; 1280 by 4: 0.669; 1280 by 16: 0.745. Everything from 4 by 4 to 64
+by 64 and single rows is within the noise; from 128 by 128 there are too few tiles to balance 18
+workers (60 tiles of 128, 15 of 256). The default stays 32 by 32: as fast as any, and 8 160 tiles
+at 4K.
+
 ## Image hash and PNG
 
 The image hash is `sha256:` followed by the lowercase hex SHA-256 of the raw RGBA8 bytes
@@ -301,8 +452,8 @@ around the padding boundaries.
 ## Determinism
 
 The claim: the same scene, size, sample count and seed give the same RGBA bytes, and so the same
-image hash, on every run, every platform and every build profile, whatever order the pixels and
-samples are computed in. Every value that decides a pixel is integer arithmetic from Bunny: the
+image hash, on every run, every platform and every build profile, at every thread count and tile
+size, whatever order the pixels and samples are computed in. Every value that decides a pixel is integer arithmetic from Bunny: the
 sampler (a pure function of seed, pixel, sample and pair), camera rays, the trees and their
 traversals, the exact triangle test, the shading steps and their order, the accumulator's exact
 sums, the tone curve and quantization. There is no floating point in the render and nothing from
@@ -343,6 +494,7 @@ How it is tested (`crates/lumen/tests/`):
   in front is lit.
 - **Two runs**: the same image rendered twice in one process, and by two separate `lumen render`
   processes, compared byte for byte along with the printed hash and ray count.
+- **Thread counts and tile sizes**: see "Why the image does not depend on the threads" above.
 - **Golden hash**: the 96 by 54 reference image at 4 samples per pixel and seed 0 has a recorded
   hash, together with the scene, integrator, sampler, shading, tone and encoding identities and the
   Bunny commit. It must be identical on every platform: it was first recorded on aarch64 Linux,

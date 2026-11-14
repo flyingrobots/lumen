@@ -8,6 +8,35 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Rendering on all cores (flyingrobots/lumen#4): `lumen render --threads N` (`1..=256`, default
+  what `std::thread::available_parallelism` reports) and `--tile N | WxH` (default 32 by 32).
+  Tiles are handed out from an atomic counter to whichever worker asks next; each worker renders
+  a tile into its own buffer and copies it into the image. Safe Rust and the standard library
+  only. The image is the same bytes at every thread count and tile size, and one thread is the
+  same code path with one worker. A failing pixel gives the typed error of the first failing
+  pixel in raster order at every schedule, and stops the other workers.
+- Library: the `schedule` module (`Schedule`, `TileSize`, `ScheduleError`, `MAX_THREADS`,
+  `DEFAULT_TILE`); the `workers` module (`render_pixels`, the scheduler over any pixel function
+  and any summable per-pixel value, and `WorkerError`, which names the failing pixel);
+  `render_scheduled` and `render_traced` (any `Tracer + Sync`); `RenderError::Spawn` and
+  `RenderError::TileGeometry`; `Add` for `RayCount`. The library takes an explicit thread count;
+  only the binary asks the host.
+- A timing report: `lumen render` prints the pixels, threads used and asked for, the tile, and
+  wall-clock `scene-seconds`, `render-seconds`, `hash-seconds`, `png-seconds`, `total-seconds`,
+  `rays-per-second` and `ns-per-ray`, all from a monotonic clock and never part of the image.
+- Tests: hand-out orders of simulated workers, through the scheduler's own steps on one thread,
+  chosen by 200 seeds and two scripted worst cases (one worker takes all; tiles finish in reverse
+  order), checked against a raster-order loop for the image and for the first failure; tile
+  geometry covering every pixel once. In `crates/lumen/tests/threads.rs`, at fixed thread counts:
+  the golden hash at 1, 2, 3, 4, 7 and 18 threads and eight tile sizes; a 320 by 180 image equal
+  on one thread, on many and in a raster-order loop without the scheduler; deterministic errors,
+  bounded by a count of work taken, for injected pixel failures and failing traversals; worker
+  stop after a failure.
+- `docs/adr/0001-tile-scheduling.md`: the concurrency model, why the image cannot depend on it,
+  how the first error is chosen, and what was rejected.
+- A "Performance" section in the README: how to reproduce the thread-scaling, tile and 4K
+  measurements through `devrun` with `--cpus` and `--exclusive`.
+
 - The Stanford bunny in the reference scene (flyingrobots/lumen#14): `lumen-reference-scene/3`
   appends its 3 851 triangles (none dropped; 31 511 triangles in all) after the triangles of
   version 2, with a green albedo, standing on the ground left of the sphere. The mesh,
@@ -75,6 +104,13 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- `lumen render --out FILE` is optional: without it the image is rendered and hashed but not
+  written, and the report says `png none`. `UsageError::MissingOut` is gone; `UsageError` gains
+  `Schedule` and `InvalidTile`, and `Command::Render` gains `threads` and `tile`.
+- `render` (one thread) now runs through the tile scheduler with one worker; its bytes, ray count
+  and errors are unchanged (the golden hash holds).
+- The report's `render-seconds` no longer includes the scene build, and `ns-per-ray` is the
+  render's wall time divided by the rays traced (on all threads).
 - The reference scene's content (its shapes, the bunny, camera, materials and lighting) moves
   out of `scene.rs` into the `reference` module, and the vertex grid into `vertex_grid.rs`;
   `scene.rs` keeps the scene machinery. Library paths change from `lumen::scene::reference_*`
