@@ -26,7 +26,7 @@ cargo run --release -p lumen -- render --out first.png
 The report ends with the image hash, which is the same on every platform CI checks:
 
 ```text
-image sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23
+image sha256:d6e4ff7d768e266a30e54a04d62f6a13aeeebd2f6f68f8783faaaff9c7f505a8
 png first.png (230699 bytes)
 ```
 

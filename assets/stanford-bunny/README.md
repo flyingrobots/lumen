@@ -3,7 +3,8 @@
 **Assets**:
 
 - `bun_zipper_res3.ply`, the decimated Stanford bunny (3 851 faces), used in lumen's reference
-  scene (`lumen-reference-scene/3`) and in Fixed Point version 1 (see the repository README);
+  scene (`lumen-reference-scene/4`, and version 3 before it) and in Fixed Point version 1 (see
+  the repository README);
 - `bun_zipper.ply`, the full-resolution Stanford bunny (69 451 faces), for Fixed Point version 2
   (flyingrobots/lumen#39).
 

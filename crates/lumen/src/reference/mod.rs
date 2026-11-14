@@ -33,13 +33,13 @@ use crate::scene::{Scene, SceneError, SceneSpec};
 ///
 /// Any change to the reference scene's triangles, their order, their materials, its lighting or
 /// its camera placement is a new version, and changes every image hash of it. Version 1
-/// (`lumen-reference-scene/1`, geometry and camera only, shaded by normal) and version 2
-/// (`lumen-reference-scene/2`, version 1 with materials, a light and a sky) are retired.
-/// Version 3 keeps every triangle of version 2, their order, its materials and its lighting,
-/// appends the Stanford bunny ([`bunny_triangles`]) with a material of its own,
-/// and moves the camera one unit left and one up so the bunny's shadow can be seen
-/// ([`reference_camera`]).
-pub const REFERENCE_SCENE_ID: &str = "lumen-reference-scene/3";
+/// (`lumen-reference-scene/1`, geometry and camera only, shaded by normal), version 2
+/// (`lumen-reference-scene/2`, version 1 with materials, a light and a sky) and version 3
+/// (`lumen-reference-scene/3`, version 2 with the Stanford bunny appended and the camera moved
+/// one unit left and one up so the bunny's shadow can be seen) are retired. Version 4 keeps
+/// everything of version 3 but the bunny's turn: a quarter turn instead of a half, so the bunny
+/// faces the camera instead of the sphere ([`bunny::BUNNY_PLACEMENT`]).
+pub const REFERENCE_SCENE_ID: &str = "lumen-reference-scene/4";
 
 /// The reference scene's triangles, in primitive order:
 ///

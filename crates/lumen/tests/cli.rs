@@ -115,7 +115,7 @@ fn the_report_names_the_scene_the_settings_and_the_work() {
     let output = dir.lumen(&small_render(path_str(&out), &[]));
     assert!(output.status.success(), "{}", text(&output.stderr));
     let stdout = text(&output.stdout);
-    assert_eq!(field(&stdout, "scene"), "lumen-reference-scene/3");
+    assert_eq!(field(&stdout, "scene"), "lumen-reference-scene/4");
     assert_eq!(field(&stdout, "integrator"), "lumen-diffuse-path/1");
     assert_eq!(field(&stdout, "shading"), "bunny-diffuse-shading/1");
     assert_eq!(field(&stdout, "sampler"), "bunny-sobol-owen/1");

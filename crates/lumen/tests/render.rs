@@ -792,7 +792,7 @@ fn means_over_256_and_1024_samples_agree() {
         ((12, 4), 2..=3, false),
         ((24, 9), 4..=11, false),
         ((8, 12), 27_660..=31_510, false),
-        ((5, 11), 0..=1, true),
+        ((6, 12), 0..=1, true),
     ];
     for ((x, y), primitives, in_shadow) in cases {
         let ray = cam.ray(settings(1, 0).sampler(x, y).camera_sample(0)).expect("ray");
@@ -824,14 +824,15 @@ fn centre_ray(scene: &Scene, x: u32, y: u32) -> TraceRay {
 }
 
 /// The bunny stands left of the sphere, low in the picture: at 32 by 18 the centre of pixel
-/// `(8, 12)`, its neighbours left, right and below, and `(9, 13)` see bunny triangles (the
-/// pixel above sees the ground between the ears and the back). (A planning projection of the body's
-/// centre, about `(-2.24, -0.65, 0.51)`, lands near `(8.5, 12.9)` in that image.) Pixels two to
-/// the left and two below see the ground, and the sphere's centre pixel sees the sphere.
+/// `(8, 12)`, its neighbour right, the pixel below and `(9, 13)` see bunny triangles. Facing the
+/// camera, the bunny is about two pixels wide there: the neighbour left sees the ground, in
+/// shadow. (A planning projection of the body's centre, about `(-2.24, -0.65, 0.51)`, lands near
+/// `(8.4, 12.9)` in that image.) Pixels three to the left and three below see the ground, and
+/// the sphere's centre pixel sees the sphere.
 #[test]
 fn the_camera_sees_the_bunny_where_it_was_placed() {
     let scene = reference_scene().expect("builds");
-    for (x, y) in [(8, 12), (7, 12), (9, 12), (8, 13), (9, 13)] {
+    for (x, y) in [(8, 12), (9, 12), (8, 13), (9, 13)] {
         let hit = scene.closest(&centre_ray(&scene, x, y)).expect("traces").expect("a hit");
         assert!(is_bunny(hit.primitive), "pixel ({x}, {y}) sees {}", hit.primitive);
     }
@@ -874,17 +875,19 @@ fn sun_at_ground(scene: &Scene, x: FixedQ32_32, z: FixedQ32_32) -> (bool, Option
 /// The bunny casts its shadow where the light direction puts it.
 ///
 /// The point `P = (-2.25, -0.5, 0.5)` is inside the bunny's body: in the file's coordinates it is
-/// `(-0.0156, 0.111, 0.0)`, and an exact count of crossings with the placed mesh along nine
-/// directions from it (the six axes, the sun's direction both ways and two diagonals) is odd
-/// every time. The sun is toward `d = (0.5, 0.3125, 1.0)`, so the ground point
-/// `G = P - 2 d = (-3.25, -1.125, -1.5)` (`-0.5 - 2 * 0.3125 = -1.125`, the ground's height)
-/// sees the sun only through `P`, and the bunny's surface lies between them: `G` is in the
-/// bunny's shadow, and the first triangle its shadow ray meets is a bunny triangle.
+/// about `(-0.0151, 0.1115, -0.0027)`, and an exact count of crossings with the placed mesh along
+/// ten directions from it (the six axes, the sun's direction both ways, `(1, 1, 1)` and
+/// `(-1, 1, -1)`) is one every time, with no edge or vertex hit. The sun is toward
+/// `d = (0.5, 0.3125, 1.0)`, so the ground point `G = P - 2 d = (-3.25, -1.125, -1.5)`
+/// (`-0.5 - 2 * 0.3125 = -1.125`, the ground's height) sees the sun only through `P`, and the
+/// bunny's surface lies between them: `G` is in the bunny's shadow, and the first triangle its
+/// shadow ray meets is a bunny triangle.
 ///
 /// The ground point `(-3.25, -1.125, 1.0)`, 2.5 units nearer the camera, is lit: its shadow ray
 /// goes toward `+Z` from `z = 1.0`, and the only objects with any point at `z >= 1.0` are the
-/// sphere (`z <= 1.04`, `x >= -1.04`, which the ray reaches at `x <= -3.23`) and the octahedron
-/// (`x >= 1.25`), so it meets nothing.
+/// sphere (`z <= 1.04`, `x >= -1.04`, which the ray reaches at `x <= -3.23`), the bunny
+/// (`z <= 1.134`, `x >= -2.722`, reached at `x <= -3.183`) and the octahedron (`x >= 1.25`), so
+/// it meets nothing.
 #[test]
 fn the_bunny_shadows_the_ground_behind_it_and_not_beside_it() {
     let scene = reference_scene().expect("builds");
@@ -914,7 +917,7 @@ fn rendering_twice_in_one_process_gives_the_same_bytes() {
 
 #[test]
 fn the_reference_image_has_its_golden_hash() {
-    assert_eq!(lumen::REFERENCE_SCENE_ID, "lumen-reference-scene/3");
+    assert_eq!(lumen::REFERENCE_SCENE_ID, "lumen-reference-scene/4");
     assert_eq!(lumen::INTEGRATOR_ID, "lumen-diffuse-path/1");
     assert_eq!(bunny_optics::SAMPLER_ID, "bunny-sobol-owen/1");
     assert_eq!(bunny_optics::SHADING_ID, "bunny-diffuse-shading/1");
