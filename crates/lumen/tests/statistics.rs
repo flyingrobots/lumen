@@ -151,7 +151,6 @@ fn smooth_zero_area_and_unused_materials_are_counted_as_built() {
     assert_eq!(stats.zero_area_triangles, 1);
     assert_eq!(stats.triangles_by_material, [1, 2, 0]);
     assert_eq!(stats.tree.leaf_triangles, 3);
-    assert_eq!(stats.memory.vertex_normals, 3 * 96, "ADR 0007: 96 bytes per entry");
 }
 
 /// Oracle: the sizes Bunny documents (a compact node is 112 bytes) and ADR 0007 measured (a

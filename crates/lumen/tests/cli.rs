@@ -668,7 +668,8 @@ fn stats_prints_the_scenes_statistics_without_rendering() {
         let stats = scene.build().expect("builds").statistics().expect("counts");
         assert_eq!(field(&stdout, "scene.triangles"), stats.triangles.to_string());
         assert_eq!(field(&stdout, "tree.nodes"), stats.tree.nodes.to_string());
-        assert_eq!(field(&stdout, "memory.total-bytes"), stats.memory.total().to_string());
+        let total = format!("{} (information only: this build's type sizes)", stats.memory.total());
+        assert_eq!(field(&stdout, "memory.total-bytes"), total);
         assert!(!stdout.contains("image ") && !stdout.contains("seconds"), "{stdout}");
         assert!(dir.is_empty());
     }

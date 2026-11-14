@@ -68,9 +68,7 @@ fn one_triangle() -> Scene {
 }
 
 /// Oracle: counting by hand. One triangle is one leaf at depth 0 with no compact node; its box
-/// is its vertices' extent. The byte counts are the sizes Bunny's and lumen's types have on a
-/// 64-bit target (ADR 0007's measurements: a `TraceTriangle` is 72 bytes, an
-/// `Option<TriangleSurface>` 224; an albedo is three `i64`s; an index a `u32`).
+/// is its vertices' extent. The memory lines follow, each labelled as a fact about this build.
 #[test]
 fn every_line_of_a_one_triangle_scene() {
     let scene = one_triangle();
@@ -108,6 +106,27 @@ tree.leaf-triangles 1
 tree.leaf-triangles-min 1
 tree.leaf-triangles-max 1
 tree.leaf-sizes 1 0 0 0 0
+";
+    let text = String::from_utf8(text).expect("utf-8");
+    let (counts, memory) = text.split_at(text.find("memory.").expect("memory lines"));
+    assert_eq!(counts, want);
+    assert_eq!(memory.lines().count(), 8, "{memory}");
+    assert!(memory.lines().all(|line| line.ends_with(MEMORY_NOTE)), "{memory}");
+}
+
+/// Oracle: the sizes the one-triangle scene's buffers have on a 64-bit target (ADR 0007's
+/// measurements: a `TraceTriangle` is 72 bytes, an `Option<TriangleSurface>` 224; an albedo is
+/// three `i64`s; an index a `u32`). Another pointer width may differ, which is why the lines are
+/// information only.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn the_memory_lines_of_a_one_triangle_scene_on_a_64_bit_target() {
+    let scene = one_triangle();
+    let mut text = Vec::new();
+    write_scene_block(&mut text, &scene, &scene.statistics().expect("counts")).expect("writes");
+    let text = String::from_utf8(text).expect("utf-8");
+    let memory: Vec<&str> = text.lines().filter(|line| line.starts_with("memory.")).collect();
+    let want: Vec<String> = "\
 memory.triangles-bytes 72
 memory.surfaces-bytes 224
 memory.vertex-normals-bytes 0
@@ -116,8 +135,11 @@ memory.materials-bytes 48
 memory.tree-nodes-bytes 0
 memory.tree-primitive-indices-bytes 4
 memory.total-bytes 352
-";
-    assert_eq!(String::from_utf8(text).expect("utf-8"), want);
+"
+    .lines()
+    .map(|line| format!("{line} {MEMORY_NOTE}"))
+    .collect();
+    assert_eq!(memory, want);
 }
 
 /// Oracle: the header is the scene's name, its content identity and its integrator, as the

@@ -25,6 +25,10 @@ pub(crate) fn write_stats(
     write_scene_block(out, scene, stats)
 }
 
+/// The label of every `memory.` line: a byte count is this build's type sizes times the counts,
+/// so it can differ between targets (a 32-bit `usize`, for one), unlike every other value.
+pub(crate) const MEMORY_NOTE: &str = "(information only: this build's type sizes)";
+
 /// The scene's statistics: its contents, lights and camera, its tree, its memory.
 pub(crate) fn write_scene_block(
     out: &mut impl Write,
@@ -106,7 +110,7 @@ fn write_memory(out: &mut impl Write, stats: &SceneStatistics) -> io::Result<()>
         ("tree-primitive-indices", memory.tree_primitive_indices),
         ("total", memory.total()),
     ] {
-        writeln!(out, "memory.{name}-bytes {bytes}")?;
+        writeln!(out, "memory.{name}-bytes {bytes} {MEMORY_NOTE}")?;
     }
     Ok(())
 }

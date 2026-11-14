@@ -37,8 +37,11 @@ Three facts about the code shaped the decision:
 - **Every count is an exact integer and a function of the scene and the settings alone**, with
   two kinds of exception that are facts about the run and are labelled `(information only)`
   wherever they are printed: the split of work between workers, and anything timed. The byte
-  counts of memory are a third, milder kind: a function of the scene and of this build's type
-  sizes.
+  counts of memory are a third kind, facts about this build: a function of the scene and of
+  this build's type sizes, which depend on the target's pointer width. They are labelled
+  `(information only: this build's type sizes)`, are never hashed or pinned across platforms, and
+  no test on the WebAssembly leg asserts a 64-bit size (the 64-bit size tests are
+  `#[cfg(target_pointer_width = "64")]` and outside that leg's test list).
 - **Nothing is collected on a ray's path unless it is asked for, or its cost is measured and
   found to be within the noise.** The cost of asking is measured and stated.
 - **No count is a float, and no rounding happens in the library.** A mean is reported as its two
@@ -181,8 +184,9 @@ and a copy drifts when Bunny's search changes.
 
 - **No traversal counters**: flyingrobots/bunny#335.
 - **No versioned identities for the tree builder and the layout**: lumen names them by function
-  path, qualified by the Bunny commit. A change of Bunny's builder output at the same name would
-  show only as a new commit.
+  path (`tree.builder`, `tree.layout`), qualified by the Bunny commit. A change of Bunny's builder
+  output at the same name would show only as a new commit. Typed constructors and identities are
+  being collected in flyingrobots/bunny#295.
 - **Not reported**: the surface-area cost terms of the tree (Bunny's profile reports them). They
   need area arithmetic, which would be numerical code in lumen; a Bunny function over a built
   tree would be their home.

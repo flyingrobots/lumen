@@ -326,7 +326,7 @@ which also depend on this build's type sizes (the values below are those of 64-b
 | `tree.leaf-triangles` | the triangles of every leaf, summed: each triangle is in one leaf, so this is `scene.triangles` |
 | `tree.leaf-triangles-min`, `tree.leaf-triangles-max` | the fewest and most triangles in a leaf |
 | `tree.leaf-sizes` | five counts: leaves of 1, 2, 3 and 4 triangles, and of more (only at the depth cap) |
-| `memory.NAME-bytes` | each buffer's length times its element size: `triangles` (Bunny's `TraceTriangle`), `surfaces` (`Option<TriangleSurface>`), `vertex-normals`, `material-indices`, `materials`, `tree-nodes` (compact nodes), `tree-primitive-indices`, and their `total` |
+| `memory.NAME-bytes` | information only, a fact about this build (the line ends in `(information only: this build's type sizes)`): each buffer's length times its element size, which depends on the target's pointer width: `triangles` (Bunny's `TraceTriangle`), `surfaces` (`Option<TriangleSurface>`), `vertex-normals`, `material-indices`, `materials`, `tree-nodes` (compact nodes), `tree-primitive-indices`, and their `total` |
 
 Not counted in `memory.`: the `Scene` value and its vectors' headers, spare capacity, the
 allocator's overhead, the buffers dropped after the build (the boxes and the uncompacted tree of
@@ -344,7 +344,7 @@ tree.leaves 16548
 tree.leaf-depth-max 20
 tree.leaf-depth-mean 16.36
 tree.leaf-sizes 2778 12708 931 131 0
-memory.total-bytes 11432728
+memory.total-bytes 11432728 (information only: this build's type sizes)
 ```
 
 ## The reference scene
