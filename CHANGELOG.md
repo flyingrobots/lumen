@@ -6,6 +6,18 @@ All notable changes to lumen are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `lumen render --out` publishes the PNG atomically (flyingrobots/lumen#54): it writes a uniquely
+  named temporary file next to the destination, syncs it, renames it into place and syncs the
+  directory (Unix), and on any failure removes the temporary file and leaves the destination as it
+  was. Before, a failed write left a truncated file and destroyed an existing one. An unwritable
+  destination is now refused before the render starts. Changed messages: a directory now reads
+  `PATH: is a directory` (was `Is a directory (os error 21)`); a read-only file is refused as
+  `PATH: the file is read-only` (was `Permission denied (os error 13)` for a non-root user); a symbolic link is
+  replaced instead of written through; a replaced file gets the default mode. Exit codes are
+  unchanged (1).
+
 ### Added
 
 - The full-resolution Stanford bunny (part of flyingrobots/lumen#39):

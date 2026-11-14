@@ -13,11 +13,11 @@
 
 mod cli;
 mod failure;
+mod publish;
 mod report;
 
 use std::ffi::OsString;
-use std::fs::File;
-use std::io::{self, BufWriter};
+use std::io;
 use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
@@ -25,9 +25,10 @@ use std::time::Instant;
 use cli::{Command, USAGE};
 use failure::Failure;
 use lumen::{
-    png_len, render_scheduled, write_png, BuiltinScene, ImageSize, PngError, RenderProvenance,
-    RenderSettings, Rgba8Image, Schedule, BUNNY_REV, MAX_THREADS,
+    render_scheduled, BuiltinScene, ImageSize, RenderProvenance, RenderSettings, Schedule,
+    BUNNY_REV, MAX_THREADS,
 };
+use publish::Disk;
 use report::{Report, Times};
 
 fn main() -> ExitCode {
@@ -63,7 +64,8 @@ fn available_threads() -> u32 {
         .clamp(1, MAX_THREADS)
 }
 
-/// Builds the chosen scene, renders it, hashes the image, writes the PNG if asked, and prints
+/// Builds the chosen scene, checks that the PNG can be written if asked, renders it, hashes the
+/// image, publishes the PNG, and prints
 /// what was made and how long each part took.
 ///
 /// The times are wall-clock readings of a monotonic clock (`Instant`), taken around each part;
@@ -79,6 +81,11 @@ fn run(
     let started = Instant::now();
     let size = ImageSize::new(width, height).map_err(Failure::Size)?;
     let built_scene = scene.build().map_err(Failure::Scene)?;
+    if let Some(path) = out {
+        // Refused before any pixel is computed, with nothing left behind.
+        publish::preflight(&Disk, path)
+            .map_err(|error| Failure::Output { path: path.to_path_buf(), error })?;
+    }
     let built = started.elapsed();
     let render =
         render_scheduled(&built_scene, size, settings, schedule).map_err(Failure::Render)?;
@@ -88,8 +95,8 @@ fn run(
     let hashed = started.elapsed();
     let written = match out {
         Some(path) => Some(
-            write_file(path, image)
-                .map_err(|error| Failure::Png { path: path.to_path_buf(), error })?,
+            publish::publish(&Disk, path, image)
+                .map_err(|error| Failure::Output { path: path.to_path_buf(), error })?,
         ),
         None => None,
     };
@@ -112,12 +119,4 @@ fn run(
     };
     let mut stdout = io::stdout().lock();
     report.write(&mut stdout).map_err(Failure::Stdout)
-}
-
-/// Writes the PNG file and returns its length.
-fn write_file(path: &Path, image: &Rgba8Image) -> Result<u64, PngError> {
-    let mut file = BufWriter::new(File::create(path)?);
-    write_png(&mut file, image)?;
-    file.into_inner().map_err(io::IntoInnerError::into_error)?.sync_all()?;
-    Ok(png_len(image))
 }

@@ -1,0 +1,351 @@
+//! Publication's tests, on the real encoder's bytes and the real file system in a scratch
+//! directory per test; [`Faulty`] fails one step of it, never the encoder.
+
+use std::cell::RefCell;
+use std::path::PathBuf;
+
+use lumen::{write_png, ImageSize};
+
+use super::*;
+
+/// A fresh directory for one test, removed when dropped; its name holds the process id and the
+/// test's name.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new(name: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!("lumen-publish-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("scratch directory");
+        Self(dir)
+    }
+
+    fn file(&self, name: &str) -> PathBuf {
+        self.0.join(name)
+    }
+
+    /// The names in the directory, sorted.
+    fn names(&self) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(&self.0)
+            .expect("dir")
+            .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// An image whose PNG is several buffer flushes long (64 by 64 pixels, 16 KiB of pixels) with
+/// bytes that depend on `seed`.
+fn image(seed: u8) -> Rgba8Image {
+    let size = ImageSize::new(64, 64).expect("valid");
+    let bytes = (0..size.byte_len())
+        .map(|i| u8::try_from(i % 251).expect("below 251").wrapping_mul(seed | 1))
+        .collect();
+    Rgba8Image::from_bytes(size, bytes).expect("length matches")
+}
+
+fn png(image: &Rgba8Image) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    write_png(&mut bytes, image).expect("writes to memory");
+    bytes
+}
+
+const OLD: &[u8] = b"the file that was there";
+
+/// A file that refuses bytes after `left` of them, writing the ones before.
+struct Limited {
+    file: File,
+    left: usize,
+}
+
+impl Write for Limited {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.left == 0 {
+            return Err(io::Error::other("disk full"));
+        }
+        let n = self.file.write(&buf[..buf.len().min(self.left)])?;
+        self.left -= n;
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
+}
+
+/// A step of publication that [`Faulty`] can fail.
+#[derive(Clone, Copy, PartialEq)]
+enum Step {
+    Sync,
+    Rename,
+    Remove,
+    DirectorySync,
+}
+
+/// The real file system with one step made to fail, and an optional action run at the first
+/// `sync` (while the temporary file exists and the rename has not happened).
+#[derive(Default)]
+struct Faulty<'a> {
+    write_limit: Option<usize>,
+    /// The steps that fail.
+    fails: &'static [Step],
+    at_first_sync: RefCell<Option<Box<dyn FnOnce() + 'a>>>,
+}
+
+impl Faulty<'_> {
+    fn fails(&self, step: Step) -> bool {
+        self.fails.contains(&step)
+    }
+}
+
+impl Filesystem for Faulty<'_> {
+    type File = Limited;
+
+    fn unique(&self) -> String {
+        Disk.unique()
+    }
+
+    fn mode(&self, destination: &Path) -> io::Result<Mode> {
+        Disk.mode(destination)
+    }
+
+    fn create_new(&self, path: &Path) -> io::Result<Limited> {
+        Ok(Limited { file: Disk.create_new(path)?, left: self.write_limit.unwrap_or(usize::MAX) })
+    }
+
+    fn open_in_place(&self, path: &Path) -> io::Result<Limited> {
+        Ok(Limited { file: Disk.open_in_place(path)?, left: usize::MAX })
+    }
+
+    fn sync(&self, file: &mut Limited) -> io::Result<()> {
+        if let Some(action) = self.at_first_sync.borrow_mut().take() {
+            action();
+        }
+        if self.fails(Step::Sync) {
+            return Err(io::Error::other("sync refused"));
+        }
+        Disk.sync(&mut file.file)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        if self.fails(Step::Rename) {
+            return Err(io::Error::other("rename refused"));
+        }
+        Disk.rename(from, to)
+    }
+
+    fn remove(&self, path: &Path) -> io::Result<()> {
+        if self.fails(Step::Remove) {
+            return Err(io::Error::other("remove refused"));
+        }
+        Disk.remove(path)
+    }
+
+    fn sync_directory(&self, directory: &Path) -> io::Result<()> {
+        if self.fails(Step::DirectorySync) {
+            return Err(io::Error::other("directory sync refused"));
+        }
+        Disk.sync_directory(directory)
+    }
+}
+
+#[test]
+fn a_successful_publication_leaves_exactly_the_png_and_nothing_else() {
+    let dir = Scratch::new("success");
+    let dest = dir.file("a.png");
+    let image = image(3);
+    for existing in [false, true] {
+        if existing {
+            fs::write(&dest, OLD).expect("old file");
+        }
+        assert_eq!(publish(&Disk, &dest, &image).expect("publishes"), png_len(&image));
+        assert_eq!(fs::read(&dest).expect("file"), png(&image), "existing: {existing}");
+        assert_eq!(dir.names(), ["a.png"]);
+    }
+}
+
+/// The mutation oracle: writing straight to the destination truncates the old file before the
+/// failure, which this catches.
+#[test]
+fn a_write_that_fails_part_way_leaves_the_old_file_and_no_temporary_file() {
+    let dir = Scratch::new("part-way");
+    let dest = dir.file("keep.png");
+    for limit in [0, 100, 9_000] {
+        fs::write(&dest, OLD).expect("old file");
+        let faulty = Faulty { write_limit: Some(limit), ..Faulty::default() };
+        let error = publish(&faulty, &dest, &image(3)).expect_err("fails");
+        assert!(error.to_string().contains("disk full"), "{error}");
+        assert_eq!(fs::read(&dest).expect("file"), OLD, "limit {limit}");
+        assert_eq!(dir.names(), ["keep.png"], "limit {limit}");
+    }
+}
+
+#[test]
+fn a_failed_sync_or_rename_leaves_the_old_file_and_no_temporary_file() {
+    let dir = Scratch::new("sync-rename");
+    let dest = dir.file("keep.png");
+    let cases = [
+        (Faulty { fails: &[Step::Sync], ..Faulty::default() }, "sync refused"),
+        (Faulty { fails: &[Step::Rename], ..Faulty::default() }, "rename refused"),
+    ];
+    for (faulty, message) in cases {
+        fs::write(&dest, OLD).expect("old file");
+        let error = publish(&faulty, &dest, &image(3)).expect_err("fails");
+        assert!(error.to_string().contains(message), "{error}");
+        assert_eq!(fs::read(&dest).expect("file"), OLD, "{message}");
+        assert_eq!(dir.names(), ["keep.png"], "{message}");
+    }
+}
+
+#[test]
+fn a_temporary_file_that_cannot_be_removed_is_named_in_the_error() {
+    let dir = Scratch::new("leftover");
+    let dest = dir.file("keep.png");
+    fs::write(&dest, OLD).expect("old file");
+    let faulty = Faulty { write_limit: Some(10), fails: &[Step::Remove], ..Faulty::default() };
+    let error = publish(&faulty, &dest, &image(3)).expect_err("fails").to_string();
+    assert!(error.contains("disk full"), "{error}");
+    assert!(error.contains("lumen-") && error.contains("could not be removed"), "{error}");
+    assert_eq!(fs::read(&dest).expect("file"), OLD);
+}
+
+#[test]
+fn a_failed_directory_sync_is_reported_after_the_file_was_replaced() {
+    let dir = Scratch::new("directory-sync");
+    let dest = dir.file("a.png");
+    fs::write(&dest, OLD).expect("old file");
+    let faulty = Faulty { fails: &[Step::DirectorySync], ..Faulty::default() };
+    let error = publish(&faulty, &dest, &image(3)).expect_err("reported");
+    assert!(matches!(error, PublishError::DirectorySync(_)), "{error}");
+    assert_eq!(fs::read(&dest).expect("file"), png(&image(3)));
+    assert_eq!(dir.names(), ["a.png"]);
+}
+
+/// Two publications to one destination, interleaved at the point where they are most exposed:
+/// the second runs completely while the first holds its temporary file. Each leaves a complete
+/// image, the second's names its own temporary file, and the first (renamed last) wins.
+#[test]
+fn two_publications_to_one_destination_each_leave_a_complete_file() {
+    let dir = Scratch::new("two");
+    let dest = dir.file("a.png");
+    let (first, second) = (image(3), image(5));
+    let inner = || {
+        publish(&Disk, &dest, &second).expect("the second publishes");
+        assert_eq!(fs::read(&dest).expect("file"), png(&second));
+        assert_eq!(dir.names().len(), 2, "the first's temporary file and the destination");
+    };
+    let faulty = Faulty { at_first_sync: RefCell::new(Some(Box::new(inner))), ..Faulty::default() };
+    publish(&faulty, &dest, &first).expect("the first publishes");
+    assert_eq!(fs::read(&dest).expect("file"), png(&first));
+    assert_eq!(dir.names(), ["a.png"]);
+}
+
+#[test]
+fn a_file_at_a_temporary_name_is_never_clobbered() {
+    let dir = Scratch::new("collision");
+    let dest = dir.file("a.png");
+    let taken = dir.file(&format!(".a.png.lumen-{}-0.tmp", Disk.unique()));
+    fs::write(&taken, OLD).expect("somebody's file");
+    publish(&Disk, &dest, &image(3)).expect("publishes under another name");
+    assert_eq!(fs::read(&taken).expect("file"), OLD);
+    assert_eq!(fs::read(&dest).expect("file"), png(&image(3)));
+    assert_eq!(dir.names().len(), 2);
+}
+
+#[test]
+fn preflight_refuses_what_publication_could_not_write_and_leaves_nothing() {
+    let dir = Scratch::new("preflight");
+    let readonly = dir.file("readonly.png");
+    fs::write(&readonly, OLD).expect("old file");
+    let mut permissions = fs::metadata(&readonly).expect("meta").permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&readonly, permissions).expect("read-only");
+    let subdirectory = dir.file("sub");
+    fs::create_dir(&subdirectory).expect("sub");
+    for (destination, message) in [
+        (dir.file("missing").join("a.png"), ""),
+        (subdirectory.clone(), "is a directory"),
+        (readonly.clone(), "read-only"),
+        (dir.file("missing").join(".."), "no file name"),
+    ] {
+        let error = preflight(&Disk, &destination).expect_err("refused").to_string();
+        assert!(error.contains(message), "{destination:?}: {error}");
+        let error = publish(&Disk, &destination, &image(3)).expect_err("refused").to_string();
+        assert!(error.contains(message), "{destination:?}: {error}");
+    }
+    assert_eq!(fs::read(&readonly).expect("file"), OLD);
+    assert_eq!(dir.names(), ["readonly.png", "sub"]);
+    preflight(&Disk, &dir.file("fine.png")).expect("a free name is fine");
+    assert_eq!(dir.names(), ["readonly.png", "sub"]);
+}
+
+#[cfg(unix)]
+mod unix {
+    use std::os::unix::fs::symlink;
+
+    use super::*;
+
+    /// A link is replaced by the file; what it pointed at is not written.
+    #[test]
+    fn a_symlink_is_replaced_and_its_target_is_untouched() {
+        let dir = Scratch::new("symlink");
+        let (target, link) = (dir.file("target.png"), dir.file("link.png"));
+        fs::write(&target, OLD).expect("target");
+        symlink("target.png", &link).expect("link");
+        publish(&Disk, &link, &image(3)).expect("publishes");
+        assert_eq!(fs::read(&target).expect("target"), OLD);
+        assert_eq!(fs::read(&link).expect("file"), png(&image(3)));
+        assert!(!fs::symlink_metadata(&link).expect("meta").is_symlink());
+        assert_eq!(dir.names(), ["link.png", "target.png"]);
+    }
+
+    #[test]
+    fn a_dangling_symlink_is_replaced_and_a_link_to_a_directory_is_refused() {
+        let dir = Scratch::new("symlink-kinds");
+        let (dangling, to_directory) = (dir.file("dangling.png"), dir.file("to-dir"));
+        symlink("nowhere", &dangling).expect("link");
+        symlink(&dir.0, &to_directory).expect("link");
+        publish(&Disk, &dangling, &image(3)).expect("publishes");
+        assert_eq!(fs::read(&dangling).expect("file"), png(&image(3)));
+        let error = publish(&Disk, &to_directory, &image(3)).expect_err("refused");
+        assert!(error.to_string().contains("is a directory"), "{error}");
+    }
+
+    /// A device is written in place, so `--out /dev/null` keeps working.
+    #[test]
+    fn a_device_is_written_in_place() {
+        let null = Path::new("/dev/null");
+        assert_eq!(Disk.mode(null).expect("mode"), Mode::InPlace);
+        preflight(&Disk, null).expect("preflight");
+        assert_eq!(publish(&Disk, null, &image(3)).expect("publishes"), png_len(&image(3)));
+    }
+
+    /// The new file has the default mode for a new file, not the old file's mode.
+    #[test]
+    fn the_old_files_mode_is_not_carried_over() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = Scratch::new("mode");
+        let dest = dir.file("a.png");
+        let probe = dir.file("probe");
+        fs::write(&probe, OLD).expect("probe");
+        let default_mode = fs::metadata(&probe).expect("meta").permissions().mode();
+        fs::write(&dest, OLD).expect("old");
+        fs::set_permissions(&dest, fs::Permissions::from_mode(0o640)).expect("mode");
+        publish(&Disk, &dest, &image(3)).expect("publishes");
+        assert_eq!(fs::metadata(&dest).expect("meta").permissions().mode(), default_mode);
+    }
+}
+
+#[test]
+fn a_bare_file_name_lives_in_the_current_directory() {
+    assert_eq!(directory_of(Path::new("a.png")), Path::new("."));
+    assert_eq!(directory_of(Path::new("d/a.png")), Path::new("d"));
+    assert_eq!(directory_of(Path::new("/a.png")), Path::new("/"));
+}
