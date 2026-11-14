@@ -7,13 +7,11 @@
 //! every pixel's samples are accumulated for that pixel alone, by one worker, in its own
 //! `PixelAccumulator`, so no accumulation order exists between threads.
 
-use core::fmt;
 use core::ops::Add;
 
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
-    write_rgba8, PinholeCamera, PixelAccumulator, PixelSampler, ToneCurve, MAX_SAMPLES_PER_PIXEL,
-    SHADING_ID,
+    write_rgba8, PinholeCamera, PixelAccumulator, PixelSampler, ToneCurve, SHADING_ID,
 };
 
 use crate::image::{ImageSize, Rgba8Image};
@@ -23,14 +21,18 @@ use crate::workers::{render_pixels, render_pixels_by_worker, Reservation, Worker
 
 mod error;
 mod probe;
+mod ray_count;
 mod run;
+mod settings;
 mod shade;
 mod statistics;
 mod traversal;
 
 pub use error::{PathError, RenderError};
 use probe::{Closest, Counted, Plain, Probe, Unmeasured};
+pub use ray_count::RayCount;
 pub use run::{RunStatistics, WorkerStatistics};
+pub use settings::{RenderSettings, SettingsError};
 use shade::{direct, Shade};
 pub use statistics::{RayCheckError, RayOutcomes, RayStatistics};
 pub use traversal::{TraversalStatistics, TraversalWork};
@@ -130,111 +132,6 @@ pub const CAMERA_PAIR: u32 = 0;
 
 /// The sampler pair of the bounce direction.
 pub const BOUNCE_PAIR: u32 = 1;
-
-/// Checked render settings: the sample count per pixel and the seed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RenderSettings {
-    samples_per_pixel: u32,
-    seed: u32,
-}
-
-/// Why render settings were refused.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SettingsError {
-    /// The sample count is not a power of two (zero included). Bunny's sampler states its
-    /// stratification for aligned power-of-two blocks only.
-    SamplesNotPowerOfTwo(u32),
-    /// The sample count is above Bunny's `MAX_SAMPLES_PER_PIXEL` (1024).
-    TooManySamples(u32),
-}
-
-impl fmt::Display for SettingsError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::SamplesNotPowerOfTwo(n) => {
-                write!(f, "samples per pixel must be a power of two (1, 2, 4, ..., 1024), not {n}")
-            }
-            Self::TooManySamples(n) => {
-                write!(f, "samples per pixel must be at most {MAX_SAMPLES_PER_PIXEL}, not {n}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for SettingsError {}
-
-impl RenderSettings {
-    /// Settings with `samples_per_pixel` samples, a power of two in `1..=1024`, and `seed`.
-    ///
-    /// The seed is a `u32`, the domain of Geordi's render settings; Bunny's sampler widens it
-    /// to `u64`.
-    ///
-    /// # Errors
-    ///
-    /// [`SettingsError::TooManySamples`] above 1024, then
-    /// [`SettingsError::SamplesNotPowerOfTwo`] for zero or any other count that is not a power
-    /// of two.
-    pub const fn new(samples_per_pixel: u32, seed: u32) -> Result<Self, SettingsError> {
-        if samples_per_pixel > MAX_SAMPLES_PER_PIXEL {
-            return Err(SettingsError::TooManySamples(samples_per_pixel));
-        }
-        if !samples_per_pixel.is_power_of_two() {
-            return Err(SettingsError::SamplesNotPowerOfTwo(samples_per_pixel));
-        }
-        Ok(Self { samples_per_pixel, seed })
-    }
-
-    /// The samples per pixel.
-    #[must_use]
-    pub const fn samples_per_pixel(self) -> u32 {
-        self.samples_per_pixel
-    }
-
-    /// The seed.
-    #[must_use]
-    pub const fn seed(self) -> u32 {
-        self.seed
-    }
-
-    /// Bunny's sampler for pixel `(x, y)` under this seed.
-    #[must_use]
-    pub fn sampler(self, x: u32, y: u32) -> PixelSampler {
-        PixelSampler::new(u64::from(self.seed), x, y)
-    }
-}
-
-/// How many rays were traced.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct RayCount {
-    /// Closest-hit queries: camera rays and bounce rays.
-    pub closest: u64,
-    /// Any-hit queries: shadow rays.
-    pub shadow: u64,
-}
-
-impl RayCount {
-    /// Every ray traced.
-    #[must_use]
-    pub const fn total(self) -> u64 {
-        // At most 2^39 rays in all (see `Add`), so the sum never saturates.
-        self.closest.saturating_add(self.shadow)
-    }
-}
-
-impl Add for RayCount {
-    type Output = Self;
-
-    /// The rays of both. Ray counts of a render stay far below `u64::MAX` (an image has at most
-    /// 2^27 pixels of at most 1024 samples of at most four rays: the camera ray, the bounce ray
-    /// and a shadow ray at each of their hits, so at most 2^39 rays), so the sums never
-    /// saturate.
-    fn add(self, other: Self) -> Self {
-        Self {
-            closest: self.closest.saturating_add(other.closest),
-            shadow: self.shadow.saturating_add(other.shadow),
-        }
-    }
-}
 
 /// The radiance of one sample and the rays it traced.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
