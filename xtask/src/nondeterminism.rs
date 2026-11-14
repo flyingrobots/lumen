@@ -147,11 +147,11 @@ pub(crate) fn core_findings(text: &str) -> Vec<Finding> {
     }
     let imports = imports(&toks);
     for (line, path) in paths(&toks) {
-        let resolved = resolve(&path, &imports);
+        let readings = resolve(&path, &imports);
         for (prefix, rule) in PATHS {
             let under =
                 |p: &[String]| p.len() >= prefix.len() && p.iter().zip(prefix).all(|(a, b)| a == b);
-            if under(&path) || under(&resolved) {
+            if readings.iter().any(|p| under(p)) {
                 add(line, rule, &path.join("::"));
             }
         }

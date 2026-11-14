@@ -56,18 +56,28 @@ pub(super) fn imports(toks: &[Located]) -> Vec<(String, Vec<String>)> {
     out
 }
 
-/// `path` with its first segment replaced by what an import names, repeatedly (`extern crate
-/// std as host; use host::env as e;` makes `e::var` `std::env::var`), at most eight times.
-pub(super) fn resolve(path: &[String], imports: &[(String, Vec<String>)]) -> Vec<String> {
-    let mut resolved = path.to_vec();
+/// Every reading of `path` through the file's imports: the path itself, and each path its first
+/// segment's imports make of it, repeatedly (`extern crate std as host; use host::env as e;`
+/// makes `e::var` `std::env::var`), at most eight steps and 64 readings. Resolution is file-wide,
+/// not by module, so where sibling modules bind one name differently, every binding is tried:
+/// the scan can only over-report.
+pub(super) fn resolve(path: &[String], imports: &[(String, Vec<String>)]) -> Vec<Vec<String>> {
+    let mut readings = vec![path.to_vec()];
+    let mut frontier = vec![path.to_vec()];
     for _ in 0..8 {
-        let Some((_, full)) = imports.iter().find(|(alias, _)| resolved.first() == Some(alias))
-        else {
-            break;
-        };
-        resolved = [&full[..], &resolved[1..]].concat();
+        let mut next = Vec::new();
+        for reading in &frontier {
+            for (_, full) in imports.iter().filter(|(alias, _)| reading.first() == Some(alias)) {
+                let resolved = [&full[..], &reading[1..]].concat();
+                if !readings.contains(&resolved) && readings.len() < 64 {
+                    readings.push(resolved.clone());
+                    next.push(resolved);
+                }
+            }
+        }
+        frontier = next;
     }
-    resolved
+    readings
 }
 
 /// If a `use` declaration starts at `i`: the index of its `;` and its leaves ([`use_tree`]).
