@@ -70,8 +70,8 @@ pub use render::{
     CAMERA_PAIR, INTEGRATOR_ID, MAX_BOUNCES, TONE_CURVE,
 };
 pub use scene::{
-    CameraPlacement, Hit, Lighting, PrimitiveIndex, Scene, SceneError, SceneSpec, TraceError,
-    Tracer, FAR,
+    CameraPlacement, Hit, Lighting, PrimitiveIndex, Scene, SceneContentId, SceneError, SceneSpec,
+    TraceError, Tracer, FAR, SCENE_CONTENT_ENCODING,
 };
 pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
 pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};
