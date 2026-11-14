@@ -15,7 +15,8 @@ All notable changes to lumen are recorded here. The format follows
   destination is now refused before the render starts. Changed messages: a directory now reads
   `PATH: is a directory` (was `Is a directory (os error 21)`); a read-only file is refused as
   `PATH: the file is read-only` (was `Permission denied (os error 13)` for a non-root user); a symbolic link is
-  replaced instead of written through; a replaced file gets the default mode. Exit codes are
+  replaced instead of written through; `--out /dev/null` now works (it rendered and then failed
+  with `Invalid argument (os error 22)` from `fsync`); a replaced file gets the default mode. Exit codes are
   unchanged (1).
 
 ### Added

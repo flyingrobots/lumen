@@ -123,7 +123,7 @@ status 2); `--band-rows` is the number of whole image rows a worker takes at a t
 
 `--out FILE` is checked before the render starts: a destination that cannot be written (its
 directory is missing or not writable, it is a directory or a link to one, it is a read-only file,
-it has no file name) is refused with status 1 and the same message as before, without computing a
+it has no file name) is refused with status 1 and a message that names the path, without computing a
 pixel and without leaving anything behind.
 
 The PNG is then written to a temporary file in the destination's directory, `.NAME.lumen-PID-N.tmp`

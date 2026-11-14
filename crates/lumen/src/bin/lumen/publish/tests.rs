@@ -273,7 +273,6 @@ fn preflight_refuses_what_publication_could_not_write_and_leaves_nothing() {
         (dir.file("missing").join("a.png"), ""),
         (subdirectory.clone(), "is a directory"),
         (readonly.clone(), "read-only"),
-        (dir.file("missing").join(".."), "no file name"),
     ] {
         let error = preflight(&Disk, &destination).expect_err("refused").to_string();
         assert!(error.contains(message), "{destination:?}: {error}");
@@ -341,6 +340,15 @@ mod unix {
         publish(&Disk, &dest, &image(3)).expect("publishes");
         assert_eq!(fs::metadata(&dest).expect("meta").permissions().mode(), default_mode);
     }
+}
+
+/// A path with no final component has no name for a temporary file (a path ending in `..` is
+/// such a path on Unix; Windows resolves it lexically to a directory, so the empty path is used).
+#[test]
+fn a_path_with_no_file_name_is_refused() {
+    let error = create_temporary(&Disk, Path::new("")).map(|(_, path)| path).expect_err("refused");
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    assert!(error.to_string().contains("no file name"), "{error}");
 }
 
 #[test]
