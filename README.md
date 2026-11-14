@@ -295,10 +295,12 @@ The library computes the counts (`Scene::statistics()`, a `SceneStatistics`) and
 formats them; nothing is counted while a ray is traced, and nothing in the scene changes.
 `Scene::statistics` is described under [Library and command](#library-and-command);
 [ADR 0008](docs/adr/0008-statistics.md) records what is counted and why it cannot change a pixel.
-Run and traversal statistics are decided there and not yet built.
+Traversal statistics (nodes visited and triangles tested per ray) are decided there and wait for
+flyingrobots/bunny#335.
 
 `lumen render ... --stats` prints the report unchanged, then the same scene block (every line of
-`lumen stats` after its first three, which the report already gives), then what the rays found.
+`lumen stats` after its first three, which the report already gives), then what the rays found,
+then how the work was spread over the workers.
 Without `--stats` the output is the report alone, byte for byte as before statistics existed.
 The command first checks the ray statistics against the size and settings (one record per pixel,
 `--samples` samples per pixel, exactly one camera ray per sample, at most four rays per sample)
@@ -348,6 +350,19 @@ same at every thread count and band height:
 | `rays.pixels`, `rays.samples-per-pixel`, `rays.samples` | pixels rendered, samples asked for per pixel, and samples traced in all |
 | `rays.per-pixel-min`, `rays.per-pixel-max` | the fewest and most rays any one pixel traced |
 | `rays.per-pixel-mean` | `rays.total / rays.pixels`, with two places, rounded to nearest, ties up |
+
+The run lines (`render --stats`), last. The band height, the band count and the worker count follow
+from the size and `--threads` and `--band-rows`; which worker took which band depends on timing, so
+every per-worker line ends in `(information only: differs from run to run)`. The per-worker
+figures add up to the totals, which do not differ. Workers report counts only: there is no
+per-worker busy time, since the library reads no clock (ADR 0008); `render-seconds` is the whole
+render's.
+
+| Key | Value |
+| --- | --- |
+| `run.band-rows`, `run.bands` | the rows in a band and the bands the image is cut into (the height over the band height, rounded up) |
+| `run.workers` | the workers that rendered, the `threads` line's count |
+| `run.worker.N.bands`, `.rows`, `.pixels`, `.rays` | what worker `N` (0 is the calling thread) took and traced: information only |
 
 Not counted in `memory.`: the `Scene` value and its vectors' headers, spare capacity, the
 allocator's overhead, the buffers dropped after the build (the boxes and the uncompacted tree of
@@ -894,6 +909,10 @@ Dated measurement records are kept under [`docs/measurements/`](docs/measurement
 flyingrobots/lumen#5 is [the 4K reference scene at 16 samples per pixel, 2026-11-13](docs/measurements/2026-11-13-4k-reference.md),
 taken with the tile scheduler. [The 4K reference scene with row bands and whole-program release
 builds](docs/measurements/2026-11-13-4k-row-bands.md) repeats it for flyingrobots/lumen#28.
+[Fixed Point version 2 at 4K and 64 samples per pixel, 2026-11-14](docs/measurements/2026-11-14-4k-fixed-point-v2.md)
+records the showpiece for flyingrobots/lumen#39: the same image hash,
+`sha256:d276602407edb72109ebfbc8cec9121230171cf156144f139fb2bc3ca1c13bef`, on every run, a mean
+of 21.2 seconds with 18 CPUs, about 10 % more than version 1 (19.2 seconds).
 Each states its commit and conditions and applies to that commit only.
 
 ### Readings
