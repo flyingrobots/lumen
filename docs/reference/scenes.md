@@ -1,5 +1,9 @@
 # The built-in scenes
 
+Reference for the two scenes built into lumen: every object in primitive order, its material,
+the lighting, the camera, and what the tests check about each. `lumen render --scene NAME` and
+`BuiltinScene` choose between them; [the command reference](cli.md) has the options.
+
 ## The reference scene
 
 `lumen-reference-scene/3` is built in `crates/lumen/src/reference/`, entirely in Q32.32 integers
@@ -132,7 +136,7 @@ seed; at most one bounce) follow Geordi's ray-traced scene profile, so that load
 (`normals`: empty, or three `Option<FixedUnitVec3>` per triangle, the input of Bunny's
 `SmoothHit::new`), which `Scene::new` checks for count (`SceneError::NormalCount`) and keeps
 (`Scene::vertex_normals`); they enter the content identity, and a scene with any of them is
-shaded smooth ([below](#smooth-shading-lumen-smooth-diffuse-path1)).
+shaded smooth ([smooth shading](../../README.md#smooth-shading-lumen-smooth-diffuse-path1)).
 
 ## The Fixed Point scene
 
@@ -145,8 +149,7 @@ determinism, from a ray tracer built on fixed-point arithmetic.
 Render it with the command (`--scene fixed-point`):
 
 ```sh
-python3 $D lumen ~/git/lumen --worktree --fetch --export fixed-point.png --out "$(mktemp -d)" -- \
-  bash -c 'mkdir -p /scratch/out && cargo run --locked --release -q -p lumen -- render --scene fixed-point --width 1280 --height 720 --samples 64 --out /scratch/out/fixed-point.png'
+cargo run --release -p lumen -- render --scene fixed-point --width 1280 --height 720 --samples 64 --out fixed-point.png
 ```
 
 The library builds it with `BuiltinScene::FixedPoint.build()` (or `lumen::fixed_point_scene()`);
@@ -159,8 +162,7 @@ the command turns it into a usage error with exit code 2. The scene keeps its ow
 (`crates/lumen/examples/fixed_point.rs`) renders the same scene through the library alone:
 
 ```sh
-python3 $D lumen ~/git/lumen --worktree --fetch --export fixed-point.png --out "$(mktemp -d)" -- \
-  bash -c 'mkdir -p /scratch/out && cargo run --locked --release -q -p lumen --example fixed_point -- /scratch/out/fixed-point.png 1280 720 64'
+cargo run --release -p lumen --example fixed_point -- fixed-point.png 1280 720 64
 ```
 
 Arguments: `OUT [WIDTH HEIGHT [SAMPLES [SEED [THREADS]]]]`, defaulting to 480 by 270, 16
@@ -214,7 +216,7 @@ decimated, flat bunny and the black-rimmed puck) is retired: its 1280 by 720 has
 
 Only the bunny is smooth: the dice, the table, the puck and the glasses keep their facets, so
 the scene is rendered by `lumen-smooth-diffuse-path/1` (see
-[Smooth shading](#smooth-shading-lumen-smooth-diffuse-path1)).
+[smooth shading](../../README.md#smooth-shading-lumen-smooth-diffuse-path1)).
 
 Materials (linear albedo in 256ths): felt `(14, 62, 32)`, leather `(45, 22, 14)`, layout paint
 `(225, 225, 215)`, die red `(170, 12, 16)`, pips and the puck's face and side
@@ -265,5 +267,5 @@ off the face and chest.
   `sha256:da6cb05db0d366a2088f19e6eefed2ab017dd0d27c6c5e364a85121054d6093e`, under the same
   rules as the reference scene's: it changes only with an identity, the settings or the Bunny
   commit. Any change to the scene's triangles, their order, materials, lighting or camera is a
-  new scene version and a new hash. Every platform in [Determinism](#determinism) checks it.
+  new scene version and a new hash. Every platform in [Determinism](../../README.md#determinism) checks it.
 

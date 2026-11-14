@@ -232,3 +232,40 @@ fn a_one_triangle_scene_has_the_content_identity_python_computed() {
         "sha256:74ee72e21d66eb96e9efece03eb7722895785dd46bf1af23d80cded65dd457c5"
     );
 }
+
+/// The crate root's source and the library reference, as they are in the repository.
+const LIB_RS: &str = include_str!("../src/lib.rs");
+const LIBRARY_REFERENCE: &str = include_str!("../../../docs/reference/library.md");
+
+/// The names `lib.rs` makes public: every name a `pub use` brings in (the last path segment of
+/// each entry), and every `pub const` and `pub mod`.
+fn crate_root_names() -> Vec<&'static str> {
+    let mut names = Vec::new();
+    for (at, _) in LIB_RS.match_indices("\npub use ") {
+        let rest = &LIB_RS[at + "\npub use ".len()..];
+        let item = &rest[..rest.find(';').expect("a use declaration ends")];
+        let list = item.split_once('{').map_or(item, |(_, list)| list.trim_end_matches('}'));
+        let entries = list.split(',').map(|entry| entry.trim().rsplit("::").next().unwrap_or(""));
+        names.extend(entries.filter(|name| !name.is_empty()));
+    }
+    for keyword in ["\npub const ", "\npub mod "] {
+        for (at, _) in LIB_RS.match_indices(keyword) {
+            let rest = &LIB_RS[at + keyword.len()..];
+            let end = rest.find(|c: char| !(c.is_alphanumeric() || c == '_')).unwrap_or(rest.len());
+            names.push(&rest[..end]);
+        }
+    }
+    names
+}
+
+/// Oracle: the crate root's own source. Every name `lib.rs` makes public is written, in
+/// backticks, in `docs/reference/library.md`, so the page lists the whole surface the rustdoc
+/// documents. Witness count: the 82 names of the crate root when this test was written, or more.
+#[test]
+fn the_library_reference_names_every_item_of_the_crate_root() {
+    let names = crate_root_names();
+    let missing: Vec<&&str> =
+        names.iter().filter(|name| !LIBRARY_REFERENCE.contains(&format!("`{name}`"))).collect();
+    assert!(missing.is_empty(), "not in docs/reference/library.md: {missing:?}");
+    assert!(names.len() >= 82, "only {} names found in lib.rs", names.len());
+}

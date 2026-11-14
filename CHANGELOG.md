@@ -17,6 +17,13 @@ All notable changes to lumen are recorded here. The format follows
   (`the_command_reference_has_a_row_for_every_option`), and documents every key the statistics
   blocks print (`every_printed_key_is_in_the_command_reference`). `lumen --help` now points at
   that page instead of the README's Statistics section.
+- `docs/reference/library.md` and `docs/reference/scenes.md` (part of flyingrobots/lumen#25),
+  moved from the README: the library's public surface, family by family, with its rules
+  (provenance, content identity, statistics, the command's edge) and its errors, pointing at the
+  rustdoc as the generated API reference; and the two built-in scenes object by object with
+  their tests. `the_library_reference_names_every_item_of_the_crate_root` fails if a name
+  `lib.rs` makes public is missing from the library page. The scene page's commands are plain
+  `cargo run` invocations.
 - `cargo run -p xtask -- doc-links`, `make doc-links` and the `Gates / doc links` job: every
   relative link of the repository's Markdown names a file or directory that exists, and every
   `#anchor` a heading of its page, with GitHub's anchors. Offline; links with a scheme are not
