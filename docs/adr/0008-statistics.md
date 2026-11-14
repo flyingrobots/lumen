@@ -150,23 +150,42 @@ worker's sum (`Rendered`, `WorkerRun`), in a list reserved before any thread sta
 rows, pixels, rays). `Render` does not hold them, so two renders of the same scene at different
 schedules still compare equal. `render --stats` prints them last, as `run.` lines.
 
-A worker counts bands, once per band taken, and nothing per row: its rows are its pixels (counted
-per pixel already, in its `RayStatistics`) over the width, exact because in a render that
-succeeded every worker renders whole rows. A first version counted rows in each worker's step and
-measured 2.3 % slower at 18 threads. Measured against the ray-statistics branch (ea89a9d), same
-machine and settings as above, base and head alternated, 14 runs each at 18 threads:
+**What it costs, and the history of the decision.** A render that does not ask for run
+statistics pays nothing for them: the scheduler is generic, privately, over what each worker counts
+besides its pixels' sum. `render_pixels` (and so `render_traced` and `lumen render` without
+`--stats`) uses `NoTally`, a zero-sized type whose counting the compiler removes, with no per-worker
+list; `render_pixels_by_worker` (`render_traced_with_run`, `--stats`) uses `BandTally`, which counts
+bands once per band taken. A worker's rows are its pixels (counted per pixel already, in its
+`RayStatistics`) over the width, exact because in a render that succeeded every worker renders whole
+rows. Both paths give the same images, totals and errors: the simulated-worker tests run under both
+tallies, and `tests/run_statistics.rs` compares them with each other and with the golden hashes at
+1, 2, 4 and 18 threads and two band heights for both scenes.
 
-| Version | Render seconds, 18 threads | Median |
-| --- | --- | ---: |
-| base (ea89a9d) | 0.546 to 0.582 | 0.554 |
-| rows counted per row | 0.554 to 0.595 | 0.567 (+2.3 %) |
-| base (ea89a9d), a second session | 0.539 to 0.574 | 0.561 |
-| bands only, rows derived (built) | 0.550 to 0.587 | 0.568 (+1.3 %) |
+Three versions were measured against the ray statistics' head (ea89a9d), on the machine and
+settings above, 14 runs each at 18 threads, base and head alternated in one session per row pair
+(sessions differ in their level, so compare within a session):
 
-At one thread the per-row version measured the same as base (medians 7.169 against 7.162 s,
-three runs each). What is left at 18 threads, about 7 ms in 0.56 s, is within the spread of
-either set of runs but leans one way; if it is to go, the next step is a zero-sized tally type for
-the scheduler when run statistics are not asked for, which this change does not make.
+| Version | Session's base, median | Head, median | Change | Verdict |
+| --- | ---: | ---: | ---: | --- |
+| rows counted per row, always | 0.554 | 0.567 | +2.3 % | tried and rejected |
+| bands counted per band, rows derived, always | 0.561 | 0.568 | +1.3 % | tried and rejected |
+| zero-sized tally unless asked (built), without `--stats` | 0.587 | 0.5915 | +0.8 % (rank-sum z 1.33) | within noise |
+| the same, with `--stats` | 0.587 | 0.6015 | +2.5 % (z 3.4) | the cost of asking |
+
+The first two counted for every render, asked or not; both leaned one way over 14 runs, and the
+project's rule is that a diagnostic nobody asked for costs nothing, so both were rejected. The
+built version's plain render is within the noise of the base (its runs ranged 0.576 to 0.666 s
+against 0.570 to 0.617 s). Asking for `--stats` costs about 2.5 % at 18 threads in that session:
+the counting workers, and the per-worker list.
+
+At one thread (five alternated runs each, same session as the 18-thread runs of the built version):
+base 7.213, 7.226, 7.284, 7.301, 9.130 s (median 7.284); built, without `--stats` 7.232, 7.248,
+7.270, 7.316, 7.318 (7.270, -0.2 %); with `--stats` 7.414, 7.451, 7.462, 9.114, 9.397 (7.462,
++2.4 %). The 9.1 s runs are machine events that hit base and head alike. The `--stats` cost at one
+thread is more than its 720 band counts can explain; the likeliest cause, not proven, is that the
+counting copy of the scheduler is compiled differently from the plain one. It is paid only when
+asked for. The per-row version measured the same as base at one thread (7.169 against 7.162 s,
+three runs each).
 
 There is no per-worker busy time. The library reads no clock (ADR 0006), and the honest simple
 measure is the one the command already takes: the wall time of the whole render. An injected

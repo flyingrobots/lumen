@@ -40,8 +40,10 @@ All notable changes to lumen are recorded here. The format follows
   `WorkerRun`), whose band counts ride in each worker's outcome returned at `join` (rows are its pixels over
   the width).
   `render --stats` ends with the `run.` lines; each per-worker line is labelled
-  `(information only: differs from run to run)`. Counts only: no per-worker clock. Measured cost
-  about 1.3 % of render time at 18 threads, none seen at one thread (ADR 0008).
+  `(information only: differs from run to run)`. Counts only: no per-worker clock. A render
+  that does not ask pays nothing: the scheduler counts through a private zero-sized tally then,
+  and the plain render measured within noise of the base; `--stats` costs about 2.5 % of render
+  time (ADR 0008 has the numbers and the two rejected versions).
 - Ray statistics and `lumen render --stats` (part of flyingrobots/lumen#29; ADR 0008):
   `trace_path` records what each ray found in `PathSample::outcomes` (a `RayOutcomes`: camera hits
   and misses, bounce hits, misses and rejections, shadow rays occluded and unoccluded), and
