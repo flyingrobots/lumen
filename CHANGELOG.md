@@ -71,8 +71,9 @@ part was built.
 - **Statistics** (ADR 0008): `Scene::statistics` (triangles by material, bounds, the tree's
   shape, buffer sizes), ray statistics in every `Render` (`RayOutcomes`, `RayStatistics`), and
   run statistics on request (`render_traced_with_run`, `RunStatistics`), which a render that
-  does not ask for pays nothing for. Traversal statistics wait for flyingrobots/bunny#335.
-  (flyingrobots/lumen#29.)
+  does not ask for pays nothing for. The counted ray-query port, `CountingTracer`, returns
+  Bunny's `TraversalCounts` with each answer; traversal statistics built on it are not yet in
+  the report. (flyingrobots/lumen#29.)
 - **The image hash and the PNG**: `sha256:` and the lowercase hex SHA-256 of the raw RGBA8 bytes
   (ADR 0009), with Lumen's own SHA-256; a PNG encoder with stored deflate blocks, whose bytes are
   a fixed function of the pixels (`write_png`, `png_len`). (flyingrobots/lumen#2.)
