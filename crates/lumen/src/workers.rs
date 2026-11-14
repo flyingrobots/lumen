@@ -155,8 +155,8 @@ struct Shared<'a> {
     height: u32,
     bands: Mutex<Bands<'a>>,
     /// Rows from `end` down are no longer wanted: the image height at the start, then the row of
-    /// the earliest failure recorded so far, or 0 when a worker thread could not be started. It
-    /// only decreases.
+    /// the earliest failure recorded so far, or 0 when a worker thread could not be started or a
+    /// worker panicked (a halt). It only decreases.
     end: AtomicU32,
 }
 
@@ -239,9 +239,23 @@ impl<'a> Shared<'a> {
         self.end.fetch_min(y, Ordering::Relaxed);
     }
 
-    /// Stops every worker at its next row, because a worker thread could not be started.
+    /// Stops every worker at the next row it begins: a worker thread could not be started, or a
+    /// worker panicked.
     fn halt(&self) {
         self.end.store(0, Ordering::Relaxed);
+    }
+}
+
+/// Halts every worker when it is dropped while its thread unwinds from a panic: a worker that
+/// panics in the pixel function stops the others at the next row each begins, instead of
+/// leaving them to render the rest of the image before the panic reaches the caller.
+struct HaltOnUnwind<'s, 'a>(&'s Shared<'a>);
+
+impl Drop for HaltOnUnwind<'_, '_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0.halt();
+        }
     }
 }
 
@@ -252,6 +266,8 @@ struct Worker<'s, 'a, T, E> {
     outcome: Outcome<T, E>,
     /// The band being rendered, with its first row, and the rows of it not yet begun.
     band: Option<(u32, Rows<'a>)>,
+    /// Dropped with the worker: if a panic unwinds through the worker, the others are halted.
+    _unwind: HaltOnUnwind<'s, 'a>,
 }
 
 impl<'s, 'a, T, E> Worker<'s, 'a, T, E>
@@ -259,7 +275,7 @@ where
     T: Copy + Add<Output = T>,
 {
     const fn new(shared: &'s Shared<'a>, zero: T) -> Self {
-        Self { shared, outcome: Outcome::new(zero), band: None }
+        Self { shared, outcome: Outcome::new(zero), band: None, _unwind: HaltOnUnwind(shared) }
     }
 
     /// One step: take the next band, render the next row of the band, or leave the band when its
@@ -345,7 +361,9 @@ fn start_helpers<H, E>(
 /// its coordinates, and the sum is the same whenever `+` is associative and commutative on the
 /// values (as integer addition is).
 ///
-/// A panic in `pixel` is passed on to the caller once every worker has stopped.
+/// A panic in `pixel` halts the other workers: each begins no row after it has seen the halt
+/// (a row already begun is finished). The panic is passed on to the caller once every worker
+/// has stopped, and no image is returned.
 ///
 /// # Errors
 ///
