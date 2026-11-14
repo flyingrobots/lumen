@@ -4,9 +4,15 @@
 //!
 //! Links are inline links and images (`[text](dest)`, `![alt](dest)`) and reference
 //! definitions (`[name]: dest`), outside fenced code blocks and code spans. A destination with a
-//! scheme (`https:`, `mailto:`) is not checked: this gate is offline. Anchors are the ones GitHub
-//! gives headings: lowercased, every character that is not a letter, a digit, `-`, `_` or a
-//! space dropped, spaces turned into `-`, and a repeated anchor numbered `-1`, `-2`, ...
+//! scheme (`https:`, `mailto:`) is not checked: this gate is offline. A destination starting
+//! with `/` is taken from the repository root, as GitHub takes it. Anchors are the ones GitHub
+//! gives headings, made from the heading's rendered text (code spans as written, a link as its
+//! text, HTML tags and emphasis underscores dropped): lowercased, every character that is not a
+//! letter, a digit, `-`, `_` or a space dropped, spaces turned into `-`; an anchor already taken
+//! gets the first free `-1`, `-2`, ... A fenced block ends only at a fence of its own character,
+//! at least as long, with nothing after it.
+
+use std::collections::BTreeMap;
 
 /// A link that leads nowhere.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,21 +48,86 @@ pub(crate) fn links(text: &str) -> Vec<(usize, String)> {
     found
 }
 
-/// The anchors GitHub gives the headings of `text`, in order.
+/// The anchors GitHub gives the headings of `text`, in order. As GitHub's slugger does, a
+/// heading keeps its base anchor unless that anchor is already taken; then the base's own
+/// counter goes up until `base-N` is free.
 pub(crate) fn anchors(text: &str) -> Vec<String> {
     let mut made: Vec<String> = Vec::new();
+    let mut counters: BTreeMap<String, usize> = BTreeMap::new();
     for (_, line) in prose_lines(text) {
         let Some(title) = heading(line) else { continue };
-        let base: String = title
-            .to_lowercase()
-            .chars()
-            .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | ' '))
-            .map(|c| if c == ' ' { '-' } else { c })
-            .collect();
-        let repeats = made.iter().filter(|anchor| strip_count(anchor, &base)).count();
-        made.push(if repeats == 0 { base } else { format!("{base}-{repeats}") });
+        let base = slug(&heading_text(title));
+        let mut anchor = base.clone();
+        while made.contains(&anchor) {
+            let counter = counters.entry(base.clone()).or_insert(0);
+            *counter += 1;
+            anchor = format!("{base}-{counter}");
+        }
+        made.push(anchor);
     }
     made
+}
+
+/// GitHub's anchor for rendered heading text: lowercased, every character that is not a letter,
+/// a digit, `-`, `_` or a space dropped, each space turned into `-`.
+fn slug(text: &str) -> String {
+    text.to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | ' '))
+        .map(|c| if c == ' ' { '-' } else { c })
+        .collect()
+}
+
+/// The text a heading renders to: each code span's content as written, and the rest through
+/// [`prose_text`].
+fn heading_text(title: &str) -> String {
+    let mut out = String::new();
+    let mut rest = title;
+    while let Some(start) = rest.find('`') {
+        let ticks = rest[start..].bytes().take_while(|b| *b == b'`').count();
+        let open = &rest[start + ticks..];
+        let Some(end) = open.find(&"`".repeat(ticks)) else { break };
+        out.push_str(&prose_text(&rest[..start]));
+        out.push_str(&open[..end]);
+        rest = &open[end + ticks..];
+    }
+    out.push_str(&prose_text(rest));
+    out
+}
+
+/// Heading text outside code spans as it renders: an HTML tag dropped, a link's `(destination)`
+/// dropped, and a run of underscores dropped unless it stands between two letters or digits
+/// (`snake_case` keeps its underscore; `_emphasis_` loses both).
+fn prose_text(prose: &str) -> String {
+    let chars: Vec<char> = prose.chars().collect();
+    let mut out = String::new();
+    let mut at = 0;
+    while let Some(&c) = chars.get(at) {
+        let skip_to =
+            |close: char| chars[at..].iter().position(|&d| d == close).map(|n| at + n + 1);
+        let skip = match c {
+            '<' => skip_to('>'),
+            ']' if chars.get(at + 1) == Some(&'(') => skip_to(')').inspect(|_| out.push(']')),
+            '_' => {
+                let run = chars[at..].iter().take_while(|&&d| d == '_').count();
+                let before = at.checked_sub(1).and_then(|b| chars.get(b));
+                let inside = before.is_some_and(|b| b.is_alphanumeric())
+                    && chars.get(at + run).is_some_and(|a| a.is_alphanumeric());
+                if inside {
+                    out.extend(&chars[at..at + run]);
+                }
+                Some(at + run)
+            }
+            _ => None,
+        };
+        if let Some(next) = skip {
+            at = next;
+        } else {
+            out.push(c);
+            at += 1;
+        }
+    }
+    out
 }
 
 /// Every broken relative link on `pages` (each a path relative to the repository root, with `/`
@@ -103,11 +174,15 @@ fn judge(
     }
 }
 
-/// `path` taken from the directory of `page`, with `.` and `..` resolved and a trailing `/`
-/// dropped, or `None` if it climbs out of the repository.
+/// `path` taken from the directory of `page` (or from the repository root when it starts with
+/// `/`), with `.` and `..` resolved and a trailing `/` dropped, or `None` if it climbs out of the
+/// repository.
 fn resolve(page: &str, path: &str) -> Option<String> {
-    let mut parts: Vec<&str> = page.split('/').collect();
-    parts.pop();
+    let mut parts: Vec<&str> = Vec::new();
+    if !path.starts_with('/') {
+        parts.extend(page.split('/'));
+        parts.pop();
+    }
     for part in path.split('/') {
         match part {
             "" | "." => {}
@@ -120,20 +195,36 @@ fn resolve(page: &str, path: &str) -> Option<String> {
     Some(parts.join("/"))
 }
 
-/// The lines of `text` outside fenced code blocks, with their numbers from 1.
+/// The lines of `text` outside fenced code blocks, with their numbers from 1. A block opens at
+/// a fence and closes at a fence of the same character, at least as long, with only whitespace
+/// after it.
 fn prose_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
-    let mut fence: Option<&str> = None;
+    let mut open: Option<(char, usize)> = None;
     text.lines().enumerate().filter_map(move |(index, line)| {
-        let trimmed = line.trim_start();
-        let marker = ["```", "~~~"].into_iter().find(|marker| trimmed.starts_with(marker));
-        match (fence, marker) {
-            (None, Some(marker)) => fence = Some(marker),
-            (Some(open), Some(marker)) if open == marker => fence = None,
+        match (open, fence(line)) {
+            (None, Some((mark, length, _))) => open = Some((mark, length)),
+            (Some((mark, length)), Some((closing, run, after)))
+                if closing == mark && run >= length && after.trim().is_empty() =>
+            {
+                open = None;
+            }
             (None, None) => return Some((index + 1, line)),
             _ => {}
         }
         None
     })
+}
+
+/// A fence, if `line` is one: at most three spaces, then three or more backticks or tildes.
+/// Returns its character, its length and what follows it.
+fn fence(line: &str) -> Option<(char, usize, &str)> {
+    let rest = line.trim_start_matches(' ');
+    if line.len() - rest.len() > 3 {
+        return None;
+    }
+    let mark = rest.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let length = rest.chars().take_while(|&c| c == mark).count();
+    (length >= 3).then(|| (mark, length, &rest[length..]))
 }
 
 /// `line` with every code span (a run of backticks to the next run of the same length) blanked.
@@ -189,16 +280,6 @@ fn heading(line: &str) -> Option<&str> {
     let hashes = line.bytes().take_while(|b| *b == b'#').count();
     let title = line.get(hashes..)?.strip_prefix(' ')?;
     (1..=6).contains(&hashes).then(|| title.trim_end().trim_end_matches('#').trim_end())
-}
-
-/// Whether `anchor` is `base` or `base` with a repeat number.
-fn strip_count(anchor: &str, base: &str) -> bool {
-    anchor.strip_prefix(base).is_some_and(|rest| {
-        rest.is_empty()
-            || rest
-                .strip_prefix('-')
-                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
-    })
 }
 
 #[cfg(test)]
