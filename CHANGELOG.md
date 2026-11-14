@@ -141,6 +141,22 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- Fixed Point is `lumen-fixed-point-scene/2` (part of flyingrobots/lumen#39); version 1 is
+  retired. The bunny is the full-resolution Stanford bunny (69 451 triangles, none dropped),
+  shaded smooth with Bunny's `VertexNormals` computed over the placed and posed positions (each
+  vertex placed once, the faces kept as indices), so the scene is rendered by
+  `lumen-smooth-diffuse-path/1`; scale, turn and position are unchanged. The glasses' right arm
+  ends further out (240/256 instead of 210/256), measured to clear the full mesh's head. The
+  puck reads as a white disc with black lettering: its rim is a 1/32 ring, its side is white
+  (the new `PartKind::PuckSide`), it is 1/8 high instead of 3/16, and "ON" is bolder. The sun
+  moves to nearly behind the camera, toward `(-0.25, 1.0, 1.0)` (was `(-0.5, 1.0, 0.875)`), so
+  the smooth bunny's shadow edges, which follow its triangles, fall off its face and chest. New
+  `FixedPointError::Normals` (with Bunny's `VertexNormalError` as its source) and
+  `FixedPointContent::normals`. New tests: every bunny triangle has three vertex normals and no
+  other part any; the puck as the camera sees it (white and black pixel counts and rendered
+  levels). Golden 96 by 54 hash
+  `sha256:da6cb05db0d366a2088f19e6eefed2ab017dd0d27c6c5e364a85121054d6093e`, content
+  `sha256:f80160bbd1ebb6e79f186bf5a86f2ce3419d4ef31168cc4cab0b6fd1f0f64e11`.
 - The command line, part of flyingrobots/lumen#57 (the documentation claims in that issue remain):
   a separate option value that reads as an option (`--out --width`) is a usage error, exit 2,
   instead of a file named `--width`; every option also takes `--option=value`, which allows such a

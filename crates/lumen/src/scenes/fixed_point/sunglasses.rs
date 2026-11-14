@@ -43,8 +43,9 @@ const BRIDGE_LOW: i64 = per_256(15);
 const BRIDGE_HIGH: i64 = per_256(33);
 /// Where each arm ends, as `(distance from the centre line, distance behind the nose tip)`:
 /// the left one passes outside the base of the bunny's swept-back ear, the right one runs close
-/// along the side of its head. Both run between these heights above the eye line.
-const ARM_END: [(i64, i64); 2] = [(per_256(282), per_256(179)), (per_256(210), per_256(205))];
+/// along the side of its head. Measured on the full-resolution mesh: the right arm needs its end
+/// at least 230/256 out at 205/256 back to clear the head, so it ends at 240. Both run between these heights above the eye line.
+const ARM_END: [(i64, i64); 2] = [(per_256(282), per_256(179)), (per_256(240), per_256(205))];
 const ARM_LOW: i64 = per_256(15);
 const ARM_HIGH: i64 = per_256(33);
 

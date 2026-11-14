@@ -85,10 +85,10 @@ fn the_puck_lies_inside_the_eight_box_beside_its_numeral() {
     let content = content();
     let eight = the_box(8);
     let mut vertices = Vec::new();
-    for kind in [PartKind::PuckFace, PartKind::PuckRim, PartKind::PuckLetters] {
+    for kind in [PartKind::PuckFace, PartKind::PuckRim, PartKind::PuckSide, PartKind::PuckLetters] {
         vertices.extend(part(&content, kind).into_iter().flatten());
     }
-    assert_eq!(vertices.len(), (24 + 96 + 14) * 3);
+    assert_eq!(vertices.len(), (24 + 48 + 48 + 14) * 3);
     let Footprint { min_x, min_z, max_x, max_z } = eight.numeral;
     for p in &vertices {
         assert!(eight.interior.contains(p[0], p[2]), "{p:?} is outside the 8 box");

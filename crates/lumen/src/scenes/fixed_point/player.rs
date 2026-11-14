@@ -2,12 +2,13 @@
 //! number boxes and turned three-quarters toward the camera, and the measurement of its face
 //! that the sunglasses are fitted to.
 
-use bunny_linalg::FixedVec3;
-use bunny_optics::TriangleSurface;
+use bunny_linalg::{FixedUnitVec3, FixedVec3};
+use bunny_optics::{TriangleSurface, VertexNormals};
 use bunny_query::TraceTriangle;
 
-use crate::mesh::{place_mesh, read_ascii_ply, MeshPlacement, MeshTurn, PlaceError};
-use crate::reference::bunny::STANFORD_BUNNY_PLY;
+use crate::mesh::{read_ascii_ply, MeshPlacement, MeshTurn, PlaceError, PlyMesh};
+
+use super::full_bunny::FULL_BUNNY_PLY;
 use crate::vertex_grid::{at, GRID_RAW};
 
 use super::error::FixedPointError;
@@ -62,6 +63,9 @@ impl BunnyPose {
 pub struct PlacedBunny {
     /// Its triangles in the file's face order, without the faces dropped.
     pub triangles: Vec<[FixedVec3; 3]>,
+    /// The vertex normals of each triangle, in the order of its vertices: Bunny's
+    /// `VertexNormals` (`bunny-vertex-normals/1`) over the posed positions and the kept faces.
+    pub normals: Vec<[Option<FixedUnitVec3>; 3]>,
     /// The faces dropped because they have zero area once placed and turned, in face order.
     pub dropped: Vec<usize>,
     /// The face measurement, before the turn.
@@ -70,38 +74,96 @@ pub struct PlacedBunny {
     pub pose: BunnyPose,
 }
 
-/// The Stanford bunny turned a quarter about `+Y` (the file's bunny faces `-X`; turned, it
-/// faces `+Z`, the camera), scaled by `2^`[`BUNNY_SHIFT`], floored to the grid with its lowest
-/// vertex exactly on the felt, measured ([`FaceMeasure`]), then posed ([`BunnyPose`]).
+/// The full-resolution Stanford bunny ([`FULL_BUNNY_PLY`]) turned a quarter about `+Y` (the
+/// file's bunny faces `-X`; turned, it faces `+Z`, the camera), scaled by `2^`[`BUNNY_SHIFT`],
+/// floored to the grid with its lowest vertex exactly on the felt, measured ([`FaceMeasure`]),
+/// then posed ([`BunnyPose`]), with smooth-shading normals.
+///
+/// Every vertex is placed and posed once, and the faces keep their indices into the posed
+/// vertices, so the vertex normals are Bunny's `VertexNormals::new` over the positions that are
+/// traced: computed after placement, they need no transform of their own and agree with the
+/// floored geometry. A face whose posed triangle has zero area is dropped and listed; its cross
+/// product is zero, so it adds nothing to a normal either way. The vertices that no face names
+/// are placed too (Bunny's `VertexNormals` gives them `None`), but no triangle refers to them.
 ///
 /// # Errors
 ///
-/// [`FixedPointError::Bunny`] if the embedded bunny does not read or place, and
-/// [`FixedPointError::EmptyBunny`] if it has no triangles and [`FixedPointError::Overflow`] if
-/// a posed vertex overflows; a test shows none of these happens.
+/// [`FixedPointError::Bunny`] if the embedded bunny does not read or a face names a missing
+/// vertex, [`FixedPointError::EmptyBunny`] if it has no faces, [`FixedPointError::Overflow`] if a
+/// placed or posed vertex overflows, and [`FixedPointError::Normals`] if Bunny refuses the posed mesh; a test
+/// shows none of these happens.
 pub fn placed_bunny() -> Result<PlacedBunny, FixedPointError> {
-    let mesh = read_ascii_ply(STANFORD_BUNNY_PLY.as_bytes())
+    let mesh = read_ascii_ply(FULL_BUNNY_PLY.as_bytes())
         .map_err(|error| FixedPointError::Bunny(PlaceError::Ply(error)))?;
+    let used = used_vertices(&mesh)?;
     let mut placement =
         MeshPlacement { turn: MeshTurn::QuarterAboutY, shift: BUNNY_SHIFT, offset_steps: [0; 3] };
-    let first = place_mesh(&mesh, &placement).map_err(FixedPointError::Bunny)?;
-    let lowest = lowest_y(&first.triangles).ok_or(FixedPointError::EmptyBunny)?;
+    let lowest = placed_steps(&mesh, &placement)?
+        .iter()
+        .zip(&used)
+        .filter(|(_, &used)| used)
+        .map(|(p, _)| p[1])
+        .min()
+        .ok_or(FixedPointError::EmptyBunny)?;
     placement.offset_steps = [0, FELT_Y - lowest, 0];
-    let facing = place_mesh(&mesh, &placement).map_err(FixedPointError::Bunny)?;
-    let face = measure(&facing.triangles).ok_or(FixedPointError::EmptyBunny)?;
+    let facing = placed_steps(&mesh, &placement)?;
+    let named = facing.iter().zip(&used).filter(|(_, &used)| used).map(|(&p, _)| p);
+    let face = measure(named).ok_or(FixedPointError::EmptyBunny)?;
     let pose = BunnyPose { pivot: face.nose };
-    let mut placed = PlacedBunny { triangles: Vec::new(), dropped: facing.dropped, face, pose };
-    for (index, triangle) in facing.triangles.iter().enumerate() {
-        let [a, b, c] = pose_triangle(&pose, &triangle.map(steps))?;
-        let kept =
-            TraceTriangle::new(at(a[0], a[1], a[2]), at(b[0], b[1], b[2]), at(c[0], c[1], c[2]))
-                .and_then(|t| TriangleSurface::new(&t));
-        match kept {
-            Some(_) => placed.triangles.push([a, b, c].map(|[x, y, z]| at(x, y, z))),
-            None => placed.dropped.push(index),
+    let posed: Vec<FixedVec3> = facing
+        .iter()
+        .map(|&p| pose.place(p).map(|[x, y, z]| at(x, y, z)).ok_or(FixedPointError::Overflow))
+        .collect::<Result<_, _>>()?;
+    let mut kept = Vec::with_capacity(mesh.faces.len());
+    let mut dropped = Vec::new();
+    for (index, &face_indices) in mesh.faces.iter().enumerate() {
+        let [a, b, c] = face_indices.map(|i| posed.get(widen(i)).copied());
+        let area = a
+            .zip(b)
+            .zip(c)
+            .and_then(|((a, b), c)| TraceTriangle::new(a, b, c))
+            .and_then(|t| TriangleSurface::new(&t));
+        match area {
+            Some(_) => kept.push(face_indices),
+            None => dropped.push(index),
         }
     }
-    Ok(placed)
+    let vertex_normals = VertexNormals::new(&posed, &kept).map_err(FixedPointError::Normals)?;
+    let corner = |i: u32| posed.get(widen(i)).copied().ok_or(FixedPointError::EmptyBunny);
+    let normal = |i: u32| vertex_normals.normals().get(widen(i)).copied().flatten();
+    let mut triangles = Vec::with_capacity(kept.len());
+    let mut normals = Vec::with_capacity(kept.len());
+    for face_indices in &kept {
+        let [a, b, c] = face_indices.map(corner);
+        triangles.push([a?, b?, c?]);
+        normals.push(face_indices.map(normal));
+    }
+    Ok(PlacedBunny { triangles, normals, dropped, face, pose })
+}
+
+/// Whether each vertex of `mesh` is named by a face.
+fn used_vertices(mesh: &PlyMesh) -> Result<Vec<bool>, FixedPointError> {
+    let mut used = vec![false; mesh.vertices.len()];
+    for (face, indices) in mesh.faces.iter().enumerate() {
+        for &index in indices {
+            let slot = used.get_mut(widen(index));
+            *slot.ok_or(FixedPointError::Bunny(PlaceError::MissingVertex { face }))? = true;
+        }
+    }
+    Ok(used)
+}
+
+/// Every vertex of `mesh` placed by `placement`, in grid steps.
+fn placed_steps(mesh: &PlyMesh, placement: &MeshPlacement) -> Result<Vec<Steps>, FixedPointError> {
+    mesh.vertices
+        .iter()
+        .map(|&v| placement.place(v).map(steps).map_err(|_| FixedPointError::Overflow))
+        .collect()
+}
+
+/// A `u32` index as a `usize`: lossless on every target lumen builds for (at least 32 bits).
+fn widen(index: u32) -> usize {
+    usize::try_from(index).unwrap_or(usize::MAX)
 }
 
 /// A triangle given facing `+Z`, posed.
@@ -122,17 +184,14 @@ fn steps(v: FixedVec3) -> Steps {
     [v.x, v.y, v.z].map(|c| c.raw() / GRID_RAW)
 }
 
-fn lowest_y(triangles: &[[FixedVec3; 3]]) -> Option<i64> {
-    triangles.iter().flatten().map(|&v| steps(v)[1]).min()
-}
-
-/// The nose and the ear tip of a bunny facing `+Z`, or `None` for no triangles.
-fn measure(triangles: &[[FixedVec3; 3]]) -> Option<FaceMeasure> {
-    let lowest = lowest_y(triangles)?;
-    let ear_tip_y = triangles.iter().flatten().map(|&v| steps(v)[1]).max()?;
+/// The nose and the ear tip of a bunny facing `+Z`, from the vertices its faces name, or `None`
+/// for none.
+fn measure(vertices: impl Iterator<Item = Steps> + Clone) -> Option<FaceMeasure> {
+    let lowest = vertices.clone().map(|v| v[1]).min()?;
+    let ear_tip_y = vertices.clone().map(|v| v[1]).max()?;
     let middle = lowest + (ear_tip_y - lowest) / 2;
     let mut nose: Option<Steps> = None;
-    for vertex in triangles.iter().flatten().map(|&v| steps(v)) {
+    for vertex in vertices {
         let further = nose.is_none_or(|best| vertex[2] > best[2]);
         if vertex[1] >= middle && further {
             nose = Some(vertex);

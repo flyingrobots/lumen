@@ -24,11 +24,14 @@ pub const FIXED_POINT_ALBEDO_256: [[i64; 3]; 8] = [
     [6, 6, 8],
 ];
 
-/// The direction toward the sun in sixteenths: `(-0.5, 1.0, 0.875)`, high (about 45 degrees
-/// above the horizon) and from the camera's left front, so it lights the bunny's face and the
-/// dice and the bunny throw their shadows back and to the right across the felt. Its largest
-/// component is exactly 1.0, as Bunny's `DirectionalLight` requires.
-pub const FIXED_POINT_TOWARD_SUN_16: [i64; 3] = [-8, 16, 14];
+/// The direction toward the sun in sixteenths: `(-0.25, 1.0, 1.0)`, high (about 44 degrees
+/// above the horizon) and nearly behind the camera, 14 degrees to its left, so it lights the
+/// bunny's face and chest straight on and the dice and the bunny throw their shadows back across
+/// the felt. Version 1's sun, `(-0.5, 1.0, 0.875)`, came more from the side: on the smooth
+/// full-resolution bunny its shadow edges crossed the cheek, neck and chest, where the shadow
+/// rays' geometric test follows the mesh's triangles; from the front those edges fall near the
+/// silhouette. Its largest component is exactly 1.0, as Bunny's `DirectionalLight` requires.
+pub const FIXED_POINT_TOWARD_SUN_16: [i64; 3] = [-4, 16, 16];
 
 /// The sun's irradiance per channel in 256ths: about `(4.0, 3.85, 3.6)`, slightly warm.
 pub const FIXED_POINT_SUN_256: [i64; 3] = [1024, 985, 920];
