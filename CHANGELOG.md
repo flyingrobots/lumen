@@ -8,6 +8,9 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- `png.rs`'s unit tests moved to `png/tests.rs` (flyingrobots/lumen#34), so the file is under the
+  300-line review limit and its entry in the file-length gate's exceptions is gone. No code,
+  public path or output byte changed.
 - `Scene::new` refuses an invalid camera placement (part of flyingrobots/lumen#20): it builds
   Bunny's `PinholeCamera` at a one-pixel image before anything is allocated and returns the new
   `SceneError::Camera(CameraError)` for a position outside the trace domain, a tangent not in
