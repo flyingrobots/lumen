@@ -20,7 +20,7 @@ usage: lumen render [--scene NAME] [--out FILE] [--width W] [--height H] [--samp
        lumen stats [--scene NAME]
        lumen --help | --version
 
-Renders one of lumen's built-in scenes (reference, the default, or fixed-point) on T threads,
+Renders one of lumen's built-in scenes (reference, the default, fixed-point or canyon) on T threads,
 each taking bands of R whole rows, with N samples per pixel of a diffuse path (a shadow-casting
 sun, a uniform sky and one bounce), writes it to a PNG file if --out is given, and prints the
 image hash (SHA-256 of the raw RGBA8 bytes) and the timing. The image is the same for every
@@ -28,7 +28,8 @@ thread count and band height. --stats adds the scene's statistics and what the r
 after the report (see docs/reference/cli.md). `lumen stats` builds the scene, renders nothing
 and prints what it holds: triangles by material, bounds, lights, camera, the shape of its tree
 and its memory.
-Scenes (--scene NAME): reference, fixed-point (the Stanford bunny in sunglasses at a craps table).
+Scenes (--scene NAME): reference, fixed-point (the Stanford bunny in sunglasses at a craps table),
+canyon (craft flying along a fractal canyon under a banded planet).
 Defaults: --scene reference --width 320 --height 180 --samples 4 --seed 0 --band-rows 1, and as
 many threads as the system reports available.
 Width and height are 1..=32768 each, with at most 134217728 (2^27) pixels in all.
@@ -64,7 +65,7 @@ built against (`BUNNY_REV`), and exits 0.
 
 | Option | Value | Default | Refused |
 | --- | --- | --- | --- |
-| `--scene NAME` | `reference` (`lumen-reference-scene/3`) or `fixed-point` (`lumen-fixed-point-scene/2`); see [the scenes](../../README.md#the-reference-scene) | `reference` | any other name: exit 2, the message lists the scenes |
+| `--scene NAME` | `reference` (`lumen-reference-scene/3`), `fixed-point` (`lumen-fixed-point-scene/2`) or `canyon` (`lumen-canyon-scene/1`); see [the scenes](../../README.md#the-reference-scene) | `reference` | any other name: exit 2, the message lists the scenes |
 | `--out FILE` | the PNG file to write; any path, kept byte for byte if it is not Unicode | none: nothing is written | a destination that cannot be written: exit 1, before the render ([below](#the-output-file)) |
 | `--width W` | the width in pixels, `1..=32768` (the limit of Bunny's camera), with at most `2^27` pixels in all (a 512 MiB RGBA8 buffer, enough for 16K at 15360 by 8640) | 320 | 0, more than 32768, or too many pixels with the height: exit 2 |
 | `--height H` | the height in pixels, on the same terms | 180 | as for the width |
