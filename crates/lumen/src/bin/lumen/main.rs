@@ -12,8 +12,10 @@
 )]
 
 mod cli;
+mod failure;
 mod report;
 
+use std::ffi::OsString;
 use std::fs::File;
 use std::io::{self, BufWriter};
 use std::path::Path;
@@ -21,44 +23,35 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use cli::{Command, USAGE};
+use failure::Failure;
 use lumen::{
-    png_len, render_scheduled, write_png, BuiltinScene, ImageSize, PngError, RenderError,
-    RenderProvenance, RenderSettings, Rgba8Image, Schedule, BUNNY_REV, MAX_THREADS,
+    png_len, render_scheduled, write_png, BuiltinScene, ImageSize, PngError, RenderProvenance,
+    RenderSettings, Rgba8Image, Schedule, BUNNY_REV, MAX_THREADS,
 };
 use report::{Report, Times};
 
 fn main() -> ExitCode {
-    match cli::parse(std::env::args_os().skip(1)) {
-        Ok(Command::Help) => {
-            println!("{USAGE}");
-            ExitCode::SUCCESS
-        }
-        Ok(Command::Version) => {
-            println!("lumen {} (bunny {BUNNY_REV})", env!("CARGO_PKG_VERSION"));
-            ExitCode::SUCCESS
-        }
-        Ok(Command::Render { scene, width, height, settings, threads, band, out }) => {
-            let threads = threads.unwrap_or_else(available_threads);
-            let schedule = match Schedule::new(threads, band) {
-                Ok(schedule) => schedule,
-                Err(error) => {
-                    eprintln!("lumen: --threads: {error}");
-                    return ExitCode::from(2);
-                }
-            };
-            match run(scene, width, height, settings, schedule, out.as_deref()) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(message) => {
-                    eprintln!("lumen: {message}");
-                    ExitCode::FAILURE
-                }
-            }
-        }
-        Err(error) => {
-            eprintln!("lumen: {error}\n\n{USAGE}");
-            ExitCode::from(2)
+    match command(std::env::args_os().skip(1)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(failure) => {
+            eprintln!("lumen: {failure}");
+            failure.exit_code()
         }
     }
+}
+
+/// Runs the command line `args` (after the program name).
+fn command(args: impl Iterator<Item = OsString>) -> Result<(), Failure> {
+    match cli::parse(args).map_err(Failure::Usage)? {
+        Command::Help => println!("{USAGE}"),
+        Command::Version => println!("lumen {} (bunny {BUNNY_REV})", env!("CARGO_PKG_VERSION")),
+        Command::Render { scene, width, height, settings, threads, band, out } => {
+            let threads = threads.unwrap_or_else(available_threads);
+            let schedule = Schedule::new(threads, band).map_err(Failure::Threads)?;
+            run(scene, width, height, settings, schedule, out.as_deref())?;
+        }
+    }
+    Ok(())
 }
 
 /// The default thread count: what `std::thread::available_parallelism` reports (inside a
@@ -82,22 +75,22 @@ fn run(
     settings: RenderSettings,
     schedule: Schedule,
     out: Option<&Path>,
-) -> Result<(), String> {
+) -> Result<(), Failure> {
     let started = Instant::now();
-    let size =
-        ImageSize::new(width, height).map_err(|error| RenderError::Size(error).to_string())?;
-    let built_scene = scene.build().map_err(|error| error.to_string())?;
+    let size = ImageSize::new(width, height).map_err(Failure::Size)?;
+    let built_scene = scene.build().map_err(Failure::Scene)?;
     let built = started.elapsed();
-    let render = render_scheduled(&built_scene, size, settings, schedule)
-        .map_err(|error| error.to_string())?;
+    let render =
+        render_scheduled(&built_scene, size, settings, schedule).map_err(Failure::Render)?;
     let rendered = started.elapsed();
     let image = &render.image;
     let hash = image.hash();
     let hashed = started.elapsed();
     let written = match out {
-        Some(path) => {
-            Some(write_file(path, image).map_err(|error| format!("{}: {error}", path.display()))?)
-        }
+        Some(path) => Some(
+            write_file(path, image)
+                .map_err(|error| Failure::Png { path: path.to_path_buf(), error })?,
+        ),
         None => None,
     };
     let total = started.elapsed();
@@ -118,7 +111,7 @@ fn run(
         times,
     };
     let mut stdout = io::stdout().lock();
-    report.write(&mut stdout).map_err(|error| format!("stdout: {error}"))
+    report.write(&mut stdout).map_err(Failure::Stdout)
 }
 
 /// Writes the PNG file and returns its length.
