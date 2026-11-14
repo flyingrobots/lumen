@@ -28,7 +28,10 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# No registry at all: lumen takes no crates.io crate, so a crate from one is an unknown-registry
+# failure. This is also the dependency rule of the nondeterminism gate
+# (docs/adr/0006-nondeterminism-gate.md): `rand`, `serde_json`, `hashbrown` and the like cannot enter.
+allow-registry = []
 allow-git = ["https://github.com/flyingrobots/bunny"]
 # A git dependency must name a commit (`rev`), not a branch or tag.
 required-git-spec = "rev"

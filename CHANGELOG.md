@@ -6,6 +6,17 @@ All notable changes to lumen are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Nondeterminism bans, the compiler layer (part of flyingrobots/lumen#17; ADR 0006): `clippy.toml`
+  bans the clock, sleeping, the core count, thread spawning, hash maps and sets, arguments, the
+  environment, files, processes, sockets and the float types, each reason starting with an Echo
+  `ban-nondeterminism` rule ID, and `lib.rs` denies float arithmetic. The command, examples,
+  `tests/cli.rs`, `xtask`, the scheduler's thread pool and two unit tests carry reasoned
+  `#[expect]` waivers. `deny.toml` now allows no registry, so a crates.io crate fails
+  `Gates / cargo-deny`. Main had no finding inside the deterministic core other than the
+  scheduler's threads. No code, pixel or output byte changed.
+
 ### Changed
 
 - A failed path says what failed (part of flyingrobots/lumen#21). `trace_path` and
