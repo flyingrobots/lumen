@@ -8,6 +8,9 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- `png.rs`'s unit tests moved to `png/tests.rs` (flyingrobots/lumen#34), so the file is under the
+  300-line review limit and its entry in the file-length gate's exceptions is gone. No code,
+  public path or output byte changed.
 - `RenderProvenance` is built from the scene, not a label (flyingrobots/lumen#38, ADR 0005):
   `RenderProvenance::new(&scene, size, settings)` for an unnamed scene and
   `RenderProvenance::named(name, &scene, size, settings)` with a name. The `&'static str`

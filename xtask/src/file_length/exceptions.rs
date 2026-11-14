@@ -6,9 +6,4 @@
 use super::Exception;
 
 /// Every file allowed over its limit.
-pub(crate) const EXCEPTIONS: &[Exception] = &[Exception {
-    path: "crates/lumen/src/png.rs",
-    allowed: 328,
-    since: "2026-11-14",
-    issue: "flyingrobots/lumen#34",
-}];
+pub(crate) const EXCEPTIONS: &[Exception] = &[];
