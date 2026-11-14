@@ -46,6 +46,24 @@ All notable changes to lumen are recorded here. The format follows
   `forms.rs`: ADR 0006's 42 that Clippy catches and six from flyingrobots/lumen#115 (an
   `extern crate` alias, three raw identifiers, `r#f64`, float arithmetic on an inferred float);
   each must be reported under its rule.
+  toolchain that moves a ban lint to another lint group. All 53 bans fire on main.
+- Run statistics (part of flyingrobots/lumen#29; ADR 0008): `render_traced_with_run` returns
+  the render with a `RunStatistics` (the band height, the band count and, per worker, a
+  `WorkerStatistics` of bands, rows, pixels and rays), from `render_pixels_by_worker` (`Rendered`,
+  `WorkerRun`), whose band counts ride in each worker's outcome returned at `join` (rows are
+  its pixels over the width).
+  `render --stats` ends with the `run.` lines; each per-worker line is labelled
+  `(information only: differs from run to run)`. Counts only: no per-worker clock. A render
+  that does not ask pays nothing: the scheduler counts through a private zero-sized tally then,
+  and the plain render measured within noise of the base; `--stats` costs about 2.5 % of render
+  time (ADR 0008 has the numbers and the two rejected versions).
+- A measurement record of Fixed Point version 2 at 4K and 64 samples
+  (`docs/measurements/2026-11-14-4k-fixed-point-v2.md`, closes flyingrobots/lumen#39): three
+  exclusive runs at 18 CPUs, all with image hash
+  `sha256:d276602407edb72109ebfbc8cec9121230171cf156144f139fb2bc3ca1c13bef`, checked outside
+  lumen with Python's `zlib` and `hashlib`; totals 20.2 to 22.4 seconds (mean 21.2) against 19.2
+  for version 1 at the commit before it; the same hash at 1 and 18 threads at 960 by 540.
+
 - Ray statistics and `lumen render --stats` (part of flyingrobots/lumen#29; ADR 0008):
   `trace_path` records what each ray found in `PathSample::outcomes` (a `RayOutcomes`: camera hits
   and misses, bounce hits, misses and rejections, shadow rays occluded and unoccluded), and

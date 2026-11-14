@@ -1,8 +1,8 @@
 # ADR 0008: Statistics: what is counted, where, and why it cannot change the image
 
-Status: accepted (flyingrobots/lumen#29). The scene statistics, the ray statistics, `lumen stats`
-and `render --stats` are built. The run and traversal statistics are decided here and not yet
-built; each section says which.
+Status: accepted (flyingrobots/lumen#29). The scene, ray and run statistics, `lumen stats` and
+`render --stats` are built. The traversal statistics are decided here and wait for
+flyingrobots/bunny#335.
 
 ## Context
 
@@ -138,13 +138,54 @@ differ by as much as head and `main` (0.4 % at one thread, 0.7 % at 18): the dif
 the noise of these runs. So there is no counter type parameter and no second path; the uncounted
 render is gone, and `--stats` costs only the scene walk and the formatting after the clock stops.
 
-### Run statistics (decided, not yet built)
+### Run statistics (built)
 
 Per worker: bands and rows taken, pixels and rays. In all: the band count and the band height.
 The split between workers differs from run to run, so every per-worker line is
 `(information only)`; the totals do not, and the tests check that the per-worker figures sum to
-them at 1, 2, 4 and 18 workers. Each worker's tally rides in the `Outcome` it already returns
-at `join` (`workers/outcome.rs`).
+them at 1, 2, 4 and 18 workers. Each worker's band count rides in the `Outcome` it already
+returns at `join` (`workers/outcome.rs`); `render_pixels_by_worker` returns it with each
+worker's sum (`Rendered`, `WorkerRun`), in a list reserved before any thread starts, and
+`render_traced_with_run` turns them into `RunStatistics` (`WorkerStatistics` per worker: bands,
+rows, pixels, rays). `Render` does not hold them, so two renders of the same scene at different
+schedules still compare equal. `render --stats` prints them last, as `run.` lines.
+
+**What it costs, and the history of the decision.** A render that does not ask for run
+statistics pays nothing for them: the scheduler is generic, privately, over what each worker counts
+besides its pixels' sum. `render_pixels` (and so `render_traced` and `lumen render` without
+`--stats`) uses `NoTally`, a zero-sized type whose counting the compiler removes, with no per-worker
+list; `render_pixels_by_worker` (`render_traced_with_run`, `--stats`) uses `BandTally`, which counts
+bands once per band taken. A worker's rows are its pixels (counted per pixel already, in its
+`RayStatistics`) over the width, exact because in a render that succeeded every worker renders whole
+rows. Both paths give the same images, totals and errors: the simulated-worker tests run under both
+tallies, and `tests/run_statistics.rs` compares them with each other and with the golden hashes at
+1, 2, 4 and 18 threads and two band heights for both scenes.
+
+Three versions were measured against the ray statistics' head (ea89a9d), on the machine and
+settings above, 14 runs each at 18 threads, base and head alternated in one session per row pair
+(sessions differ in their level, so compare within a session):
+
+| Version | Session's base, median | Head, median | Change | Verdict |
+| --- | ---: | ---: | ---: | --- |
+| rows counted per row, always | 0.554 | 0.567 | +2.3 % | tried and rejected |
+| bands counted per band, rows derived, always | 0.561 | 0.568 | +1.3 % | tried and rejected |
+| zero-sized tally unless asked (built), without `--stats` | 0.587 | 0.5915 | +0.8 % (rank-sum z 1.33) | within noise |
+| the same, with `--stats` | 0.587 | 0.6015 | +2.5 % (z 3.4) | the cost of asking |
+
+The first two counted for every render, asked or not; both leaned one way over 14 runs, and the
+project's rule is that a diagnostic nobody asked for costs nothing, so both were rejected. The
+built version's plain render is within the noise of the base (its runs ranged 0.576 to 0.666 s
+against 0.570 to 0.617 s). Asking for `--stats` costs about 2.5 % at 18 threads in that session:
+the counting workers, and the per-worker list.
+
+At one thread (five alternated runs each, same session as the 18-thread runs of the built version):
+base 7.213, 7.226, 7.284, 7.301, 9.130 s (median 7.284); built, without `--stats` 7.232, 7.248,
+7.270, 7.316, 7.318 (7.270, -0.2 %); with `--stats` 7.414, 7.451, 7.462, 9.114, 9.397 (7.462,
++2.4 %). The 9.1 s runs are machine events that hit base and head alike. The `--stats` cost at one
+thread is more than its 720 band counts can explain; the likeliest cause, not proven, is that the
+counting copy of the scheduler is compiled differently from the plain one. It is paid only when
+asked for. The per-row version measured the same as base at one thread (7.169 against 7.162 s,
+three runs each).
 
 There is no per-worker busy time. The library reads no clock (ADR 0006), and the honest simple
 measure is the one the command already takes: the wall time of the whole render. An injected
@@ -183,7 +224,7 @@ and a copy drifts when Bunny's search changes.
   request records it), and in `tests/cli.rs` the plain report is exactly the start of the
   `--stats` output.
 - **Format: `key value` lines.** A key has no spaces and is dotted by group (`scene.`, `light.`,
-  `camera.`, `tree.`, `memory.`, `rays.`; later `run.`); the value is one token or a vector of
+  `camera.`, `tree.`, `memory.`, `rays.`, `run.`); the value is one token or a vector of
   tokens separated by single spaces; an information-only line ends in ` (information only)`, as
   the timing lines already do. Keys are stable; new keys are added, never renamed. Fixed-point
   values print in decimal with six places from their exact raw integers (rounded to nearest, ties
@@ -216,5 +257,7 @@ and a copy drifts when Bunny's search changes.
   either by its fields; the crate root gains `RayOutcomes`, `RayStatistics` and `RayCheckError`.
   The command gains `render --stats` and `Failure::RayCheck` (exit code 1), which no render
   reaches.
+- The crate root gains `render_traced_with_run`, `RunStatistics`, `WorkerStatistics`,
+  `render_pixels_by_worker`, `Rendered` and `WorkerRun`; `render_pixels` is unchanged.
 - Memory byte counts can differ between targets with different type sizes; nothing else in the
   scene statistics can.
