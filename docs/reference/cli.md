@@ -213,15 +213,15 @@ The library computes the counts (`Scene::statistics()`, a `SceneStatistics`) and
 formats them; nothing is counted while a ray is traced, and nothing in the scene changes.
 `Scene::statistics` is described in the [README](../../README.md#library-and-command);
 [ADR 0008](../adr/0008-statistics.md) records what is counted and why it cannot change a pixel.
-Traversal statistics (nodes visited and triangles tested per ray) are decided there; the library
-has the counted queries (`CountingTracer`, over Bunny's counted searches), and neither command
-prints traversal lines yet.
+`render --stats` also reports what Bunny's traversals did for each kind of ray (box tests,
+primitive tests and the rest of Bunny's `TraversalCounts`), through Bunny's counted searches;
+without `--stats` the render calls the uncounted ones.
 
 ### `lumen render --stats`
 
 `lumen render ... --stats` prints the report unchanged, then the same scene block (every line of
 `lumen stats` after its first three, which the report already gives), then what the rays found,
-then how the work was spread over the workers.
+then what the traversals did, then how the work was spread over the workers.
 Without `--stats` the output is the report alone, byte for byte as before statistics existed.
 The command first checks the ray statistics against the size and settings (one record per pixel,
 `--samples` samples per pixel, exactly one camera ray per sample, at most four rays per sample)
@@ -277,6 +277,22 @@ same at every thread count and band height:
 | `rays.pixels`, `rays.samples-per-pixel`, `rays.samples` | pixels rendered, samples asked for per pixel, and samples traced in all |
 | `rays.per-pixel-min`, `rays.per-pixel-max` | the fewest and most rays any one pixel traced |
 | `rays.per-pixel-mean` | `rays.total / rays.pixels`, with two places, rounded to nearest, ties up |
+
+### Traversal keys
+
+The traversal lines (`render --stats`), after the ray lines: for each kind of ray, `KIND` being
+`camera`, `bounce` (closest-hit searches) and `shadow` (any-hit searches, which stop at the first
+hit), the counts of Bunny's `TraversalCounts` for every ray of that kind, from
+`render_traced_with_traversal`. Each is a sum or a maximum over rays, so it is the same at every
+thread count and band height; the image, the report and the ray lines are the same as without
+counting.
+
+| Key | Value |
+| --- | --- |
+| `traversal.KIND.COUNTER` | the counter summed over the kind's rays. `COUNTER` is `box-tests` (boxes tested: the root's, and both children's at every interior visit), `box-entries` (tests the ray passed, so the child was pushed), `popped-skipped` (entries popped and dropped because a nearer hit had been found since they were pushed), `interior-visits`, `leaf-visits` or `primitive-tests` (triangle tests) |
+| `traversal.KIND.COUNTER-mean` | the sum over `rays.KIND`, with two places, rounded to nearest, ties up |
+| `traversal.KIND.COUNTER-max` | the most any one ray of the kind took (each counter's may be a different ray's) |
+| `traversal.KIND.peak-stack` | the most entries any one search's stack held at once (Bunny's limit is 64) |
 
 ### Run keys
 

@@ -31,6 +31,20 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- `lumen render --stats` prints the traversal work of each kind of ray (closes
+  flyingrobots/lumen#29, ADR 0008): after the ray lines and before the run lines, for camera,
+  bounce and shadow rays, `traversal.KIND.COUNTER` (the total), `-mean` (per ray of that kind, two
+  places) and `-max` (the most one ray took) for box tests, boxes entered, popped entries
+  skipped, interior visits, leaf visits and primitive tests, and `traversal.KIND.peak-stack`.
+  The command renders with `render_traced_with_traversal` under `--stats` only. Measured on the
+  reference scene at 1280 by 720, 16 samples, 14 alternated runs at 18 threads and three at one:
+  without `--stats` the render time is within noise of the previous commit (+1.1 %, z 1.10;
+  +0.2 % at one thread), and with `--stats` it is +0.3 % on the previous `--stats`. ADR 0008
+  records the traversal statistics as built. `docs/measurements/2026-11-14-traversal-cost.md`
+  gives the mean box tests and primitive tests per camera, bounce and shadow ray for the three
+  built-in scenes: a canyon camera ray makes 52.35 box tests against the reference scene's 14.15,
+  with a mean leaf depth only 2.8 levels deeper, and 2.83 primitive tests against 2.08.
+
 - `render_traced_with_traversal` (part of flyingrobots/lumen#29, ADR 0008): `render_traced_with_run`
   through a `CountingTracer`, also returning the traversal work of every ray by kind,
   `TraversalStatistics` (camera, bounce and shadow rays), each a `TraversalWork`: Bunny's
