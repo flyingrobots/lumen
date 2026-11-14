@@ -17,10 +17,10 @@ All notable changes to lumen are recorded here. The format follows
   `975e7f9b160b4ea15b0e225e21b10828ebcf678df020d2f6a46aa408fdcf5cd6`), with its provenance,
   Stanford's reconstruction README and attribution; `.gitattributes` keeps its bytes intact.
 - An interim, strict ASCII PLY reader for exactly that file's profile
-  (`crates/lumen/src/ply.rs`), with typed errors, converting decimals to Q32.32 with integers
+  (`crates/lumen/src/mesh/ply.rs`, `mesh/decimal.rs`), with typed errors, converting decimals to Q32.32 with integers
   only by `lumen-ascii-ply-q32.32/1` (the exact value times `2^32`, rounded to nearest, ties to
   even). It is to be replaced by Bunny's ASCII PLY reader (flyingrobots/bunny#247).
-- Mesh placement (`crates/lumen/src/mesh.rs`): a half turn about `+Y`, a power-of-two scale, a
+- Mesh placement (`crates/lumen/src/mesh/placement.rs`): a half turn about `+Y`, a power-of-two scale, a
   floor to the `2^-16` grid and a whole-step translation; faces with zero area after placement
   are dropped and listed.
 - Tests: the asset hash; hand-derived conversions, exact ties and generated decimals; the
@@ -71,6 +71,11 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The reference scene's content (its shapes, the bunny, camera, materials and lighting) moves
+  out of `scene.rs` into the `reference` module, and the vertex grid into `vertex_grid.rs`;
+  `scene.rs` keeps the scene machinery. Library paths change from `lumen::scene::reference_*`
+  and `REFERENCE_*` to `lumen::reference::...` (`lumen::reference_scene` and
+  `lumen::REFERENCE_SCENE_ID` are unchanged). No pixel changes.
 - The reference camera moves from `(0, 1, 5)` looking along `(0, -0.25, -1)` to `(-1, 2, 5)`
   looking along `(0.1875, -0.375, -1)`, so the bunny's shadow can be seen; every object of
   version 2 stays in the picture. The golden hash (96 by 54, 4 samples, seed 0) is updated for

@@ -30,8 +30,9 @@ Stanford's own description of the reconstructions is preserved beside the file a
 a crude algorithm that does not necessarily preserve mesh topology.
 
 The repository's `.gitattributes` marks `assets/**` as `-text`, so Git never rewrites these
-files' line endings, and a test (`ply::tests::the_committed_asset_has_geordis_hash`) checks the
-PLY's SHA-256 with lumen's own `sha256` module.
+files' line endings, and a test
+(`reference::bunny::tests::the_committed_asset_has_geordis_hash`) checks the PLY's SHA-256 with
+lumen's own `sha256` module.
 
 ## Mesh profile
 
@@ -42,6 +43,6 @@ PLY's SHA-256 with lumen's own `sha256` module.
   (as in Geordi's `bunny.mesh.json`)
 - One coordinate in exponent form (`8.20736e-05`); the others are plain decimals
 
-Lumen reads it with the interim reader in `crates/lumen/src/ply.rs`
+Lumen reads it with the interim reader in `crates/lumen/src/mesh/`
 (`lumen-ascii-ply-q32.32/1`), to be replaced by Bunny's ASCII PLY reader once it exists
 (flyingrobots/bunny#247).

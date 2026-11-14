@@ -12,11 +12,9 @@ use bunny_optics::{
     PixelSampler, SkyLight, SurfaceHit, FRAC_1_PI, SHADOW_T_MAX,
 };
 use bunny_query::{TraceRay, TraceTriangle};
+use lumen::reference::{reference_camera, BUNNY_FIRST_PRIMITIVE, REFERENCE_TRIANGLE_COUNT};
 use lumen::render::{pixel_radiance, render, trace_path, RenderSettings, TONE_CURVE};
-use lumen::scene::{
-    reference_camera, CameraPlacement, Hit, Lighting, SceneSpec, TraceError, BUNNY_FIRST_PRIMITIVE,
-    FAR, REFERENCE_TRIANGLE_COUNT,
-};
+use lumen::scene::{CameraPlacement, Hit, Lighting, SceneSpec, TraceError, FAR};
 use lumen::{reference_scene, render_reference, ImageSize, Rgba8Image, Scene, Tracer, BUNNY_REV};
 use std::cell::Cell;
 

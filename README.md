@@ -76,7 +76,7 @@ The PNG is uncompressed (see below), so it is about four bytes per pixel: 922 26
 
 ## The reference scene
 
-`lumen-reference-scene/3` is built in `crates/lumen/src/scene.rs`, entirely in Q32.32 integers
+`lumen-reference-scene/3` is built in `crates/lumen/src/reference/`, entirely in Q32.32 integers
 with no floating point and no randomness from the host. Four of its objects are defined in code;
 the fifth, the Stanford bunny, is read from a mesh file embedded in the binary
 (`assets/stanford-bunny/bun_zipper_res3.ply`, see [below](#the-stanford-bunny)). It is made of
@@ -147,7 +147,7 @@ the file. `.gitattributes` keeps Git from rewriting its line endings.
 **Reading it: an interim, `lumen-ascii-ply-q32.32/1`.** Lumen's rule is that numerical code
 belongs in Bunny, but Bunny's PLY reader handles only binary little-endian files with exactly
 `x y z` vertices, and this file is ASCII with two more vertex columns. Until Bunny has an ASCII
-reader (flyingrobots/bunny#247), `crates/lumen/src/ply.rs` reads exactly this file's profile and
+reader (flyingrobots/bunny#247), `crates/lumen/src/mesh/` (`ply.rs`, `decimal.rs`) reads exactly this file's profile and
 refuses anything else with a typed error (`PlyError`, `DecimalError`): a header of exactly
 `format ascii 1.0`, `element vertex`, the properties `x y z confidence intensity` as `float`,
 `element face` with `property list uchar int vertex_indices`, then five numbers per vertex line,
@@ -158,7 +158,8 @@ face. `confidence` and `intensity` are checked but not used. Each coordinate
 `m * 2^32 * 10^e` rounded to the nearest integer, **ties to even**, computed in `u128`. The file
 has one coordinate in exponent form, `8.20736e-05`.
 
-**Placing it** (`crates/lumen/src/mesh.rs`, `BUNNY_PLACEMENT`): every vertex is turned half a turn
+**Placing it** (`BUNNY_PLACEMENT` in `crates/lumen/src/reference/bunny.rs`, applied by
+`crates/lumen/src/mesh/placement.rs`): every vertex is turned half a turn
 about `+Y` (`x` and `z` negated, exact; the file's bunny faces `-X`), scaled by 8 (a shift of
 three bits, exact), floored to the `2^-16` grid like the sphere, and moved by whole grid steps:
 `(-2.375, -1.392303466796875, 0.5)`. The Y offset puts the lowest vertex (file vertex 1 748,

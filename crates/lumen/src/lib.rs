@@ -1,6 +1,6 @@
 //! Lumen: a deterministic ray tracer built on Bunny's integer math.
 //!
-//! Lumen renders a built-in reference scene ([`scene::reference_scene`]) on one thread with a
+//! Lumen renders a built-in reference scene ([`reference::reference_scene`]) on one thread with a
 //! power-of-two number of samples per pixel, each one diffuse path with a shadow-casting
 //! directional light, a uniform sky and one bounce ([`render::trace_path`],
 //! `lumen-diffuse-path/1`), and writes it as a PNG file ([`png::write_png`]). Every number
@@ -12,11 +12,12 @@
 pub mod cli;
 pub mod image;
 pub mod mesh;
-pub mod ply;
 pub mod png;
+pub mod reference;
 pub mod render;
 pub mod scene;
 pub mod sha256;
+mod vertex_grid;
 
 /// The Bunny commit lumen is built against: the `rev` of every Bunny dependency in
 /// `Cargo.toml`. A test checks that `Cargo.lock` resolves to it, so moving the pin means
@@ -24,7 +25,8 @@ pub mod sha256;
 pub const BUNNY_REV: &str = "dcd6bd37613738de93f7084e7c8aa0283de964ea";
 
 pub use image::{ImageSize, Rgba8Image, SizeError};
+pub use reference::{reference_scene, REFERENCE_SCENE_ID};
 pub use render::{
     render, render_reference, Render, RenderError, RenderSettings, SettingsError, INTEGRATOR_ID,
 };
-pub use scene::{reference_scene, Scene, SceneError, SceneSpec, Tracer, REFERENCE_SCENE_ID};
+pub use scene::{Scene, SceneError, SceneSpec, Tracer};

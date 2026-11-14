@@ -21,8 +21,9 @@ use bunny_geom::FixedAabb3;
 use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
 use bunny_query::{TraceRay, TraceTriangle};
+use lumen::reference::reference_scene;
 use lumen::render::{trace_path, RenderSettings};
-use lumen::scene::{reference_scene, Hit, TraceError, Tracer, FAR};
+use lumen::scene::{Hit, TraceError, Tracer, FAR};
 use lumen::Scene;
 
 type Builder = fn(&mut [BvhNode], &mut [u32], &[FixedAabb3]) -> Option<usize>;
