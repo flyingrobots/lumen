@@ -1,18 +1,19 @@
 //! The heightfield generator, `lumen-canyon-heightfield/1`: exact values on tiny grids,
-//! determinism, the stated bounds, the carved channel, a smooth wall where the centre line
-//! bends, the shelves and the refusals.
+//! determinism, the stated bounds, the grid's edges, the carved channel, a smooth wall where the
+//! centre line bends and the shelves. The refusals and the limits are in `limits.rs`.
 //!
 //! The values written out below come from an independent Python model of the documented
 //! algorithm (its integers are unbounded, so no wrapping or overflow stands in for the
-//! arithmetic), and the first from `SplitMix64`'s published first output.
+//! arithmetic), and the first from `SplitMix64`'s published first output. The values of the
+//! 4 by 3 grids were computed for the bounds tests by a second model, written again from the
+//! module documentation, which also reproduces every earlier value here.
 
 use lumen::scenes::canyon::heightfield::{
-    generate, HeightfieldError, HeightfieldSpec, NoiseLayer, NoiseWeights, Shelf, Terraces,
-    HEIGHTFIELD_ID, MAX_VERTICES,
+    generate, HeightfieldSpec, NoiseLayer, NoiseWeights, Shelf, Terraces, HEIGHTFIELD_ID,
 };
 
 /// No noise, no meander, no walls: a flat floor. Tests change the fields they need.
-const FLAT: HeightfieldSpec<'static> = HeightfieldSpec {
+pub(crate) const FLAT: HeightfieldSpec<'static> = HeightfieldSpec {
     seed: 0,
     columns: 1,
     rows: 1,
@@ -122,13 +123,64 @@ fn a_small_canyon_matches_the_python_model() {
     assert_eq!((all.iter().min(), all.iter().max()), (Some(&-7_236), Some(&64_733)));
 }
 
+/// A 4 by 3 grid with every zone in reach: the centre at column 2, a floor 1 column either side,
+/// one tier 1 column wide rising 10 steps, a meander of 1 column every 2 rows.
+const TINY: HeightfieldSpec<'static> = HeightfieldSpec {
+    seed: 7,
+    columns: 4,
+    rows: 3,
+    centre: 2,
+    meander: NoiseLayer { spacing: 2, amplitude: 1 },
+    floor_half_width: 1,
+    terraces: Terraces { count: 1, width: 1, riser: 1, height: 10 },
+    weights: NoiseWeights { floor: 1, wall: 1, plateau: 1 },
+    ..FLAT
+};
+
+/// Oracle: the bound worked by hand from its rule, and the heights from the second model. With
+/// the plateau's weight the largest (16 quarters) and one layer of amplitude 1 000, the noise
+/// spreads 4 000 steps either way, so the bounds are `[-4000, 10 + 4000]`; the plateau vertex
+/// at column 3 of row 0, whose noise is -682, is `10 + 4 * -682 = -2718`, below every other zone.
+#[test]
+fn the_bounds_take_the_largest_weight_when_it_is_the_plateaus() {
+    let weights = NoiseWeights { floor: 0, wall: 0, plateau: 16 };
+    let layers = [NoiseLayer { spacing: 1, amplitude: 1000 }];
+    let spec = HeightfieldSpec { layers: &layers, weights, ..TINY };
+    assert_eq!(spec.bounds(), Ok([-4000, 4010]));
+    assert_eq!(heights(&spec), vec![0, 0, 0, -2718, 0, 0, 0, 118, 0, 0, 0, -2]);
+}
+
+/// Oracle: the bound worked by hand, and the heights from the second model. One layer of
+/// amplitude 1 at weight 1 spreads the noise by a quarter step: the lower bound floors -1/4 to
+/// -1 (truncation would give 0) and the upper adds nothing to the rim, `[-1, 10]`. Both ends are
+/// reached: a floor vertex of noise -1 is -1, and the plateau at column 3 of row 1 is 10.
+#[test]
+fn the_bounds_floor_a_spread_that_is_not_a_whole_step() {
+    let spec = HeightfieldSpec { layers: &[NoiseLayer { spacing: 1, amplitude: 1 }], ..TINY };
+    assert_eq!(spec.bounds(), Ok([-1, 10]));
+    assert_eq!(heights(&spec), vec![-1, 0, 0, 9, 0, 0, -1, 10, 0, -1, 0, 9]);
+}
+
+/// Oracle: the grid's edges. Column 3 of a 4-column grid has a height and column 4 has none,
+/// though its index, 4, is that of column 0 of the next row; row 3 of 3 rows has none.
+#[test]
+fn a_vertex_past_the_grids_edge_has_no_height() {
+    let field =
+        generate(&HeightfieldSpec { layers: &[NoiseLayer { spacing: 1, amplitude: 1 }], ..TINY })
+            .expect("valid");
+    assert_eq!((field.height(3, 0), field.height(0, 1)), (Some(9), Some(0)));
+    assert_eq!(field.height(4, 0), None);
+    assert_eq!(field.height(0, 3), None);
+    assert_eq!(field.height(u32::MAX, u32::MAX), None);
+}
+
 /// Oracle: the stated bound, `HeightfieldSpec::bounds`, derived from each layer's range;
 /// every vertex of each of [`SPECS`] lies inside it. Witness: both ends of
 /// the small spec's range are approached (its heights span more than half the bound).
 #[test]
 fn every_height_lies_within_the_stated_bounds() {
     for spec in SPECS {
-        let [lowest, highest] = spec.bounds();
+        let [lowest, highest] = spec.bounds().expect("accepted");
         let all = heights(&spec);
         assert!(all.iter().all(|h| (lowest..=highest).contains(h)), "{lowest}..={highest}");
         let (min, max) = (all.iter().min().copied(), all.iter().max().copied());
@@ -166,13 +218,13 @@ fn the_channel_runs_below_the_rim_along_every_row() {
         let walls = i64::from(spec.floor_half_width + spec.terraces.count * spec.terraces.width);
         let mut both_sides = 0;
         for row in 0..spec.rows {
-            let centre = spec.centre_256(row).div_euclid(256);
+            let centre = spec.centre_256(row).expect("accepted").div_euclid(256);
             let column = u32::try_from(centre).expect("the centre is on the grid");
             let floor = field.height(column, row).expect("on the grid");
             assert!(floor <= floor_top, "row {row}: floor {floor}");
             let mut sides = [false; 2];
             for column in 0..spec.columns {
-                let distance = 256 * i64::from(column) - spec.centre_256(row);
+                let distance = 256 * i64::from(column) - spec.centre_256(row).expect("accepted");
                 if distance.abs() > 256 * (walls + 1) && !shelved(spec, column, row) {
                     let height = field.height(column, row).expect("on the grid");
                     assert!(height >= plateau_bottom, "row {row} column {column}: {height}");
@@ -203,7 +255,8 @@ fn a_wall_stays_smooth_where_the_centre_line_bends() {
         ..FLAT
     };
     let field = generate(&spec).expect("valid");
-    let (first, last) = (spec.centre_256(0), (0..spec.rows).map(|r| spec.centre_256(r)));
+    let centre = |row| spec.centre_256(row).expect("accepted");
+    let (first, last) = (centre(0), (0..spec.rows).map(centre));
     assert!(last.clone().any(|c| (c - first).abs() >= 256), "the centre line does not move");
     let mut changed = 0;
     for row in 1..spec.rows {
@@ -239,47 +292,4 @@ fn a_shelf_cuts_the_rock_down_to_its_height() {
         }
     }
     assert!(cut > 20 && kept > 20, "{cut} vertices cut, {kept} kept");
-}
-
-/// Oracle: each parameter's stated range, one step outside it.
-#[test]
-fn a_spec_outside_its_ranges_is_refused_with_the_parameter() {
-    let refused = |spec: HeightfieldSpec<'_>| generate(&spec).expect_err("refused");
-    assert_eq!(
-        refused(HeightfieldSpec { columns: 0, ..FLAT }),
-        HeightfieldError::GridSize { columns: 0, rows: 1 }
-    );
-    let too_many = u32::try_from(MAX_VERTICES).expect("fits") + 1;
-    assert_eq!(
-        refused(HeightfieldSpec { columns: too_many, ..FLAT }),
-        HeightfieldError::GridSize { columns: too_many, rows: 1 }
-    );
-    let layer = NoiseLayer { spacing: 0, amplitude: 5 };
-    assert_eq!(
-        refused(HeightfieldSpec { layers: &[layer], ..FLAT }),
-        HeightfieldError::Layer { layer: Some(0), spacing: 0, amplitude: 5 }
-    );
-    assert_eq!(
-        refused(HeightfieldSpec { meander: NoiseLayer { spacing: 1, amplitude: -1 }, ..FLAT }),
-        HeightfieldError::Layer { layer: None, spacing: 1, amplitude: -1 }
-    );
-    let riser_too_wide = Terraces { count: 1, width: 2, riser: 3, height: 0 };
-    assert_eq!(
-        refused(HeightfieldSpec { terraces: riser_too_wide, ..FLAT }),
-        HeightfieldError::Terraces
-    );
-    let weights = NoiseWeights { floor: 0, wall: 17, plateau: 0 };
-    assert_eq!(
-        refused(HeightfieldSpec { weights, ..FLAT }),
-        HeightfieldError::Weight { weight: 17 }
-    );
-    let outside = Shelf { columns: [0, 1], rows: [0, 0], height: 0 };
-    assert_eq!(
-        refused(HeightfieldSpec { shelves: &[outside], ..FLAT }),
-        HeightfieldError::Shelf { shelf: 0 }
-    );
-    assert_eq!(
-        HeightfieldError::Weight { weight: 17 }.to_string(),
-        "noise weight 17 is outside 0..=16"
-    );
 }

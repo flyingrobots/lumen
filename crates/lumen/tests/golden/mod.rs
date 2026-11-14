@@ -15,11 +15,9 @@ pub(crate) const GOLDEN_BUNNY_REV: &str = "2cd551e248d55407a8f27e84dcb26d1b1d876
 ///
 /// Recorded for `lumen-reference-scene/3`, `lumen-diffuse-path/1` (Bunny's
 /// `bunny-sobol-owen/1` and `bunny-diffuse-shading/1`), `bunny-tone-srgb/1` and
-/// `bunny-rgba8-opaque/1`, at 96 by 54 pixels, 4 samples per pixel, seed 0, recorded against Bunny
-/// dcd6bd37613738de93f7084e7c8aa0283de964ea, unchanged at
-/// 3c395f9950ac63d5ecfbd2055c306954111daf9d, 3c0dab3e77c0d45de8904906a134e846dfe5ec6c,
-/// d4fe51d38fa10f8d6496bd110955314edac30bbf and 2cd551e248d55407a8f27e84dcb26d1b1d8768bd. First
-/// recorded on aarch64 Linux (the
+/// `bunny-rgba8-opaque/1`, at 96 by 54 pixels, 4 samples per pixel, seed 0, at the pinned Bunny
+/// commit, `BUNNY_REV`, whatever it is: a test checks that `Cargo.lock` resolves every Bunny
+/// crate to it, and the golden tests check this value at it. First recorded on aarch64 Linux (the
 /// rust-dev:1.96.0 container on an Apple M5 Pro). It is the one expected value for every
 /// platform and build profile: CI's `Determinism / ...` jobs check it on x86-64 and aarch64
 /// Linux, aarch64 macOS, x86-64 Windows and `wasm32-wasip1`, each in the test and the release
@@ -34,6 +32,9 @@ pub(crate) const GOLDEN_BUNNY_REV: &str = "2cd551e248d55407a8f27e84dcb26d1b1d876
 /// `sha256:3e90dbd46172423c9c9e1e60c0c6b15e35c6ceeefa0647ba53833b8d89e6bfa7`; updated when the
 /// scene identity changed to `lumen-reference-scene/3` (flyingrobots/lumen#14: the Stanford bunny
 /// added, the camera moved), every other identity, the settings and the Bunny commit unchanged.
+/// The current value was recorded against Bunny dcd6bd37613738de93f7084e7c8aa0283de964ea and held,
+/// unchanged, as the pin moved to 3c395f9950ac63d5ecfbd2055c306954111daf9d,
+/// 3c0dab3e77c0d45de8904906a134e846dfe5ec6c and d4fe51d38fa10f8d6496bd110955314edac30bbf.
 #[allow(
     dead_code,
     reason = "each test crate that includes this module uses only the hashes it needs"
@@ -47,10 +48,9 @@ pub(crate) const GOLDEN_96X54_4SPP: &str =
 ///
 /// Recorded for `lumen-fixed-point-scene/2`, `lumen-smooth-diffuse-path/1` (Bunny's
 /// `bunny-sobol-owen/1`, `bunny-diffuse-shading/1`, `bunny-smooth-shading/1` and
-/// `bunny-smooth-normal/1`), `bunny-tone-srgb/1` and `bunny-rgba8-opaque/1`, against Bunny
-/// d4fe51d38fa10f8d6496bd110955314edac30bbf, unchanged at 2cd551e248d55407a8f27e84dcb26d1b1d8768bd;
-/// first recorded on aarch64 Linux (the rust-dev:1.96.0
-/// container on an Apple M5 Pro). Like the reference scene's, it is the one expected value for
+/// `bunny-smooth-normal/1`), `bunny-tone-srgb/1` and `bunny-rgba8-opaque/1`, at the pinned Bunny
+/// commit, `BUNNY_REV` (it was d4fe51d38fa10f8d6496bd110955314edac30bbf when this value was
+/// recorded); first recorded on aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). Like the reference scene's, it is the one expected value for
 /// every platform and build profile, checked by the same `Determinism / ...` jobs. Never add a
 /// per-platform value.
 ///
@@ -107,9 +107,9 @@ pub(crate) const GOLDEN_FIXED_POINT_CONTENT: &str =
 /// Recorded for `lumen-canyon-scene/1` (terrain by `lumen-canyon-heightfield/1`),
 /// `lumen-smooth-diffuse-path/1` (Bunny's `bunny-sobol-owen/1`, `bunny-diffuse-shading/1`,
 /// `bunny-smooth-shading/1` and `bunny-smooth-normal/1`), `bunny-tone-srgb/1` and
-/// `bunny-rgba8-opaque/1`, against Bunny d4fe51d38fa10f8d6496bd110955314edac30bbf, unchanged at
-/// 2cd551e248d55407a8f27e84dcb26d1b1d8768bd; first
-/// recorded on aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). The same rules
+/// `bunny-rgba8-opaque/1`, at the pinned Bunny commit, `BUNNY_REV` (it was
+/// d4fe51d38fa10f8d6496bd110955314edac30bbf when this value was recorded); first recorded on
+/// aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). The same rules
 /// as the other scenes' hashes: one value for every platform and build profile, updated only
 /// with an identity, these settings or the Bunny commit, and a change to the scene's triangles,
 /// their order, its materials, normals, lighting or camera is a new scene version.

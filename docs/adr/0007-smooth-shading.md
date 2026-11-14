@@ -1,7 +1,8 @@
 # ADR 0007: Smooth shading: the integrator's identity and the vertex normals
 
 Status: accepted (flyingrobots/lumen#39); the `shading` field's rule amended before it landed
-(see [The `shading` field follows the scene too](#the-shading-field-follows-the-scene-too)).
+(see [The `shading` field follows the scene too](#the-shading-field-follows-the-scene-too)); the
+provenance promise's scope stated (see [Clarification, 2026-11-14](#clarification-2026-11-14-equal-provenance-and-a-tracer)).
 
 ## Context
 
@@ -107,3 +108,24 @@ versioned name), not of the render's shading.
 - **Sending flat triangles through `SmoothHit` with no normals**: it falls back to the geometric
   frame, but costs a smooth hit (about 171 ns against 67 flat, Bunny's measurement) and makes the
   flat path depend on that fallback rather than being the flat code itself.
+
+## Clarification, 2026-11-14: equal provenance and a tracer
+
+Added for flyingrobots/lumen#57. "Equal provenance still means equal bytes" (under Consequences)
+holds for a scene rendered as its own tracer; a caller-supplied `Tracer` is not part of the
+provenance ([ADR 0002, clarification of
+2026-11-14](0002-library-api-surface.md#clarification-2026-11-14-what-equal-provenance-promises)).
+
+## Clarification, 2026-11-14: a triangle with one or two normals
+
+`SceneSpec` accepts a triangle with one or two of its three normals present, and such a triangle
+counts as smooth: it is in `Scene::smooth_triangles`, it gives the scene the smooth integrator,
+and its hits go through `SmoothHit`. Because a normal is missing, Bunny's `SmoothHit::new` takes
+the geometric frame, and with that frame it shades exactly as the flat steps do: its light sample
+is `SurfaceHit::light_sample`'s, and its bounce is the same ray as `SurfaceHit::bounce_ray`'s,
+never rejected, since a cosine-weighted direction has at least `MIN_BOUNCE_COSINE_RAW` with the
+frame's normal and so lies above the exact plane. Such a triangle therefore renders the flat
+image and ray count (`a_triangle_with_a_missing_vertex_normal_renders_flat` in
+`crates/lumen/tests/smooth.rs`, on the reference scene with a wrong normal at one or two vertices
+of every triangle), and shading a triangle smooth only when all three normals are present would
+render the same image. The decision is unchanged.

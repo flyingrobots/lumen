@@ -19,11 +19,16 @@ pub const PROVENANCE_FIELDS: usize = 13;
 /// The record of what was rendered: the scene's content identity and name, the contracts that
 /// decide every pixel, the Bunny commit they come from, the image size and the settings.
 ///
-/// Two renders with equal provenance have the same RGBA8 bytes, and so the same image hash, on
-/// every machine, at every thread count and band height. It is known before the render runs, so a
-/// front end can record it without rendering. It is not the render's result: the image, its
-/// hash and the ray count are in [`Render`](crate::Render) and
-/// [`Rgba8Image::hash`](crate::Rgba8Image::hash).
+/// Two scheduled renders with equal provenance have the same RGBA8 bytes, and so the same image
+/// hash, at every thread count and band height, on every platform CI checks (x86-64 and aarch64
+/// Linux, aarch64 macOS, x86-64 Windows and `wasm32-wasip1`). A scheduled render is
+/// [`render`](crate::render), [`render_scheduled`](crate::render_scheduled), or
+/// [`render_traced`](crate::render_traced) and
+/// [`render_traced_with_run`](crate::render_traced_with_run) given the scene as its own tracer.
+/// Provenance does not describe a caller-supplied [`Tracer`](crate::Tracer), so a render through
+/// one is outside the promise. It is known before the render runs, so a front end can record it
+/// without rendering. It is not the render's result: the image, its hash and the ray count are in
+/// [`Render`](crate::Render) and [`Rgba8Image::hash`](crate::Rgba8Image::hash).
 ///
 /// The scene enters as its [`SceneContentId`] ([`Scene::content_id`], ADR 0005), taken from the
 /// [`Scene`] itself, so it cannot describe a scene other than the one passed. A name, such as
