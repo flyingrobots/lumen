@@ -70,8 +70,9 @@ struct Parsed {
 }
 
 impl Layout {
-    /// The layout of `files` (path and text, paths relative to the repository root with `/`),
-    /// whose crates are the directories `crates` (each holding a `Cargo.toml`).
+    /// The layout of `files` (path and text, paths relative to the repository root with `/`):
+    /// every `.rs` file the gates read, and nothing else. Its crates are the directories
+    /// `crates` (each holding a `Cargo.toml`).
     pub(crate) fn new(files: &[(String, String)], crates: &[String]) -> Self {
         let text: BTreeMap<&str, &str> =
             files.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
@@ -117,11 +118,11 @@ fn root_role(krate: &str, path: &str) -> Option<Role> {
         [d, _] | [d, _, "main.rs"] => *d == dir,
         _ => false,
     };
+    let binary =
+        rest.starts_with("src/bin/") && (parts.len() == 3 || parts.get(3) == Some(&"main.rs"));
     if matches!(rest, "src/lib.rs" | "src/main.rs" | "build.rs")
+        || binary
         || ["examples", "benches"].iter().any(|d| target(d))
-    {
-        Some(Role::Source)
-    } else if rest.starts_with("src/bin/") && (parts.len() == 3 || parts.get(3) == Some(&"main.rs"))
     {
         Some(Role::Source)
     } else {
@@ -182,7 +183,7 @@ impl Walk<'_> {
             let base = if decl.inline.is_empty() { parent.to_owned() } else { inline(&own) };
             let file = normalize(&format!("{base}/{target}"));
             return match file {
-                Some(f) if f.ends_with(".rs") && self.text.contains_key(f.as_str()) => Ok(Some((f, true))),
+                Some(f) if self.text.contains_key(f.as_str()) => Ok(Some((f, true))),
                 _ => Err(format!("#[path = \"{target}\"] loads a file the gates do not read: make it a .rs module under crates/ or xtask/")),
             };
         }
@@ -242,7 +243,7 @@ fn parse(text: &str) -> Parsed {
                     *line,
                     "include! reads a file the gates do not read as a module: make it a module"
                         .to_owned(),
-                ))
+                ));
             }
             Token::Ident(word) if word == "pub" => {
                 attrs = pending;
@@ -252,18 +253,18 @@ fn parse(text: &str) -> Parsed {
             }
             Token::Ident(word) if word == "mod" => {
                 if let Some(Token::Ident(name)) = next(1) {
-                    let test =
+                    let under_test =
                         pending.iter().any(|a| is_cfg_test(a)) || inline.iter().any(|(_, _, t)| *t);
-                    let path = pending.iter().find_map(|a| path_value(a));
+                    let file = pending.iter().find_map(|a| path_value(a));
                     if next(2) == Some(&Token::Punct('{')) {
-                        inline.push((path.unwrap_or_else(|| name.clone()), depth + 1, test));
+                        inline.push((file.unwrap_or_else(|| name.clone()), depth + 1, under_test));
                     } else if next(2) == Some(&Token::Punct(';')) {
                         let dirs = inline.iter().map(|(d, _, _)| d.clone()).collect();
                         parsed.decls.push(Decl {
                             line: *line,
                             name: name.clone(),
-                            test,
-                            path,
+                            test: under_test,
+                            path: file,
                             inline: dirs,
                         });
                     }

@@ -32,6 +32,9 @@ use layout::Layout;
 /// The directories read, relative to the repository root.
 const ROOTS: [&str; 2] = ["crates", "xtask"];
 
+/// Each file's path, relative to the repository root with `/` separators, and its text.
+type Files = Vec<(String, String)>;
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -116,7 +119,7 @@ fn nondeterminism_gate(files: &[(String, String)], layout: &Layout) -> bool {
 
 /// Every `.rs` file under [`ROOTS`] with its text, and every directory there that holds a
 /// `Cargo.toml` (a crate), relative to `root` with `/` separators, sorted.
-fn sources(root: &Path) -> io::Result<(Vec<(String, String)>, Vec<String>)> {
+fn sources(root: &Path) -> io::Result<(Files, Vec<String>)> {
     let (mut paths, mut manifests) = (Vec::new(), Vec::new());
     for dir in ROOTS {
         collect(&root.join(dir), &mut paths, &mut manifests)?;

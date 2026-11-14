@@ -135,7 +135,8 @@ fn a_library_module_outside_src_is_core_and_source() {
 
 #[test]
 fn a_form_that_loads_a_file_the_gates_do_not_read_fails() {
-    let inc = ("crates/lumen/src/x.inc", "");
+    // The gates read only `.rs` files, so `x.inc` is not among the files even when it exists.
+    let x = ("crates/lumen/src/x.rs", "");
     for (source, line) in [
         ("pub fn f() -> u32 { include!(\"x.inc\") }", 1),
         ("pub fn f() -> u32 {\n    core::include!(\"x.inc\")\n}", 2),
@@ -144,10 +145,9 @@ fn a_form_that_loads_a_file_the_gates_do_not_read_fails() {
         ("#[path = \"missing.rs\"]\nmod hidden;", 2),
         ("#[cfg_attr(all(), path = \"x.rs\")]\nmod hidden;", 1),
     ] {
-        assert_eq!(failures(&[(LIB, source), inc]), [(LIB.to_owned(), line)], "{source:?}");
+        assert_eq!(failures(&[(LIB, source), x]), [(LIB.to_owned(), line)], "{source:?}");
     }
     let back_in = "#[path = \"../../../../crates/lumen/src/x.rs\"]\nmod hidden;";
-    let x = ("crates/lumen/src/x.rs", "");
     assert_eq!(
         failures(&[(LIB, back_in), x]),
         [(LIB.to_owned(), 2)],
