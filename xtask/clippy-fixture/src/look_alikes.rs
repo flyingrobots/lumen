@@ -66,3 +66,10 @@ mod core_renamed_by_extern_crate {
         c::time::Duration::from_secs(1)
     }
 }
+
+// accepted
+mod ffi_integer_aliases {
+    pub fn f(x: core::ffi::c_int) -> core::ffi::c_uint {
+        x.unsigned_abs()
+    }
+}

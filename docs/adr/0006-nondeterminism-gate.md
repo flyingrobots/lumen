@@ -209,9 +209,14 @@ relative to the macro's file, not the caller's. Outside the core, each for a rea
 - Not covered by the compiler layer: code under a `cfg` that is not built on the CI host, and
   macro bodies that are never invoked. The token scan reads them by name.
 - Not seen by either layer: a float whose type is only inferred, reached through an API that
-  neither list names and whose name has no `f32`, `f64` or `_float` (a generic `T: From<u32>`
-  instantiated by inference, or a float API a new dependency brings). A syntactic gate cannot see
-  an inferred type. The defences: no float type or literal can be written in the core, every
+  neither list names and whose name has no `f16`, `f32`, `f64`, `f128` or `_float` (a generic
+  `T: From<u32>` instantiated by inference, or a float API a new dependency brings). A syntactic
+  gate cannot see an inferred type. The defences: no float type can be written in the core under
+  the names the scan knows, which are every name std gives one (`f16`, `f32`, `f64`, `f128`,
+  also as `core::primitive::f64`, and the aliases `c_double` and `c_float` of `core::ffi`,
+  `std::ffi` and `std::os::raw`; amendment of 2026-11-14), and an alias the core or a
+  deterministic crate defines is a finding where it is defined, since its definition names one
+  of them; no float literal can be written; every
   float-taking and float-returning API the library can name today is listed, `float_arithmetic`
   catches arithmetic on such a float, and a new dependency fails `Gates / cargo-deny` until
   `deny.toml` is changed on purpose, which is when its float API must be listed.
@@ -287,3 +292,25 @@ looked at it), and a build script that sets a `cfg` the library branches on.
   `unexpected_cfgs` error, which `warnings = "deny"` makes fatal.
 - Failures print as `[workspace]` errors of `Gates / nondeterminism`, the root check as
   `[float-type]`.
+
+## Amendment, 2026-11-14: float types under other names
+
+flyingrobots/lumen#156 found `<core::ffi::c_double as From<u32>>::from(x).sin()` in the core,
+passing both layers: `c_double` is `f64` under another name, so no float token is written,
+`disallowed-types` banned the path `f64` and not the alias, and `float_arithmetic` sees no
+arithmetic operator. `c_float` was caught only because its name ends `_float`.
+
+- **Clippy** bans `core::ffi::c_double` and `core::ffi::c_float`, and `std::os::raw::c_double`
+  and `std::os::raw::c_float` (`float-type`). `std::ffi` re-exports the `core::ffi` aliases, so
+  those two entries catch it and any rename; `std::os::raw` defines aliases of its own, which
+  the `core::ffi` entries do not catch (checked with Clippy 0.1.96), hence four entries. The
+  fixture's forms spell all three.
+- **The scan** names `c_double` and `c_float` wherever they are spelled, and treats `f16` and
+  `f128` as float types like `f32` and `f64`, also as words of a longer name (`to_f16`). Both are
+  unstable on 1.96.0, so Clippy cannot ban them, and naming them keeps a toolchain that
+  stabilises them from bringing one in unseen. `core::primitive::f64` already ended in the token
+  `f64`.
+- An alias of a float type written in the core or in any deterministic crate
+  (`type Real = core::ffi::c_double;`) is a finding at its definition, which names a float type;
+  a use of the alias elsewhere is not a second finding, and need not be. std has no other float
+  alias, and Bunny's float bridge is listed by name.
