@@ -122,7 +122,11 @@ impl fmt::Display for ParseSceneError {
 impl std::error::Error for ParseSceneError {}
 
 /// Why a [`BuiltinScene`] could not be built.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Non-exhaustive: a later version may add a scene, and with it a reason, so a `match` outside
+/// this crate needs a wildcard arm. Not `Copy`, since [`SceneError`] is not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BuiltinSceneError {
     /// The reference scene was refused.
     Reference(SceneError),

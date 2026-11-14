@@ -159,9 +159,7 @@ fn brute_closest(scene: &Scene, ray: &TraceRay) -> Option<Hit> {
 
 /// Whether a reference primitive belongs to the bunny.
 fn is_bunny(primitive: PrimitiveIndex) -> bool {
-    primitive
-        .to_usize()
-        .is_some_and(|p| (BUNNY_FIRST_PRIMITIVE..REFERENCE_TRIANGLE_COUNT).contains(&p))
+    (BUNNY_FIRST_PRIMITIVE..REFERENCE_TRIANGLE_COUNT).contains(&primitive.to_usize())
 }
 
 /// Whether any triangle is hit within `0..=t_max`.

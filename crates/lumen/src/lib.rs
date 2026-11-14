@@ -71,7 +71,7 @@ pub const BUNNY_REV: &str = "d4fe51d38fa10f8d6496bd110955314edac30bbf";
 
 pub use builtin_scene::{BuiltinScene, BuiltinSceneError, ParseSceneError};
 pub use image::{ImageSize, LengthError, Rgba8Image, SizeError, MAX_DIMENSION, MAX_PIXELS};
-pub use png::{png_len, write_png};
+pub use png::{png_len, write_png, PngError};
 pub use provenance::{ProvenanceValue, RenderProvenance, PROVENANCE_FIELDS};
 pub use reference::{reference_scene, REFERENCE_SCENE_ID};
 pub use render::{
@@ -80,8 +80,8 @@ pub use render::{
     BOUNCE_PAIR, CAMERA_PAIR, INTEGRATOR_ID, MAX_BOUNCES, TONE_CURVE,
 };
 pub use scene::{
-    CameraPlacement, Hit, Lighting, PrimitiveIndex, Scene, SceneContentId, SceneError, SceneSpec,
-    TraceError, Tracer, FAR, SCENE_CONTENT_ENCODING,
+    CameraPlacement, Hit, Lighting, PrimitiveIndex, Scene, SceneBuffer, SceneContentId, SceneError,
+    SceneSpec, TraceError, Tracer, FAR, SCENE_CONTENT_ENCODING,
 };
 pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
 pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};

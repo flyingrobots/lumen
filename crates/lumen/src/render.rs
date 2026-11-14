@@ -118,8 +118,8 @@ impl RenderSettings {
 
     /// Bunny's sampler for pixel `(x, y)` under this seed.
     #[must_use]
-    pub const fn sampler(self, x: u32, y: u32) -> PixelSampler {
-        PixelSampler::new(self.seed as u64, x, y)
+    pub fn sampler(self, x: u32, y: u32) -> PixelSampler {
+        PixelSampler::new(u64::from(self.seed), x, y)
     }
 }
 
@@ -136,7 +136,8 @@ impl RayCount {
     /// Every ray traced.
     #[must_use]
     pub const fn total(self) -> u64 {
-        self.closest + self.shadow
+        // At most 2^39 rays in all (see `Add`), so the sum never saturates.
+        self.closest.saturating_add(self.shadow)
     }
 }
 
@@ -211,7 +212,8 @@ pub fn trace_path<T: Tracer + ?Sized>(
     let h1 = Shade::at(scene, &ray0, &hit1)?;
     let d1 = direct(scene, tracer, &h1.hit, &mut count)?;
     let ray1 = h1.bounce(sampler.point(sample, BOUNCE_PAIR))?;
-    count.closest += 1;
+    // A path traces at most two closest-hit and two shadow rays, so no count saturates.
+    count.closest = count.closest.saturating_add(1);
     let b = match tracer.closest(&ray1)? {
         None => lighting.sky.radiance(),
         Some(hit2) => {
@@ -293,7 +295,7 @@ fn direct<T: Tracer + ?Sized>(
     let light = hit.light_sample(&sun);
     let visible = match light.shadow_ray() {
         Some(shadow) => {
-            rays.shadow += 1;
+            rays.shadow = rays.shadow.saturating_add(1);
             !tracer.occluded(shadow, SHADOW_T_MAX)?
         }
         None => false,

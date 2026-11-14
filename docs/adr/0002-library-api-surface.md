@@ -39,9 +39,11 @@ second front end would have had to rebuild that list by hand.
   `scene-content` (the last added by flyingrobots/lumen#38). New fields go at the end. Equal
   provenance means equal RGBA8 bytes.
 - **The errors can grow.** `SceneError` and `TraceError` (flyingrobots/lumen#20), `RenderError`,
-  `PathError`, `WorkerError`, `Reservation` and `SizeError` (flyingrobots/lumen#21) are
-  `#[non_exhaustive]`: a new reason to refuse a scene, a ray, a path, a size or a render is not
-  a breaking change, and a `match` on any of them outside the crate needs a wildcard arm. Code outside the crate may still construct their
+  `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneBuffer`, `PlaceError`,
+  `FixedPointError`, `BuiltinSceneError` and `PngError` (flyingrobots/lumen#21) are
+  `#[non_exhaustive]`: a
+  new reason to refuse a scene, a mesh, a ray, a path, a size or a render is not a breaking
+  change, and a `match` on any of them outside the crate needs a wildcard arm. Code outside the crate may still construct their
   variants, as a custom `Tracer` does.
 - **An error says what failed and keeps its cause** (flyingrobots/lumen#21). Each variant carries
   the values it saw (an index and a count, Bunny's reason, a pixel's coordinates), not a bare
@@ -66,7 +68,9 @@ second front end would have had to rebuild that list by hand.
   (`SceneError::Camera`), so at render time only the image size can be refused.
 - **A triangle is named by its `PrimitiveIndex`** (flyingrobots/lumen#20): a `u32`, the
   triangle's zero-based position in `SceneSpec::triangles` in the order the caller gave them,
-  the width of Bunny's primitive-index buffer. `Hit`, `Scene::surface`, `Scene::albedo` and the
+  the width of Bunny's primitive-index buffer. `PrimitiveIndex::to_usize` cannot fail
+  (flyingrobots/lumen#21): lumen builds only where `usize` has at least 32 bits, which a
+  compile-time assertion checks. `Hit`, `Scene::surface`, `Scene::albedo` and the
   primitive-naming `SceneError` variants use it instead of a bare `u32` or `usize`. The order is
   part of the scene's identity, not an incidental layout: of triangles hit at the same distance
   the lowest index wins, so the same triangles in another order can render other pixels. A

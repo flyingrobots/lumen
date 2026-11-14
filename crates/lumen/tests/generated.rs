@@ -3,10 +3,16 @@
 //! Generated evidence for "for all" claims about the renderer (testing standard rule 5), with a
 //! fixed seed, one derived seed per case, and both in every failure message.
 
-use lumen::{pixel_radiance, reference_scene, trace_path, BuiltinScene, RenderSettings};
+use lumen::reference::{reference_camera, reference_lighting, reference_materials};
+use lumen::{
+    pixel_radiance, reference_scene, trace_path, BuiltinScene, RenderSettings, Scene, SceneSpec,
+    Tracer, FAR,
+};
 
+use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
 use bunny_optics::PixelAccumulator;
+use bunny_query::TraceRay;
 
 mod generator;
 use generator::Gen;
@@ -136,4 +142,52 @@ fn no_path_of_the_built_in_scenes_fails() {
         }
         assert!(shaded > 0, "{scene_kind:?}: no path reached the shading steps");
     }
+}
+
+/// A coordinate in `[-8, 8)` units, on a grid of `2^-8`.
+fn coordinate(rng: &mut Gen) -> FixedQ32_32 {
+    let steps = i64::try_from(rng.below(1 << 12)).expect("small") - (1 << 11);
+    FixedQ32_32::from_raw(steps << 24)
+}
+
+fn random_point(rng: &mut Gen) -> FixedVec3 {
+    FixedVec3::new(coordinate(rng), coordinate(rng), coordinate(rng))
+}
+
+/// For all scenes of 1 to 64 random triangles in a 16-unit cube and all rays from random points
+/// in it: `Scene::new` accepts the scene, so its tree names only its own triangles
+/// (`SceneError::TreeNamesUnknownPrimitive` never occurs), and the scene's tracer answers every
+/// query, so `TraceError::UnknownPrimitive` and `HitNotRepeatable` never occur either. Oracle:
+/// the absence of any error, with a witness count of rays that hit. 40 scenes, 32 rays each.
+#[test]
+fn random_scenes_build_and_answer_every_query() {
+    let materials = reference_materials().expect("the reference materials");
+    let (lighting, camera) = (reference_lighting().expect("lighting"), reference_camera());
+    let mut hits = 0_u32;
+    for case in 0..40_u64 {
+        let case_seed = Gen::case_seed(SEED ^ 0x7EEE, case);
+        let mut rng = Gen::new(case_seed);
+        let count = usize::try_from(rng.below(64) + 1).expect("a count");
+        let triangles: Vec<[FixedVec3; 3]> = (0..count)
+            .map(|_| [random_point(&mut rng), random_point(&mut rng), random_point(&mut rng)])
+            .collect();
+        let material_of = vec![0_u32; count];
+        let spec = SceneSpec {
+            triangles: &triangles,
+            material_of: &material_of,
+            materials: &materials,
+            lighting,
+            camera,
+        };
+        let at = format!("case {case}, case seed {case_seed:#x}, {count} triangles");
+        let scene = Scene::new(&spec).unwrap_or_else(|error| panic!("{error}: {at}"));
+        for _ in 0..32 {
+            let (origin, toward) = (random_point(&mut rng), random_point(&mut rng));
+            let Some(ray) = TraceRay::new(origin, toward) else { continue };
+            let found = scene.closest(&ray).unwrap_or_else(|error| panic!("{error}: {at}"));
+            scene.occluded(&ray, FAR).unwrap_or_else(|error| panic!("{error}: {at}"));
+            hits += u32::from(found.is_some());
+        }
+    }
+    assert!(hits > 0, "no ray hit a triangle");
 }

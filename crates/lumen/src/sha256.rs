@@ -110,7 +110,9 @@ impl Sha256 {
     /// Adds `bytes` to the message.
     pub(crate) fn update(&mut self, mut bytes: &[u8]) {
         // The message length is taken modulo 2^64 bits, as the standard specifies.
-        self.length_bits = self.length_bits.wrapping_add((bytes.len() as u64).wrapping_mul(8));
+        // `usize` is at most 64 bits wide on every Rust target, so the fallback is never taken.
+        let length = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        self.length_bits = self.length_bits.wrapping_add(length.wrapping_mul(8));
         while !bytes.is_empty() {
             let take = (64 - self.filled).min(bytes.len());
             let (head, rest) = bytes.split_at(take);

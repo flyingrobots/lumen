@@ -35,6 +35,42 @@ All notable changes to lumen are recorded here. The format follows
   fails with `TraversalError::InvalidNodeIndex`; a tree built by `Scene::new` has none). Part
   of flyingrobots/lumen#39. Lumen calls none of the new APIs yet; both golden image hashes and
   both golden content digests are unchanged.
+- The `lumen` command's `main` maps one typed `Failure` to its message and exit code (part of
+  flyingrobots/lumen#21), in place of `Result<(), String>` and errors turned into strings as
+  they arose. Each variant keeps the library's or the system's error as its `source()`. Every
+  message and exit code is byte-identical to before.
+
+- `write_png` returns `Result<(), PngError>` instead of an `io::Result` built partly from
+  strings (part of flyingrobots/lumen#21). `PngError::Write` keeps the writer's `io::Error` as
+  its `source()` and its text; the encoder's own length checks are `ChunkTooLong { length }`
+  and `BlockTooLong { length }`, which no image reaches. `PngError` is `#[non_exhaustive]`. The
+  command prints the same messages.
+
+- A refused scene says what was wrong (part of flyingrobots/lumen#21). `SceneError` variants
+  carry their values: `TooManyTriangles { triangles, limit }`, `OutsideTraceDomain { primitive,
+  vertex, point }` (lumen repeats Bunny's documented check of `TraceTriangle::new` after a
+  refusal to name the vertex; `TriangleRefused` if every coordinate is inside),
+  `MaterialCount { triangles, material_indices }`, `UnknownMaterial { primitive, material,
+  materials }` and `OutOfMemory { buffer, items, error }` with a new `SceneBuffer` and the
+  allocator's `TryReserveError`. `BvhBuild` is split into `NodeCountOverflow { triangles }`
+  (formerly reported as `TooManyTriangles`), `BvhBuild { triangles, nodes }` and
+  `BvhCompact(CompactError)`, which keeps Bunny's conversion error. `SceneError`,
+  `FixedPointError`, `BuiltinSceneError` and `PlaceError` implement `source()`;
+  `FixedPointError`'s text no longer prints a `Debug` form. `SceneError`, `FixedPointError` and
+  `BuiltinSceneError` are no longer `Copy`; they, `SceneBuffer` and `PlaceError` are
+  `#[non_exhaustive]`. No pixel, hash, digest, line of the command's output or message it
+  prints changes.
+
+- A ray query says what failed (part of flyingrobots/lumen#21). `TraceError::InconsistentHit`
+  is split into `UnknownPrimitive { primitive, triangles }` and `HitNotRepeatable { primitive,
+  distance }`, and `Display` names Bunny's `TraversalError` kinds in words instead of printing
+  their `Debug` form (`traversal failed: its stack of 64 nodes overflowed`, not `traversal
+  failed: StackOverflow`). `Scene::new` checks once that the tree names only its own
+  triangles (`SceneError::TreeNamesUnknownPrimitive`, which no input reaches), so the traversal
+  callbacks' missing-triangle case, formerly a silent miss, cannot occur for a built scene.
+  `PrimitiveIndex::to_usize` returns `usize`: the conversion is lossless on every target lumen
+  builds for. No pixel, hash, digest or line of the command's output changes.
+
 - Memory, spawn, size and buffer-length failures say what failed (part of
   flyingrobots/lumen#21). `RenderError::OutOfMemory` and `WorkerError::OutOfMemory` carry a
   `Reservation` (the image's bytes or the worker handles) and the allocator's
