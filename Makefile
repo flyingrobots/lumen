@@ -78,14 +78,15 @@ demo: reference fixed-point canyon
 # Every debug view of every built-in scene, in one container run: out/views/<scene>-<view>.png.
 views: check-devrun
 	@mkdir -p $(OUT)/views
-	@tmp=$$(mktemp -d) && \
-	$(RUN) --export views --out $$tmp -- bash -c 'mkdir -p /scratch/out/views && \
+	@tmp=$$(mktemp -d) || exit 1; \
+	if $(RUN) --export views --out $$tmp -- bash -c 'mkdir -p /scratch/out/views && \
 	  cargo build --locked --release -q -p lumen && \
 	  for s in reference fixed-point canyon; do for v in $(VIEWS); do \
 	    /target/release/lumen render --scene $$s --view $$v --width $(WIDTH) --height $(HEIGHT) \
 	      --out /scratch/out/views/$$s-$$v.png > /dev/null || exit 1; done; done' && \
-	mv $$tmp/views/*.png $(OUT)/views/ && rm -rf $$tmp; \
-	echo "wrote $(OUT)/views"
+	  mv $$tmp/views/*.png $(OUT)/views/; then \
+	  rm -rf $$tmp; echo "wrote $(OUT)/views"; \
+	else status=$$?; rm -rf $$tmp; echo "make views failed (exit $$status)" >&2; exit $$status; fi
 
 test: check-devrun
 	$(RUN) -- bash -c 'cargo test --locked --workspace && cargo test --locked --workspace --release'
