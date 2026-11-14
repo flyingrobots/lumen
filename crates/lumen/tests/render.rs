@@ -79,6 +79,7 @@ fn build(
         triangles,
         material_of: &material_of,
         materials: albedos,
+        normals: &[],
         lighting,
         camera,
     })
@@ -336,6 +337,7 @@ fn an_occluded_triangle_has_no_direct_light() {
         triangles: &[ground(), occluder],
         material_of: &[0, 0],
         materials: &[albedo([frac(1, 2); 3])],
+        normals: &[],
         lighting: scene.lighting(),
         camera: looking_down(point(0, 1, 0), frac(1, 2)),
     })

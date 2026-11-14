@@ -8,6 +8,12 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Vertex normals in the scene model (part of flyingrobots/lumen#39): `SceneSpec::normals`, empty
+  or three `Option<FixedUnitVec3>` per triangle (the input of Bunny's `SmoothHit::new`), checked
+  by `Scene::new` (the new `SceneError::NormalCount`, with both counts) and kept
+  (`Scene::vertex_normals`). Every `SceneSpec` literal gains `normals`; the built-in scenes pass
+  none. No integrator reads them yet, and no pixel changes.
+
 - Nondeterminism bans, the compiler layer (part of flyingrobots/lumen#17; ADR 0006): `clippy.toml`
   bans the clock, sleeping, the core count, thread spawning, hash maps and sets, arguments, the
   environment, files, processes, sockets and the float types, each reason starting with an Echo
@@ -27,6 +33,13 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The scene content encoding is `lumen-scene-content/2` (part of flyingrobots/lumen#39; ADR
+  0005): after the camera, a `u64` count of vertex-normal entries (zero, or one per triangle),
+  then per vertex a tag and, if present, the normal's three raw components. Every content digest
+  changes, the built-in scenes' included (reference
+  `sha256:c1e109477c09328421d76efefd923bd625d842fe3afb93dfadb21ae905bd0f66`, Fixed Point
+  `sha256:7094ced63e59606707dc9c172c1801426183ff0b1ceda06a1c65a6a11062a086`); no image hash
+  does. The Python-computed golden is recomputed for version 2 and joined by one with normals.
 - The `lumen` command's `main` maps one typed `Failure` to its message and exit code (part of
   flyingrobots/lumen#21), in place of `Result<(), String>` and errors turned into strings as
   they arose. Each variant keeps the library's or the system's error as its `source()`. Every

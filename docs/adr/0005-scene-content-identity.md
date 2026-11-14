@@ -1,6 +1,7 @@
 # ADR 0005: A scene's content identity
 
-Status: accepted (flyingrobots/lumen#38)
+Status: accepted (flyingrobots/lumen#38); version 2 of the encoding, which adds vertex normals,
+accepted for flyingrobots/lumen#39 (see [Version 2](#version-2-vertex-normals)).
 
 ## Context
 
@@ -35,7 +36,10 @@ Included, each as supplied in the `SceneSpec`:
 - **The sky's radiance.**
 - **The camera placement**: position, look direction, up hint and the tangent of half the
   vertical field of view.
-- **The encoding's name and version**, `lumen-scene-content/1`, first, for domain separation.
+- **The vertex normals** (`SceneSpec::normals`), present or absent as a whole: none, or one entry
+  per triangle, in primitive order, each of its three vertices' normals present or absent. They
+  decide the shading normal of a smooth-shaded triangle, so they decide pixels.
+- **The encoding's name and version**, `lumen-scene-content/2`, first, for domain separation.
 
 Not included:
 
@@ -59,7 +63,7 @@ The identity is of the input, not of the picture. A triangle no ray can reach ch
 identity and no pixel; a test shows exactly that. The promise runs one way: equal identities (with
 equal other provenance) mean equal bytes; different identities do not mean different bytes.
 
-### The canonical encoding, `lumen-scene-content/1`
+### The canonical encoding, `lumen-scene-content/2`
 
 Every integer is little-endian. Every count and length is a `u64`, so the encoding is the same
 on 32-bit WebAssembly as on 64-bit hosts; no `usize` appears. A coordinate, albedo channel,
@@ -69,7 +73,7 @@ vector is its `x`, `y`, `z` in that order; a colour its red, green, blue.
 | Order | Field | Bytes |
 |---|---|---|
 | 1 | length of the version string, `21` | `u64` |
-| 2 | the version string `lumen-scene-content/1` | 21, ASCII |
+| 2 | the version string `lumen-scene-content/2` | 21, ASCII |
 | 3 | triangle count `T` | `u64` |
 | 4 | per triangle, in primitive order: `v0`, `v1`, `v2` (nine `i64`), then its material index (`u32`) | `76 * T` |
 | 5 | material count `M` | `u64` |
@@ -78,6 +82,8 @@ vector is its `x`, `y`, `z` in that order; a colour its red, green, blue.
 | 8 | only if the tag is `1`: the direction toward the light (three `i64`), then the irradiance (three `i64`) | 48 or 0 |
 | 9 | the sky's radiance (three `i64`) | 24 |
 | 10 | the camera: position, look, up (nine `i64`), then the tangent of half the field of view (`i64`) | 80 |
+| 11 | vertex-normal count `N`: `0` for a scene without vertex normals, else `T` | `u64` |
+| 12 | per entry, in primitive order, per vertex `v0`, `v1`, `v2`: a tag, `0` absent or `1` present, then only if `1` the unit normal (three `i64`, the raw components of the `FixedUnitVec3`) | 3 to 75 per entry |
 
 The digest is SHA-256 (FIPS 180-4) of those bytes, nothing before or after. It is written
 `sha256:` followed by 64 lowercase hexadecimal digits, as the image hash is.
@@ -87,7 +93,9 @@ count or tag that precedes it, so two different scenes cannot produce the same s
 particular the counts prevent the concatenation collision of a naive encoding: without them,
 seven all-zero triangles with one all-zero albedo and one all-zero triangle with twenty all-zero
 albedos are both 556 zero bytes (`7 * 76 + 24 = 76 + 20 * 24`). A test builds exactly those two
-scenes.
+scenes. The normals follow the same rule: their count says how many entries follow, and each
+vertex's tag says whether 24 bytes follow it, so a scene with no normals (count `0`), one whose
+every vertex has none (count `T`, `3T` zero tags) and one with normals are three different streams.
 
 The bytes are fed to the hasher as they are produced, one triangle record at a time; no buffer
 of the whole encoding exists. A second implementation can reproduce the digest from this table;
@@ -109,7 +117,7 @@ every digest.
   seconds, so the cost is paid once per scene where it is noticed least. Computing it lazily
   would need interior mutability or a copy of the raw input kept beside the prepared one, to
   save milliseconds only for a caller that never asks.
-- **`SCENE_CONTENT_ENCODING`** is the version string, `lumen-scene-content/1`.
+- **`SCENE_CONTENT_ENCODING`** is the version string, `lumen-scene-content/2`.
 - **`RenderProvenance` is built from `&Scene`**: `RenderProvenance::new(&scene, size, settings)`
   for a scene without a name, `RenderProvenance::named(name, &scene, size, settings)` for one
   with a name. It takes the content identity from the scene, so it cannot be built from a bare
@@ -123,9 +131,30 @@ every digest.
   unreleased, so this changes the API without a deprecation step.
 - **The built-in scenes' digests are golden values** (`tests/golden/mod.rs`), beside their image
   hashes, checked by the library test on every Determinism leg (WebAssembly included) and by
-  the command's test. A third golden, for a one-triangle scene, was computed outside lumen
-  (Python's `struct` and `hashlib`, from the table above), so the encoder and lumen's SHA-256 are
-  not checked only against themselves.
+  the command's test. Two more goldens, for a one-triangle scene without and with vertex
+  normals, were computed outside lumen (Python's `struct` and `hashlib`, from the table above),
+  so the encoder and lumen's SHA-256 are not checked only against themselves.
+
+### Version 2: vertex normals
+
+`SceneSpec` gained `normals` (flyingrobots/lumen#39), which decides pixels, so the identity must
+cover it. Two encodings were weighed:
+
+- **An optional section whose absence encodes as before**, so that every scene without normals
+  keeps its version 1 digest. It is unambiguous: a version 1 stream decodes to its end, so a
+  stream with a section after the camera cannot equal one without it. It was rejected because it
+  breaks this ADR's own rule, that a change to the encoding is a new version, and a
+  reimplementation of version 1 would give a scene with normals the digest of the same scene
+  without them.
+- **A new version, `lumen-scene-content/2`, with the normals always encoded** (fields 11 and 12,
+  a count of zero for a scene without them). This was chosen: the rule stands, the table is the
+  whole contract with no condition outside it, and every field is decoded the same way as the
+  others (a count, then tagged entries, like the light).
+
+The cost is that every digest changes, including those of scenes without normals: both built-in
+scenes' golden digests and the Python-computed golden (now two, without and with normals) were
+recomputed. Image hashes do not change. Digests recorded under version 1 (in
+`docs/measurements/`) stay what they were; they are version 1 digests.
 
 ## Consequences
 

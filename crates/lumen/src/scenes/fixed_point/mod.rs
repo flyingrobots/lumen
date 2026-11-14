@@ -68,6 +68,7 @@ pub fn fixed_point_scene() -> Result<Scene, FixedPointError> {
         triangles: &content.triangles,
         material_of: &content.material_of,
         materials: &materials,
+        normals: &[],
         lighting: fixed_point_lighting()?,
         camera: fixed_point_camera(),
     })

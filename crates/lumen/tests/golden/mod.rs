@@ -52,16 +52,22 @@ pub(crate) const GOLDEN_96X54_4SPP: &str =
 pub(crate) const GOLDEN_FIXED_POINT_96X54_4SPP: &str =
     "sha256:0688b03cf16be6d0336f17eacbdaf83fe03d62e9c66b8370e8208bb9c879634e";
 
-/// The golden content identity (`Scene::content_id`, `lumen-scene-content/1`, ADR 0005) of the
+/// The golden content identity (`Scene::content_id`, `lumen-scene-content/2`, ADR 0005) of the
 /// reference scene, `lumen-reference-scene/3`. Like the image hashes it is one value for every
 /// platform. It changes only with the scene's content (a new scene version) or the encoding (a
 /// new `lumen-scene-content` version); any other change is a bug.
+///
+/// Record of updates: under `lumen-scene-content/1` it was
+/// `sha256:84541be146ebac194b43dfc91f9205356818d517c71f52d947a3ca417178d356` (the reference
+/// scene) and `sha256:10b0e9bd01ec5aa20c899d2efc8c45cca5d84a404c7c64ca48b44a38999b48a5` (Fixed
+/// Point, below); both changed when the encoding became version 2, which adds the vertex
+/// normals (flyingrobots/lumen#39). Neither scene's content or image hash changed.
 #[allow(
     dead_code,
     reason = "each test crate that includes this module uses only the constants it needs"
 )]
 pub(crate) const GOLDEN_REFERENCE_CONTENT: &str =
-    "sha256:84541be146ebac194b43dfc91f9205356818d517c71f52d947a3ca417178d356";
+    "sha256:c1e109477c09328421d76efefd923bd625d842fe3afb93dfadb21ae905bd0f66";
 
 /// The golden content identity of the Fixed Point scene, `lumen-fixed-point-scene/1`, on the
 /// same terms as [`GOLDEN_REFERENCE_CONTENT`].
@@ -70,4 +76,4 @@ pub(crate) const GOLDEN_REFERENCE_CONTENT: &str =
     reason = "each test crate that includes this module uses only the constants it needs"
 )]
 pub(crate) const GOLDEN_FIXED_POINT_CONTENT: &str =
-    "sha256:10b0e9bd01ec5aa20c899d2efc8c45cca5d84a404c7c64ca48b44a38999b48a5";
+    "sha256:7094ced63e59606707dc9c172c1801426183ff0b1ceda06a1c65a6a11062a086";

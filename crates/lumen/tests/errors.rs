@@ -45,6 +45,7 @@ fn ground_scene() -> Scene {
         triangles: &triangles,
         material_of: &[0, 0],
         materials: &reference_materials().expect("the reference materials")[..1],
+        normals: &[],
         lighting: reference_lighting().expect("the reference lighting"),
         camera,
     })
@@ -342,6 +343,7 @@ fn a_scene_refusal_chains_from_the_built_in_scene_to_bunny() {
         triangles: &triangles,
         material_of: &[0],
         materials: &reference_materials().expect("the reference materials")[..1],
+        normals: &[],
         lighting: reference_lighting().expect("the reference lighting"),
         camera,
     })
