@@ -93,6 +93,20 @@ impl CanyonContent {
             .unwrap_or(&[])
     }
 
+    /// Appends a part shaded flat, each triangle with its own material.
+    pub(crate) fn push_materials(
+        &mut self,
+        kind: PartKind,
+        triangles: &[[FixedVec3; 3]],
+        materials: &[u32],
+    ) {
+        self.push(kind, triangles);
+        let first = self.material_of.len().saturating_sub(triangles.len());
+        for (slot, &material) in self.material_of.iter_mut().skip(first).zip(materials) {
+            *slot = material;
+        }
+    }
+
     /// Appends a part shaded flat.
     pub(crate) fn push(&mut self, kind: PartKind, triangles: &[[FixedVec3; 3]]) {
         self.push_smooth(kind, triangles, &[]);

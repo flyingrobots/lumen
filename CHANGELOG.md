@@ -34,6 +34,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- The canyon scene, `lumen-canyon-scene/1` (part of flyingrobots/lumen#40), assembled:
+  `lumen::canyon_scene()` and `scenes::canyon::canyon_content()` build 566 005 triangles (the
+  terrain, the three craft, the full-resolution Stanford bunny smooth on its ledge, the planet)
+  with 16 materials, a low sun behind the camera, a near-black sky and a camera low in the
+  canyon (`scenes::canyon::look`); `CanyonError` for the refusals no input reaches. Tests: the
+  parts in order, the trace domain, no degenerate triangle, only the bunny smooth, and the bunny
+  resting on its ledge to the grid step. `--scene canyon` and its golden hash follow.
+
 - The canyon scene's craft and planet (part of flyingrobots/lumen#40): three craft of lumen's own
   design (`scenes::canyon::craft`: the skiff, the tug and the kite, 170 triangles of convex
   solids posed by rational rotations, each a painted hull and dark engines) and a banded planet

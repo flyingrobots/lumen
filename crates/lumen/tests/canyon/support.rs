@@ -1,11 +1,14 @@
-//! Shared readings of the canyon in grid steps, and the terrain's heights, generated once for
-//! the whole test binary.
+//! Shared readings of the canyon in grid steps, and the terrain, content and scene, each built
+//! once for the whole test binary (the scene reads the 3 MB bunny and holds half a million
+//! triangles).
 
 use std::sync::OnceLock;
 
 use bunny_linalg::FixedVec3;
 use lumen::scenes::canyon::heightfield::Heightfield;
 use lumen::scenes::canyon::terrain::{canyon_heights, grid_point, CELL, COLUMNS, ORIGIN, ROWS};
+use lumen::scenes::canyon::{canyon_content, CanyonContent};
+use lumen::{canyon_scene, Scene};
 
 /// One grid step in raw Q32.32 units.
 pub(crate) const STEP_RAW: i64 = 1 << 16;
@@ -51,4 +54,16 @@ pub(crate) fn terrain_under(low: Steps, high: Steps) -> Vec<Steps> {
         }
     }
     out
+}
+
+/// The scene's content; it builds.
+pub(crate) fn content() -> &'static CanyonContent {
+    static CONTENT: OnceLock<CanyonContent> = OnceLock::new();
+    CONTENT.get_or_init(|| canyon_content().expect("the canyon content builds"))
+}
+
+/// The scene; it builds.
+pub(crate) fn scene() -> &'static Scene {
+    static SCENE: OnceLock<Scene> = OnceLock::new();
+    SCENE.get_or_init(|| canyon_scene().expect("the canyon scene builds"))
 }
