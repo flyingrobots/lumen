@@ -11,9 +11,8 @@ use std::time::Instant;
 
 use cli::{Command, USAGE};
 use lumen::{
-    png_len, reference_scene, render_scheduled, write_png, ImageSize, RenderError,
-    RenderProvenance, RenderSettings, Rgba8Image, Schedule, BUNNY_REV, MAX_THREADS,
-    REFERENCE_SCENE_ID,
+    png_len, render_scheduled, write_png, BuiltinScene, ImageSize, RenderError, RenderProvenance,
+    RenderSettings, Rgba8Image, Schedule, BUNNY_REV, MAX_THREADS,
 };
 use report::{Report, Times};
 
@@ -27,7 +26,7 @@ fn main() -> ExitCode {
             println!("lumen {} (bunny {BUNNY_REV})", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        Ok(Command::Render { width, height, settings, threads, tile, out }) => {
+        Ok(Command::Render { scene, width, height, settings, threads, tile, out }) => {
             let threads = threads.unwrap_or_else(available_threads);
             let schedule = match Schedule::new(threads, tile) {
                 Ok(schedule) => schedule,
@@ -36,7 +35,7 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 }
             };
-            match run(width, height, settings, schedule, out.as_deref()) {
+            match run(scene, width, height, settings, schedule, out.as_deref()) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(message) => {
                     eprintln!("lumen: {message}");
@@ -60,12 +59,13 @@ fn available_threads() -> u32 {
         .clamp(1, MAX_THREADS)
 }
 
-/// Builds the reference scene, renders it, hashes the image, writes the PNG if asked, and prints
+/// Builds the chosen scene, renders it, hashes the image, writes the PNG if asked, and prints
 /// what was made and how long each part took.
 ///
 /// The times are wall-clock readings of a monotonic clock (`Instant`), taken around each part;
 /// they are printed and never reach the image.
 fn run(
+    scene: BuiltinScene,
     width: u32,
     height: u32,
     settings: RenderSettings,
@@ -75,10 +75,10 @@ fn run(
     let started = Instant::now();
     let size =
         ImageSize::new(width, height).map_err(|error| RenderError::Size(error).to_string())?;
-    let scene = reference_scene().map_err(|error| RenderError::Scene(error).to_string())?;
+    let built_scene = scene.build().map_err(|error| error.to_string())?;
     let built = started.elapsed();
-    let render =
-        render_scheduled(&scene, size, settings, schedule).map_err(|error| error.to_string())?;
+    let render = render_scheduled(&built_scene, size, settings, schedule)
+        .map_err(|error| error.to_string())?;
     let rendered = started.elapsed();
     let image = &render.image;
     let hash = image.hash();
@@ -98,7 +98,7 @@ fn run(
         total,
     };
     let report = Report {
-        provenance: RenderProvenance::new(REFERENCE_SCENE_ID, size, settings),
+        provenance: RenderProvenance::new(scene.id(), size, settings),
         schedule,
         workers: schedule.workers(size),
         rays: render.rays,

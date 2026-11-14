@@ -1,4 +1,6 @@
-//! Renders the Fixed Point scene (`lumen-fixed-point-scene/1`) to a PNG file, without the CLI.
+//! Renders the Fixed Point scene (`lumen-fixed-point-scene/1`) to a PNG file through the library
+//! alone, without the CLI (`lumen render --scene fixed-point` is the command's way). The scene and
+//! its identity come from `BuiltinScene::FixedPoint`, the same registry entry the command uses.
 //!
 //! ```sh
 //! cargo run --release --locked -p lumen --example fixed_point -- OUT [WIDTH HEIGHT [SAMPLES [SEED [THREADS]]]]
@@ -15,8 +17,8 @@ use std::io::{BufWriter, Write};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use lumen::{fixed_point_scene, render_scheduled, write_png, ImageSize, RenderSettings, Schedule};
-use lumen::{DEFAULT_TILE, FIXED_POINT_SCENE_ID};
+use lumen::DEFAULT_TILE;
+use lumen::{render_scheduled, write_png, BuiltinScene, ImageSize, RenderSettings, Schedule};
 
 const USAGE: &str = "usage: fixed_point OUT [WIDTH HEIGHT [SAMPLES [SEED [THREADS]]]]";
 
@@ -46,7 +48,7 @@ fn run() -> Result<(), String> {
     let size = ImageSize::new(args.size.0, args.size.1).map_err(|e| e.to_string())?;
     let settings = RenderSettings::new(args.samples, args.seed).map_err(|e| e.to_string())?;
     let started = Instant::now();
-    let scene = fixed_point_scene().map_err(|e| e.to_string())?;
+    let scene = BuiltinScene::FixedPoint.build().map_err(|e| e.to_string())?;
     let schedule = Schedule::new(args.threads, DEFAULT_TILE).map_err(|e| e.to_string())?;
     let rendered = render_scheduled(&scene, size, settings, schedule).map_err(|e| e.to_string())?;
     let seconds = started.elapsed().as_secs_f64();
@@ -54,7 +56,7 @@ fn run() -> Result<(), String> {
     let mut writer = BufWriter::new(file);
     write_png(&mut writer, &rendered.image).map_err(|e| e.to_string())?;
     writer.flush().map_err(|e| e.to_string())?;
-    println!("scene {FIXED_POINT_SCENE_ID}");
+    println!("scene {}", BuiltinScene::FixedPoint.id());
     println!("triangles {}", scene.triangles().len());
     println!("size {}x{}", size.width(), size.height());
     println!("samples {}", settings.samples_per_pixel());
