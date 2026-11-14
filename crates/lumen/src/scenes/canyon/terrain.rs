@@ -93,7 +93,12 @@ pub fn canyon_heights() -> Result<Heightfield, HeightfieldError> {
 /// shows level bands, not a saw-tooth of alternating triangles.
 #[must_use]
 pub fn stratum_material(corners: [i64; 4]) -> u32 {
-    let band = corners.iter().sum::<i64>().div_euclid(4 * STRATUM).rem_euclid(4);
+    // Four heights sum inside `i128` whatever they are, and where they sum inside `i64` (every
+    // height of an accepted heightfield) the band is the same as there.
+    let sum: i128 = corners.into_iter().map(i128::from).sum();
+    let band = sum.div_euclid(4 * i128::from(STRATUM)).rem_euclid(4);
+    // `rem_euclid(4)` is in `0..=3` and `STRATA` has four entries, so the lookup always finds
+    // one; the fallback is never taken (a test covers each band and both extremes).
     usize::try_from(band).ok().and_then(|band| STRATA.get(band)).copied().unwrap_or(0)
 }
 
