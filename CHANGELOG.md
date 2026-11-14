@@ -28,7 +28,11 @@ All notable changes to lumen are recorded here. The format follows
   only warns, so `Path::exits` had passed with exit 0), on a ban that never fires, on a seeded
   form not reported under its rule, on a reported look-alike, on a second `clippy.toml` or a
   `.clippy.toml` anywhere (a crate's own replaces the root one) or `CLIPPY_CONF_DIR`, and on a
-  toolchain that moves a ban lint to another lint group. All 53 bans fire on main.
+  toolchain that moves a ban lint to another lint group. All 53 bans fire on main. The
+  compiler layer's seeded forms, until now a recorded run in ADR 0006, are the fixture's
+  `forms.rs`: ADR 0006's 42 that Clippy catches and six from flyingrobots/lumen#115 (an
+  `extern crate` alias, three raw identifiers, `r#f64`, float arithmetic on an inferred float);
+  each must be reported under its rule.
 
 - Smooth shading (part of flyingrobots/lumen#39; ADR 0007): `trace_path` shades a hit on a
   triangle with at least one vertex normal with Bunny's `bunny-smooth-shading/1`

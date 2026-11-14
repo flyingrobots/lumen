@@ -43,7 +43,10 @@ never sees as a path: three float literals with no float type written (`1.5 as u
 partial copy of name resolution that Clippy already does exactly, and it would still need the
 token-level float and text rules that close Clippy's gaps. The token scan alone misses
 `Path::exists` and the three thread spawns, which it does not look for; the scan's forms are its
-unit tests (`xtask/src/nondeterminism/tests.rs`).
+unit tests (`xtask/src/nondeterminism/tests.rs`). Clippy's 42, with the six forms of
+flyingrobots/lumen#115 it catches, are the seeded forms of `xtask/clippy-fixture/src/forms.rs`,
+and its 10 look-alikes are in `look_alikes.rs`; `cargo run -p xtask -- clippy-bans` re-runs
+them in CI (see Consequences), so this row is a check, not a recorded run.
 
 ## Decision
 
