@@ -356,7 +356,8 @@ seed; at most one bounce) follow Geordi's ray-traced scene profile, so that load
 (flyingrobots/lumen#6) maps onto them. `SceneSpec` also carries optional vertex normals
 (`normals`: empty, or three `Option<FixedUnitVec3>` per triangle, the input of Bunny's
 `SmoothHit::new`), which `Scene::new` checks for count (`SceneError::NormalCount`) and keeps
-(`Scene::vertex_normals`); they enter the content identity. No integrator reads them yet.
+(`Scene::vertex_normals`); they enter the content identity, and a scene with any of them is
+shaded smooth ([below](#smooth-shading-lumen-smooth-diffuse-path1)).
 
 ## The Fixed Point scene
 
@@ -498,6 +499,37 @@ the per-pixel function holds no shared mutable state, so rendering bands on thre
 change of schedule only.
 
 Geordi's integrator identity is meant to pin this same composition.
+
+### Smooth shading: `lumen-smooth-diffuse-path/1`
+
+A scene whose `SceneSpec::normals` gives at least one triangle a vertex normal is rendered by
+`lumen-smooth-diffuse-path/1` (`SMOOTH_INTEGRATOR_ID`), and its provenance says so: the
+`integrator` field is that name (`Integrator::for_scene`) and the `shading` field is
+`bunny-diffuse-shading/1+bunny-smooth-shading/1+bunny-smooth-normal/1` (`SMOOTH_SHADING_IDS`, the
+Bunny contracts its paths use, in the order they apply). Any other scene, the two built-in ones
+included, keeps `lumen-diffuse-path/1`, `bunny-diffuse-shading/1` and its bytes. The smooth integrator is the same composition with one
+change, made per triangle: at a hit on a triangle with a vertex normal, steps 3 to 5 use Bunny's
+`bunny-smooth-shading/1`:
+
+- `h = SmoothHit::new(surface_hit, hit.barycentric_numerators(), normals)`, which interpolates
+  the three vertex normals at the exact hit point (`smooth_normal`, `bunny-smooth-normal/1`) and
+  turns the shading frame to the arrival side, or keeps the geometric frame when a normal is
+  missing or the interpolation is along the surface;
+- `D = h.light_sample(sun)`: the same shadow ray and side test, with the cosine taken against
+  the shading normal;
+- `h.bounce(sampler.point(i, 1))`: a ray around the shading normal, or, when that direction is
+  at or below the geometric surface, no ray at all and `B = 0`. Bunny does this on purpose (a
+  ray along or under the surface would hit its own neighbourhood), and it darkens grazing,
+  strongly tilted shading normals slightly; the ray count then has one closest-hit query fewer.
+
+A triangle without a vertex normal in the same scene is shaded flat, exactly as by
+`lumen-diffuse-path/1`. Lumen adds no arithmetic. [ADR 0007](docs/adr/0007-smooth-shading.md)
+records why the integrator's name follows the scene and why the normals are stored per triangle.
+`tests/smooth.rs` checks the choice of integrator, that the reference scene given its own face
+normals at every vertex renders its flat bytes, a hand-derived value (a pyramid whose normals all
+point at a sun straight above reflects `0.5 * FRAC_1_PI` rounded to even, raw 683 565 276, at every hit), the rejected bounce
+(no ray, zero radiance), and every sample of a scene that mixes a smooth octahedron and a flat
+floor against Bunny's documented steps composed in the test over brute-force queries.
 
 ### Traversal
 
