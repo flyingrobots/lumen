@@ -8,20 +8,19 @@ use core::fmt;
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use crate::render::{RenderSettings, SettingsError};
-use crate::schedule::{Schedule, ScheduleError, TileSize, DEFAULT_TILE};
+use lumen::{RenderSettings, Schedule, ScheduleError, SettingsError, TileSize, DEFAULT_TILE};
 
 /// The default image width: small enough to render in a few seconds in a debug build.
-pub const DEFAULT_WIDTH: u32 = 320;
+pub(crate) const DEFAULT_WIDTH: u32 = 320;
 /// The default image height.
-pub const DEFAULT_HEIGHT: u32 = 180;
+pub(crate) const DEFAULT_HEIGHT: u32 = 180;
 /// The default samples per pixel.
-pub const DEFAULT_SAMPLES: u32 = 4;
+pub(crate) const DEFAULT_SAMPLES: u32 = 4;
 /// The default seed.
-pub const DEFAULT_SEED: u32 = 0;
+pub(crate) const DEFAULT_SEED: u32 = 0;
 
 /// The usage text.
-pub const USAGE: &str = "\
+pub(crate) const USAGE: &str = "\
 usage: lumen render [--out FILE] [--width W] [--height H] [--samples N] [--seed S]
                     [--threads T] [--tile N | --tile WxH]
        lumen --help | --version
@@ -38,7 +37,7 @@ Threads are 1..=256; a tile is N by N pixels, or W by H, each at least 1.";
 
 /// A parsed command line.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Command {
+pub(crate) enum Command {
     /// Print the usage text.
     Help,
     /// Print the version.
@@ -63,7 +62,7 @@ pub enum Command {
 
 /// Why a command line was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum UsageError {
+pub(crate) enum UsageError {
     /// No command was given.
     MissingCommand,
     /// The command is not known (shown lossily if it is not Unicode).
@@ -132,7 +131,7 @@ const OPTIONS: [&str; 7] =
 ///
 /// A [`UsageError`] for anything but `render` with known options, `--help`/`-h`/`help`, or
 /// `--version`/`-V`.
-pub fn parse<I, S>(args: I) -> Result<Command, UsageError>
+pub(crate) fn parse<I, S>(args: I) -> Result<Command, UsageError>
 where
     I: IntoIterator<Item = S>,
     S: Into<OsString>,

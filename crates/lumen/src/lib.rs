@@ -11,7 +11,6 @@
 //! ([`image::Rgba8Image::hash`]), on every run and every machine, at every thread count and tile
 //! size.
 
-pub mod cli;
 pub mod image;
 pub mod mesh;
 pub mod png;

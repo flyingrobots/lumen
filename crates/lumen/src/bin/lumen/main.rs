@@ -1,12 +1,14 @@
 //! The `lumen` command: argument parsing and I/O around the library.
 
+mod cli;
+
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use lumen::cli::{self, Command, USAGE};
+use cli::{Command, USAGE};
 use lumen::png::write_png;
 use lumen::render::{MAX_BOUNCES, TONE_CURVE};
 use lumen::{
