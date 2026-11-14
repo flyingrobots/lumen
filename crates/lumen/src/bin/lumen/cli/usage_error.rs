@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use lumen::{ScheduleError, SettingsError};
+use lumen::{ParseSceneError, ScheduleError, SettingsError};
 
 /// Why a command line was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,6 +35,8 @@ pub(crate) enum UsageError {
     Samples(SettingsError),
     /// The thread count or the tile size was refused.
     Schedule(ScheduleError),
+    /// The scene name is not a built-in scene.
+    Scene(ParseSceneError),
     /// A tile is not `N` or `WxH` with decimal `u32`s.
     InvalidTile(String),
 }
@@ -56,6 +58,7 @@ impl fmt::Display for UsageError {
             Self::Samples(error) => write!(f, "--samples: {error}"),
             Self::Schedule(error @ ScheduleError::EmptyTile) => write!(f, "--tile: {error}"),
             Self::Schedule(error) => write!(f, "--threads: {error}"),
+            Self::Scene(error) => write!(f, "--scene: {error}"),
             Self::InvalidTile(value) => {
                 write!(f, "--tile needs N or WxH with whole numbers, not {value:?}")
             }

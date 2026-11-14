@@ -10,6 +10,7 @@ use lumen::scenes::fixed_point::PartKind;
 use lumen::{fixed_point_scene, render, ImageSize, RenderSettings, Scene, BUNNY_REV};
 use lumen::{trace_path, Hit, TraceError, Tracer, FAR, TONE_CURVE};
 
+use crate::golden::GOLDEN_FIXED_POINT_96X54_4SPP;
 use crate::support::content;
 
 fn settings(samples: u32, seed: u32) -> RenderSettings {
@@ -123,23 +124,6 @@ fn every_traced_ray_of_the_scene_equals_a_test_of_every_triangle() {
     assert!(bunny > 50 && dice > 25 && layout > 10, "{bunny} bunny, {dice} dice, {layout} layout");
 }
 
-/// The golden image hash of the Fixed Point scene: 96 by 54 pixels, 4 samples per pixel,
-/// seed 0, rendered by `lumen::render` from `fixed_point_scene()`.
-///
-/// Recorded for `lumen-fixed-point-scene/1`, `lumen-diffuse-path/1` (Bunny's
-/// `bunny-sobol-owen/1` and `bunny-diffuse-shading/1`), `bunny-tone-srgb/1` and
-/// `bunny-rgba8-opaque/1`, built against Bunny dcd6bd37613738de93f7084e7c8aa0283de964ea; first
-/// recorded on aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). CI checks it
-/// on x86-64 Linux in the test and release profiles; it must be identical everywhere.
-///
-/// Updating it is legitimate only when one of those identities, the settings above or the
-/// pinned Bunny commit changes, and the new hash is the intended effect of that change. A
-/// change to the scene's triangles, their order, its materials, lighting or camera is a new
-/// scene version (`lumen-fixed-point-scene/2`) and updates this hash with it. Any other
-/// change of this hash is a determinism bug: do not update it to make the test pass.
-const GOLDEN_96X54_4SPP: &str =
-    "sha256:0688b03cf16be6d0336f17eacbdaf83fe03d62e9c66b8370e8208bb9c879634e";
-
 #[test]
 fn the_fixed_point_image_has_its_golden_hash() {
     assert_eq!(lumen::FIXED_POINT_SCENE_ID, "lumen-fixed-point-scene/1");
@@ -152,5 +136,5 @@ fn the_fixed_point_image_has_its_golden_hash() {
     let scene = fixed_point_scene().expect("builds");
     let size = ImageSize::new(96, 54).expect("size");
     let rendered = render(&scene, size, settings(4, 0)).expect("renders");
-    assert_eq!(rendered.image.hash(), GOLDEN_96X54_4SPP);
+    assert_eq!(rendered.image.hash(), GOLDEN_FIXED_POINT_96X54_4SPP);
 }

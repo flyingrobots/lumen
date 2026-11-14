@@ -7,7 +7,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use lumen::{RenderSettings, Schedule, TileSize, DEFAULT_TILE};
+use lumen::{BuiltinScene, RenderSettings, Schedule, TileSize, DEFAULT_TILE};
 
 mod usage_error;
 
@@ -24,16 +24,17 @@ pub(crate) const DEFAULT_SEED: u32 = 0;
 
 /// The usage text.
 pub(crate) const USAGE: &str = "\
-usage: lumen render [--out FILE] [--width W] [--height H] [--samples N] [--seed S]
+usage: lumen render [--scene NAME] [--out FILE] [--width W] [--height H] [--samples N] [--seed S]
                     [--threads T] [--tile N | --tile WxH]
        lumen --help | --version
 
-Renders lumen's built-in reference scene in tiles on T threads, with N samples per pixel of a
+Renders one of lumen's built-in scenes (reference, the default, or fixed-point) in tiles on T threads, with N samples per pixel of a
 diffuse path (a shadow-casting sun, a uniform sky and one bounce), writes it to a PNG file if
 --out is given, and prints the image hash (SHA-256 of the raw RGBA8 bytes) and the timing.
 The image is the same for every thread count and tile size.
-Defaults: --width 320 --height 180 --samples 4 --seed 0 --tile 32, and as many threads as
-the system reports available.
+Scenes (--scene NAME): reference, fixed-point (the Stanford bunny in sunglasses at a craps table).
+Defaults: --scene reference --width 320 --height 180 --samples 4 --seed 0 --tile 32, and as many
+threads as the system reports available.
 Width and height are 1..=32768 each, with at most 134217728 (2^27) pixels in all.
 Samples per pixel are a power of two from 1 to 1024; the seed is 0..=4294967295.
 Threads are 1..=256; a tile is N by N pixels, or W by H, each at least 1.";
@@ -45,8 +46,10 @@ pub(crate) enum Command {
     Help,
     /// Print the version.
     Version,
-    /// Render the reference scene.
+    /// Render a built-in scene.
     Render {
+        /// The scene to render.
+        scene: BuiltinScene,
         /// Image width in pixels (unchecked here; the renderer checks the size).
         width: u32,
         /// Image height in pixels.
@@ -64,8 +67,8 @@ pub(crate) enum Command {
 }
 
 /// The options `render` takes.
-const OPTIONS: [&str; 7] =
-    ["--width", "--height", "--samples", "--seed", "--threads", "--tile", "--out"];
+const OPTIONS: [&str; 8] =
+    ["--width", "--height", "--samples", "--seed", "--threads", "--tile", "--out", "--scene"];
 
 /// Parses the arguments after the program name.
 ///
@@ -96,6 +99,7 @@ where
     let mut numbers: [Option<u32>; 5] = [None; 5];
     let mut tile: Option<TileSize> = None;
     let mut out: Option<PathBuf> = None;
+    let mut scene: Option<BuiltinScene> = None;
     while let Some(option) = args.next() {
         let name = match option.to_str() {
             Some("--help" | "-h") => return Ok(Command::Help),
@@ -109,6 +113,7 @@ where
         let repeated = match OPTIONS.iter().position(|known| *known == name) {
             Some(slot @ 0..=4) => numbers[slot].replace(number(name, &value)?).is_some(),
             Some(5) => tile.replace(tile_size(&value)?).is_some(),
+            Some(7) => scene.replace(scene_name(&value)?).is_some(),
             _ => out.replace(PathBuf::from(value)).is_some(),
         };
         if repeated {
@@ -124,6 +129,7 @@ where
         Schedule::new(threads, tile).map_err(UsageError::Schedule)?;
     }
     Ok(Command::Render {
+        scene: scene.unwrap_or(BuiltinScene::Reference),
         width: width.unwrap_or(DEFAULT_WIDTH),
         height: height.unwrap_or(DEFAULT_HEIGHT),
         settings,
@@ -131,6 +137,12 @@ where
         tile,
         out,
     })
+}
+
+/// A scene name: one of `BuiltinScene::ALL`, exactly as `BuiltinScene::name` gives it.
+fn scene_name(value: &OsStr) -> Result<BuiltinScene, UsageError> {
+    // A name that is not Unicode matches no scene, so the lossy text is only for the message.
+    value.to_string_lossy().parse().map_err(UsageError::Scene)
 }
 
 /// A tile size: `N` (N by N) or `WxH`, each a decimal `u32` of at least 1.
