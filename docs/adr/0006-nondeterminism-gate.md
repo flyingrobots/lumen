@@ -83,7 +83,9 @@ them in CI (see Consequences), so this row is a check, not a recorded run.
   `std::net` and `std::thread`, unstable items and constants kept), and
   `cargo run -p xtask -- clippy-bans` fails when an item decided banned has no `clippy.toml`
   entry under its rule, when an item has no decision (a new `std::thread` or `std::time`
-  item), and when the list's toolchain is not the one `rust-toolchain.toml` pins. When the
+  item), when a row is not `<kind> std::<path> stable|unstable` or the list has no
+  `toolchain` line, and when the list's toolchain is not the one `rust-toolchain.toml` pins
+  (`std-items` stops on a documentation page it cannot read rather than guess). When the
   toolchain moves, regenerate the list from that toolchain's documentation and commit it:
 
   ```sh
