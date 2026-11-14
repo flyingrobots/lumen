@@ -27,7 +27,7 @@ use std::time::Instant;
 use cli::{Command, Detail, USAGE};
 use failure::Failure;
 use lumen::{
-    render_scheduled, render_traced_with_run, BuiltinScene, ImageSize, RenderProvenance,
+    render_scheduled, render_traced_with_traversal, BuiltinScene, ImageSize, RenderProvenance,
     RenderSettings, Schedule, BUNNY_REV, MAX_THREADS,
 };
 use publish::Disk;
@@ -98,18 +98,18 @@ fn run(
             .map_err(|error| Failure::Output { path: path.to_path_buf(), error })?;
     }
     let built = started.elapsed();
-    // Only `--stats` asks the workers to count: without it the render pays nothing for run
-    // statistics (ADR 0008).
-    let (render, run) = match detail {
+    // Only `--stats` asks the workers and the traversals to count: without it the render pays
+    // nothing for run or traversal statistics (ADR 0008).
+    let (render, counted) = match detail {
         Detail::Report => (
             render_scheduled(&built_scene, size, settings, schedule).map_err(Failure::Render)?,
             None,
         ),
         Detail::Statistics => {
-            let (render, run) =
-                render_traced_with_run(&built_scene, &built_scene, size, settings, schedule)
+            let (render, run, traversal) =
+                render_traced_with_traversal(&built_scene, &built_scene, size, settings, schedule)
                     .map_err(Failure::Render)?;
-            (render, Some(run))
+            (render, Some((run, traversal)))
         }
     };
     let rendered = started.elapsed();
@@ -153,7 +153,13 @@ fn run(
     if let Some(scene_statistics) = statistics {
         stats::write_scene_block(&mut stdout, &built_scene, &scene_statistics)
             .and_then(|()| stats::write_rays(&mut stdout, &render.statistics, settings))
-            .and_then(|()| run.as_ref().map_or(Ok(()), |run| stats::write_run(&mut stdout, run)))
+            .and_then(|()| {
+                counted.as_ref().map_or(Ok(()), |(run, traversal)| {
+                    let outcomes = &render.statistics.outcomes;
+                    stats::write_traversal(&mut stdout, traversal, outcomes)
+                        .and_then(|()| stats::write_run(&mut stdout, run))
+                })
+            })
             .map_err(Failure::Stdout)?;
     }
     Ok(())

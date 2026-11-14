@@ -315,12 +315,13 @@ The library computes the counts (`Scene::statistics()`, a `SceneStatistics`) and
 formats them; nothing is counted while a ray is traced, and nothing in the scene changes.
 `Scene::statistics` is described under [Library and command](#library-and-command);
 [ADR 0008](docs/adr/0008-statistics.md) records what is counted and why it cannot change a pixel.
-Traversal statistics (nodes visited and triangles tested per ray) are decided there and wait for
-flyingrobots/bunny#335.
+`render --stats` also reports what Bunny's traversals did for each kind of ray (box tests,
+primitive tests and the rest of Bunny's `TraversalCounts`), through Bunny's counted searches;
+without `--stats` the render calls the uncounted ones.
 
 `lumen render ... --stats` prints the report unchanged, then the same scene block (every line of
 `lumen stats` after its first three, which the report already gives), then what the rays found,
-then how the work was spread over the workers.
+then what the traversals did, then how the work was spread over the workers.
 Without `--stats` the output is the report alone, byte for byte as before statistics existed.
 The command first checks the ray statistics against the size and settings (one record per pixel,
 `--samples` samples per pixel, exactly one camera ray per sample, at most four rays per sample)
@@ -370,6 +371,20 @@ same at every thread count and band height:
 | `rays.pixels`, `rays.samples-per-pixel`, `rays.samples` | pixels rendered, samples asked for per pixel, and samples traced in all |
 | `rays.per-pixel-min`, `rays.per-pixel-max` | the fewest and most rays any one pixel traced |
 | `rays.per-pixel-mean` | `rays.total / rays.pixels`, with two places, rounded to nearest, ties up |
+
+The traversal lines (`render --stats`), after the ray lines: for each kind of ray, `KIND` being
+`camera`, `bounce` (closest-hit searches) and `shadow` (any-hit searches, which stop at the first
+hit), the counts of Bunny's `TraversalCounts` for every ray of that kind, from
+`render_traced_with_traversal`. Each is a sum or a maximum over rays, so it is the same at every
+thread count and band height; the image, the report and the ray lines are the same as without
+counting.
+
+| Key | Value |
+| --- | --- |
+| `traversal.KIND.COUNTER` | the counter summed over the kind's rays. `COUNTER` is `box-tests` (boxes tested: the root's, and both children's at every interior visit), `box-entries` (tests the ray passed, so the child was pushed), `popped-skipped` (entries popped and dropped because a nearer hit had been found since they were pushed), `interior-visits`, `leaf-visits` or `primitive-tests` (triangle tests) |
+| `traversal.KIND.COUNTER-mean` | the sum over `rays.KIND`, with two places, rounded to nearest, ties up |
+| `traversal.KIND.COUNTER-max` | the most any one ray of the kind took (each counter's may be a different ray's) |
+| `traversal.KIND.peak-stack` | the most entries any one search's stack held at once (Bunny's limit is 64) |
 
 The run lines (`render --stats`), last. The band height, the band count and the worker count follow
 from the size and `--threads` and `--band-rows`; which worker took which band depends on timing, so
@@ -1122,6 +1137,9 @@ records flyingrobots/lumen#40: 566 005 triangles, a tree of 575 687 nodes, the i
 render of 14.5 seconds with 18 CPUs, and 40.7 ns per ray against 15.0 for the reference scene
 and 18.0 for Fixed Point at the same settings in the same session.
 Each states its commit and conditions and applies to that commit only.
+[Traversal work per ray in the three built-in scenes, 2026-11-14](docs/measurements/2026-11-14-traversal-cost.md)
+gives, from `render --stats`, the mean box tests and primitive tests per camera, bounce and
+shadow ray beside each scene's triangles and tree depth.
 
 ### Readings
 
