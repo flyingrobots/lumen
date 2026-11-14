@@ -136,7 +136,7 @@ seed; at most one bounce) follow Geordi's ray-traced scene profile, so that load
 (`normals`: empty, or three `Option<FixedUnitVec3>` per triangle, the input of Bunny's
 `SmoothHit::new`), which `Scene::new` checks for count (`SceneError::NormalCount`) and keeps
 (`Scene::vertex_normals`); they enter the content identity, and a scene with any of them is
-shaded smooth ([smooth shading](../../README.md#smooth-shading-lumen-smooth-diffuse-path1)).
+shaded smooth ([smooth shading](../explanation.md#smooth-shading-lumen-smooth-diffuse-path1)).
 
 ## The Fixed Point scene
 
@@ -216,7 +216,7 @@ decimated, flat bunny and the black-rimmed puck) is retired: its 1280 by 720 has
 
 Only the bunny is smooth: the dice, the table, the puck and the glasses keep their facets, so
 the scene is rendered by `lumen-smooth-diffuse-path/1` (see
-[smooth shading](../../README.md#smooth-shading-lumen-smooth-diffuse-path1)).
+[smooth shading](../explanation.md#smooth-shading-lumen-smooth-diffuse-path1)).
 
 Materials (linear albedo in 256ths): felt `(14, 62, 32)`, leather `(45, 22, 14)`, layout paint
 `(225, 225, 215)`, die red `(170, 12, 16)`, pips and the puck's face and side
@@ -267,7 +267,7 @@ off the face and chest.
   `sha256:da6cb05db0d366a2088f19e6eefed2ab017dd0d27c6c5e364a85121054d6093e`, under the same
   rules as the reference scene's: it changes only with an identity, the settings or the Bunny
   commit. Any change to the scene's triangles, their order, materials, lighting or camera is a
-  new scene version and a new hash. Every platform in [Determinism](../../README.md#determinism) checks it.
+  new scene version and a new hash. Every platform in [Determinism](../explanation.md#determinism) checks it.
 
 ## The canyon scene
 
