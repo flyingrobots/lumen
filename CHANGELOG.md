@@ -34,6 +34,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- A measurement record of the canyon scene (`docs/measurements/2026-11-14-canyon.md`, closes
+  flyingrobots/lumen#40): `lumen stats` (566 005 triangles, 575 687 tree nodes, leaf depth mean
+  19.13 and at most 27, 258 640 800 bytes), three exclusive 4K renders at 16 samples and 18 CPUs
+  (render 14.242 to 14.691 seconds, image hash `sha256:cbd02...9eab`, checked outside lumen with
+  Python's `zlib` and `hashlib`), the ray counts, the same hash at 1 and 18 threads at 960 by
+  540, and 40.7 ns per ray against 15.0 for the reference scene and 18.0 for Fixed Point in the
+  same session. `make canyon` and `make 4k-canyon`, and the canyon in `make demo`.
+
 - `lumen render --scene canyon` and `lumen stats --scene canyon` (part of flyingrobots/lumen#40):
   `BuiltinScene::Canyon` registers `lumen-canyon-scene/1`, with a golden image hash (96 by 54, 4
   samples, `sha256:019fcddd...66c5`) and content identity (`sha256:a809761e...f88d`) in

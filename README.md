@@ -37,9 +37,11 @@ light, textures, smooth normals and more than one bounce are not supported.
 The short way, from a checkout:
 
 ```sh
-make demo            # both built-in scenes at 1280x720, opened when done
+make demo            # the three built-in scenes at 1280x720, opened when done
 make fixed-point     # just the Fixed Point scene
+make canyon          # just the canyon scene
 make 4k              # the reference scene at 3840x2160, 16 samples
+make 4k-canyon       # the canyon scene at 3840x2160, 16 samples
 make help            # every target and the variables you can override
 ```
 
@@ -758,6 +760,10 @@ as the other scenes', the same at every thread count and band height (`tests/thr
 canyon's test binary is not in the WebAssembly job's list; that job checks the canyon's content
 identity and a small render through `tests/library.rs`.
 
+At 3840 by 2160 and 16 samples it renders in about 14.5 seconds with 18 CPUs, 2.7 times the
+reference scene's time per ray: [the measurement record](docs/measurements/2026-11-14-canyon.md)
+has the runs, the tree and what was not measured.
+
 **Known limits of version 1.** The tug reads as a box from behind; the near right wall is a dark
 mass in shadow, lit only by the bounce; the far right wall shows vertical fluting where the low
 sun rakes a steep heightfield; and the ledge's back is a cut cliff, flat where the shelf sliced
@@ -1069,6 +1075,11 @@ builds](docs/measurements/2026-11-13-4k-row-bands.md) repeats it for flyingrobot
 records the showpiece for flyingrobots/lumen#39: the same image hash,
 `sha256:d276602407edb72109ebfbc8cec9121230171cf156144f139fb2bc3ca1c13bef`, on every run, a mean
 of 21.2 seconds with 18 CPUs, about 10 % more than version 1 (19.2 seconds).
+[The canyon scene at 4K and 16 samples per pixel, 2026-11-14](docs/measurements/2026-11-14-canyon.md)
+records flyingrobots/lumen#40: 566 005 triangles, a tree of 575 687 nodes, the image hash
+`sha256:cbd020b9949ae7310b11fb21650e9336ca2e6ec99e0f2bcd950ff61d39469eab` on every run, a mean
+render of 14.5 seconds with 18 CPUs, and 40.7 ns per ray against 15.0 for the reference scene
+and 18.0 for Fixed Point at the same settings in the same session.
 Each states its commit and conditions and applies to that commit only.
 
 ### Readings
