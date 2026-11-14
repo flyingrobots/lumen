@@ -3,7 +3,7 @@
 //! pixel path, on one or more threads.
 //!
 //! The image is a pure function of the scene and the settings. The [`Schedule`] (how many
-//! threads, how large the tiles) decides only who computes a pixel and when, never its value:
+//! threads, how tall the row bands) decides only who computes a pixel and when, never its value:
 //! every pixel's samples are accumulated for that pixel alone, by one worker, in its own
 //! `PixelAccumulator`, so no accumulation order exists between threads.
 
@@ -148,8 +148,6 @@ pub enum RenderError {
     OutOfMemory,
     /// The operating system refused to start a worker thread.
     Spawn,
-    /// A tile did not fit the image (an internal invariant of the scheduler, never expected).
-    TileGeometry,
 }
 
 impl fmt::Display for RenderError {
@@ -164,7 +162,6 @@ impl fmt::Display for RenderError {
             Self::Shading => f.write_str("a shading step refused its input"),
             Self::OutOfMemory => f.write_str("not enough memory for the image"),
             Self::Spawn => f.write_str("a worker thread could not be started"),
-            Self::TileGeometry => f.write_str("a tile did not fit the image (a lumen bug)"),
         }
     }
 }
@@ -418,7 +415,6 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
         Err(WorkerError::Pixel { error, .. }) => Err(error),
         Err(WorkerError::OutOfMemory) => Err(RenderError::OutOfMemory),
         Err(WorkerError::Spawn) => Err(RenderError::Spawn),
-        Err(WorkerError::TileGeometry) => Err(RenderError::TileGeometry),
     }
 }
 
@@ -431,16 +427,16 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
 ///
 /// # Examples
 ///
-/// The same image on three threads with 4 by 4 tiles as on one thread:
+/// The same image on three threads with bands of 4 rows as on one thread:
 ///
 /// ```
 /// use lumen::{reference_scene, render, render_scheduled, ImageSize, RenderSettings};
-/// use lumen::{Schedule, TileSize};
+/// use lumen::{BandRows, Schedule};
 ///
 /// let scene = reference_scene()?;
 /// let size = ImageSize::new(16, 9)?;
 /// let settings = RenderSettings::new(1, 0)?;
-/// let schedule = Schedule::new(3, TileSize::new(4, 4)?)?;
+/// let schedule = Schedule::new(3, BandRows::new(4)?)?;
 /// let threaded = render_scheduled(&scene, size, settings, schedule)?;
 /// assert_eq!(threaded, render(&scene, size, settings)?);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -459,7 +455,7 @@ pub fn render_scheduled(
 ///
 /// Each pixel is [`pixel_radiance`], written by `write_rgba8` through [`TONE_CURVE`]: opaque
 /// RGBA8, row-major, row 0 at the top. Each pixel is a pure function of its coordinates, so any
-/// order, any split into tiles and any number of threads give the same bytes.
+/// order, any split into bands and any number of threads give the same bytes.
 ///
 /// # Errors
 ///

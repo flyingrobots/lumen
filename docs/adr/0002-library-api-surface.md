@@ -30,14 +30,14 @@ second front end would have had to rebuild that list by hand.
 - **The library has no edge.** No argument parsing, file access, clock, environment, process,
   terminal output or host probe. The caller passes the thread count and the writer. The command
   (`src/bin/lumen/`) owns all of that. The one host resource the library uses is threads, started
-  by `render_pixels` at the count the caller gave (ADR 0001).
+  by `render_pixels` at the count the caller gave (ADR 0003).
 - **`RenderProvenance` is the render's identity.** It holds the scene's identity, the size and
   the settings. With the identities fixed in this build, `fields()` returns twelve named fields in
   a stable order: `scene`, `integrator`, `shading`, `sampler`, `tone`, `encoding`, `bunny`,
   `size`, `pixels`, `samples`, `seed`, `bounces`. New fields go at the end. Equal provenance
   means equal RGBA8 bytes.
-- **Run facts are not provenance.** The thread count, the tile size, the output file and the
-  wall-clock times change no pixel (ADR 0001), so a front end reports them separately. The ray
+- **Run facts are not provenance.** The thread count, the band height, the output file and the
+  wall-clock times change no pixel (ADR 0003), so a front end reports them separately. The ray
   count and the image hash are results of the render, carried by `Render` and
   `Rgba8Image::hash`. Provenance is known before the render runs.
 

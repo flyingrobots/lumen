@@ -73,8 +73,10 @@ fn two_processes_write_the_same_file_and_print_the_same_hash() {
         assert_eq!(field(&stdout, "seed"), "5");
         assert_eq!(field(&stdout, "bounces"), "1");
         assert_eq!(field(&stdout, "pixels"), "960");
-        assert_eq!(field(&stdout, "tile"), "32x32");
-        assert!(field(&stdout, "threads").parse::<u32>().is_ok_and(|n| (1..=2).contains(&n)));
+        assert_eq!(field(&stdout, "band-rows"), "1");
+        // As many workers as asked for, but never more than the 24 one-row bands.
+        let asked: u32 = field(&stdout, "threads-asked").parse().expect("a count");
+        assert_eq!(field(&stdout, "threads").parse::<u32>(), Ok(asked.min(24)));
         for timing in ["scene", "render", "hash", "png", "total"] {
             let line = field(&stdout, &format!("{timing}-seconds"));
             let seconds: f64 = line.split(' ').next().expect("value").parse().expect("number");
@@ -128,8 +130,9 @@ fn bad_arguments_are_refused_with_usage() {
         2,
         "--threads: threads must be at most 256, not 257",
     );
-    assert_refused(&lumen(&["render", "--tile", "0x4"]), 2, "--tile: tile width and height");
-    assert_refused(&lumen(&["render", "--tile", "4by4"]), 2, "--tile needs N or WxH");
+    assert_refused(&lumen(&["render", "--band-rows", "0"]), 2, "--band-rows: a band must be");
+    assert_refused(&lumen(&["render", "--band-rows", "4x4"]), 2, "--band-rows needs a whole");
+    assert_refused(&lumen(&["render", "--tile", "32"]), 2, "unknown option \"--tile\"");
     assert_refused(&lumen(&["render", "--out"]), 2, "--out needs a value");
     assert_refused(&lumen(&["render", "--out", "x.png", "--spp", "4"]), 2, "unknown option");
     assert_refused(
@@ -234,24 +237,23 @@ fn non_unicode_arguments_never_panic() {
 }
 
 /// Without `--out` nothing is written and `png none` is printed; the hash and ray count are the
-/// same at every thread count and tile size, and the report names the threads and the tile.
+/// same at every thread count and band height, and the report names the threads and the band.
 #[test]
 fn the_hash_is_the_same_at_every_thread_count_without_a_file() {
     let dir = scratch("threads");
     let mut seen = Vec::new();
-    for (threads, tile) in [("1", "32"), ("3", "5x3"), ("8", "1"), ("2", "40x1")] {
+    for (threads, rows) in [("1", "32"), ("3", "5"), ("8", "1"), ("2", "7")] {
         let output = Command::new(env!("CARGO_BIN_EXE_lumen"))
             .current_dir(&dir)
             .args(["render", "--width", "40", "--height", "24", "--samples", "2", "--seed", "5"])
-            .args(["--threads", threads, "--tile", tile])
+            .args(["--threads", threads, "--band-rows", rows])
             .output()
             .expect("lumen runs");
         assert!(output.status.success(), "{}", text(&output.stderr));
         let stdout = text(&output.stdout);
         assert_eq!(field(&stdout, "threads-asked"), threads);
         assert_eq!(field(&stdout, "threads"), threads);
-        let want_tile = if tile.contains('x') { tile.to_owned() } else { format!("{tile}x{tile}") };
-        assert_eq!(field(&stdout, "tile"), want_tile);
+        assert_eq!(field(&stdout, "band-rows"), rows);
         assert_eq!(field(&stdout, "png"), "none");
         seen.push((field(&stdout, "image").to_owned(), field(&stdout, "rays").to_owned()));
     }

@@ -1,9 +1,10 @@
-//! How a render is spread over threads: this module owns the checked thread count and tile
-//! size ([`Schedule`], [`TileSize`]) and the tile geometry the workers follow.
+//! How a render is spread over threads: this module owns the checked thread count and band
+//! height ([`Schedule`], [`BandRows`]) and the band geometry the workers follow.
 //!
-//! A schedule never changes a pixel. It decides only which worker computes which tile and when.
+//! A schedule never changes a pixel. It decides only which worker computes which band and when.
 
 use core::fmt;
+use core::num::NonZeroU32;
 
 use crate::image::ImageSize;
 
@@ -11,10 +12,10 @@ use crate::image::ImageSize;
 /// low enough that a mistyped `--threads` cannot ask the system for thousands of threads.
 pub const MAX_THREADS: u32 = 256;
 
-/// The default tile: 32 by 32 pixels, chosen by measurement (README, "Performance").
-pub const DEFAULT_TILE: TileSize = TileSize { width: 32, height: 32 };
+/// The default band: one row, chosen by measurement (README, "Performance").
+pub const DEFAULT_BAND_ROWS: BandRows = BandRows(NonZeroU32::MIN);
 
-// Pixel and tile counts are `u32` (an image holds at most 2^27 pixels) and byte offsets are
+// Pixel and band counts are `u32` (an image holds at most 2^27 pixels) and slice lengths are
 // `usize`; widening one to the other is lossless on every target lumen builds for.
 const _: () = assert!(usize::BITS >= u32::BITS);
 
@@ -31,8 +32,8 @@ pub enum ScheduleError {
     NoThreads,
     /// More than [`MAX_THREADS`] threads were asked for.
     TooManyThreads(u32),
-    /// A tile width or height is zero.
-    EmptyTile,
+    /// A band of zero rows was asked for.
+    EmptyBand,
 }
 
 impl fmt::Display for ScheduleError {
@@ -40,77 +41,81 @@ impl fmt::Display for ScheduleError {
         match self {
             Self::NoThreads => f.write_str("threads must be at least 1"),
             Self::TooManyThreads(n) => write!(f, "threads must be at most {MAX_THREADS}, not {n}"),
-            Self::EmptyTile => f.write_str("tile width and height must be at least 1"),
+            Self::EmptyBand => f.write_str("a band must be at least 1 row"),
         }
     }
 }
 
 impl std::error::Error for ScheduleError {}
 
-/// A checked tile size: the rectangle of pixels one worker renders before taking the next.
+/// A checked band height: the number of whole image rows one worker renders before taking the
+/// next band.
 ///
-/// Tiles cover the image in row-major order from the top left; the tiles in the last column and
-/// the last row are cut to the image. A tile larger than the image is the whole image.
+/// Bands cover the image from the top, each as wide as the image; the last band is cut to the
+/// image. A band taller than the image is the whole image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TileSize {
-    width: u32,
-    height: u32,
-}
+pub struct BandRows(NonZeroU32);
 
-impl TileSize {
-    /// A tile of `width` by `height` pixels.
+impl BandRows {
+    /// Bands of `rows` rows.
     ///
     /// # Errors
     ///
-    /// [`ScheduleError::EmptyTile`] if either is zero.
-    pub const fn new(width: u32, height: u32) -> Result<Self, ScheduleError> {
-        if width == 0 || height == 0 {
-            return Err(ScheduleError::EmptyTile);
+    /// [`ScheduleError::EmptyBand`] if `rows` is zero.
+    pub const fn new(rows: u32) -> Result<Self, ScheduleError> {
+        match NonZeroU32::new(rows) {
+            Some(rows) => Ok(Self(rows)),
+            None => Err(ScheduleError::EmptyBand),
         }
-        Ok(Self { width, height })
     }
 
-    /// The tile width.
+    /// The rows in a band.
     #[must_use]
-    pub const fn width(self) -> u32 {
-        self.width
+    pub const fn get(self) -> u32 {
+        self.0.get()
     }
 
-    /// The tile height.
+    /// How many bands an image of `size` has: its height divided by the band height, rounded up.
     #[must_use]
-    pub const fn height(self) -> u32 {
-        self.height
+    pub const fn count(self, size: ImageSize) -> u32 {
+        size.height().div_ceil(self.0.get())
+    }
+
+    /// The pixels in a full band of an image `width` pixels wide (at least one), saturated to
+    /// `usize::MAX`: a band longer than the image is the whole image.
+    pub(crate) fn pixels(self, width: usize) -> usize {
+        width.max(1).saturating_mul(widen(self.0.get()))
     }
 }
 
-/// How a render is spread over threads: the number of worker threads and the tile size.
+/// How a render is spread over threads: the number of worker threads and the band height.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Schedule {
     threads: u32,
-    tile: TileSize,
+    band: BandRows,
 }
 
 impl Schedule {
-    /// `threads` workers (`1..=MAX_THREADS`) taking tiles of `tile`.
+    /// `threads` workers (`1..=MAX_THREADS`) taking bands of `band` rows.
     ///
     /// # Errors
     ///
     /// [`ScheduleError::NoThreads`] for zero, [`ScheduleError::TooManyThreads`] above
     /// [`MAX_THREADS`].
-    pub const fn new(threads: u32, tile: TileSize) -> Result<Self, ScheduleError> {
+    pub const fn new(threads: u32, band: BandRows) -> Result<Self, ScheduleError> {
         if threads == 0 {
             return Err(ScheduleError::NoThreads);
         }
         if threads > MAX_THREADS {
             return Err(ScheduleError::TooManyThreads(threads));
         }
-        Ok(Self { threads, tile })
+        Ok(Self { threads, band })
     }
 
-    /// One worker (the calling thread) and the default tile.
+    /// One worker (the calling thread) and the default band.
     #[must_use]
     pub const fn single() -> Self {
-        Self { threads: 1, tile: DEFAULT_TILE }
+        Self { threads: 1, band: DEFAULT_BAND_ROWS }
     }
 
     /// The threads asked for.
@@ -119,114 +124,23 @@ impl Schedule {
         self.threads
     }
 
-    /// The tile size.
+    /// The band height.
     #[must_use]
-    pub const fn tile(self) -> TileSize {
-        self.tile
+    pub const fn band(self) -> BandRows {
+        self.band
     }
 
-    /// The same schedule with another tile size.
+    /// The same schedule with another band height.
     #[must_use]
-    pub const fn with_tile(self, tile: TileSize) -> Self {
-        Self { threads: self.threads, tile }
+    pub const fn with_band(self, band: BandRows) -> Self {
+        Self { threads: self.threads, band }
     }
 
     /// The workers a render of `size` uses: the threads asked for, but never more than there
-    /// are tiles, and at least one. The calling thread is one of them.
+    /// are bands (an image has at least one). The calling thread is one of them.
     #[must_use]
     pub fn workers(self, size: ImageSize) -> u32 {
-        Tiles::new(size, self.tile)
-            .map_or(self.threads, |tiles| self.threads.min(tiles.count()))
-            .max(1)
-    }
-}
-
-/// The tiles of an image, numbered row-major from the top left.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Tiles {
-    size: ImageSize,
-    tile: TileSize,
-    across: u32,
-    count: u32,
-}
-
-/// One tile's pixels: columns `x0..x1` of rows `y0..y1`, never empty, inside the image.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct TileRect {
-    pub(crate) x0: u32,
-    pub(crate) y0: u32,
-    pub(crate) x1: u32,
-    pub(crate) y1: u32,
-}
-
-impl TileRect {
-    /// The tile's width in pixels.
-    pub(crate) const fn width(self) -> u32 {
-        self.x1 - self.x0
-    }
-}
-
-impl Tiles {
-    /// The tiles of `size` in tiles of `tile`, or `None` if their count does not fit `u32`.
-    ///
-    /// `across * down` is at most the pixel count (each tile holds at least one pixel), which
-    /// [`ImageSize`] bounds by 2^27, so `None` does not happen for a checked size.
-    pub(crate) fn new(size: ImageSize, tile: TileSize) -> Option<Self> {
-        let across = size.width().div_ceil(tile.width);
-        let down = size.height().div_ceil(tile.height);
-        let count = u32::try_from(u64::from(across) * u64::from(down)).ok()?;
-        Some(Self { size, tile, across, count })
-    }
-
-    /// How many tiles there are.
-    pub(crate) const fn count(self) -> u32 {
-        self.count
-    }
-
-    /// The index of the last tile (an image has at least one).
-    pub(crate) const fn last_index(self) -> u32 {
-        self.count.saturating_sub(1)
-    }
-
-    /// The image size.
-    pub(crate) const fn size(self) -> ImageSize {
-        self.size
-    }
-
-    /// The bytes of the largest tile: the tile size cut to the image, four bytes a pixel, or
-    /// `None` if that overflows `usize`.
-    pub(crate) fn max_tile_bytes(self) -> Option<usize> {
-        let width = widen(self.tile.width.min(self.size.width()));
-        let height = widen(self.tile.height.min(self.size.height()));
-        width.checked_mul(height)?.checked_mul(4)
-    }
-
-    /// Tile `index`, or `None` past the last tile.
-    ///
-    /// For a tile in column `c < across`, `c * tile.width < width`, so the products are checked
-    /// but never fail; an end past `u32::MAX` is past the image, so it is cut to the image.
-    pub(crate) fn rect(self, index: u32) -> Option<TileRect> {
-        if index >= self.count {
-            return None;
-        }
-        let x0 = (index % self.across).checked_mul(self.tile.width)?;
-        let y0 = (index / self.across).checked_mul(self.tile.height)?;
-        let (width, height) = (self.size.width(), self.size.height());
-        Some(TileRect {
-            x0,
-            y0,
-            x1: x0.checked_add(self.tile.width).map_or(width, |end| end.min(width)),
-            y1: y0.checked_add(self.tile.height).map_or(height, |end| end.min(height)),
-        })
-    }
-
-    /// The index of the last tile in the same row of tiles as tile `index`, at most the last
-    /// tile. `index % across <= index` and `across >= 1`, so neither subtraction underflows.
-    pub(crate) fn row_end(self, index: u32) -> u32 {
-        let row_start = index - index % self.across;
-        row_start
-            .checked_add(self.across - 1)
-            .map_or(self.last_index(), |end| end.min(self.last_index()))
+        self.threads.min(self.band.count(size)).max(1)
     }
 }
 
@@ -234,35 +148,17 @@ impl Tiles {
 mod tests {
     use super::*;
 
-    fn tiles(width: u32, height: u32, tile_width: u32, tile_height: u32) -> Tiles {
-        let size = ImageSize::new(width, height).expect("size");
-        Tiles::new(size, TileSize::new(tile_width, tile_height).expect("tile")).expect("tiles")
-    }
-
-    /// Oracle: every pixel of the image lies in exactly one tile, and the tiles are in
-    /// row-major order of their top-left corners (checked by counting, pixel by pixel).
+    /// Oracle: counting by hand. The band count is the height over the band height, rounded up,
+    /// and a band's pixel count saturates instead of wrapping.
     #[test]
-    fn tiles_cover_every_pixel_once_in_row_major_order() {
-        let cases = [(13, 9, 5, 4), (13, 9, 1, 1), (13, 9, 13, 9), (13, 9, 40, 40), (32, 32, 8, 8)];
-        for (width, height, tw, th) in cases {
-            let t = tiles(width, height, tw, th);
-            let mut covered = vec![0_u32; widen(width * height)];
-            let mut previous = None;
-            for index in 0..t.count() {
-                let rect = t.rect(index).expect("in range");
-                assert!(rect.x0 < rect.x1 && rect.y0 < rect.y1, "{rect:?}");
-                assert!(previous.is_none_or(|p: TileRect| (p.y0, p.x0) < (rect.y0, rect.x0)));
-                previous = Some(rect);
-                for y in rect.y0..rect.y1 {
-                    for x in rect.x0..rect.x1 {
-                        covered[widen(y * width + x)] += 1;
-                    }
-                }
-                let end = t.rect(t.row_end(index)).expect("row end exists");
-                assert_eq!((end.y0, end.x1), (rect.y0, width), "{index}");
-            }
-            assert!(covered.iter().all(|&n| n == 1), "{width}x{height} in {tw}x{th}");
-            assert_eq!(t.rect(t.count()), None);
+    fn bands_are_counted_by_rounding_up() {
+        let size = |w, h| ImageSize::new(w, h).expect("size");
+        let rows = |n| BandRows::new(n).expect("rows");
+        for (height, band, want) in [(9, 1, 9), (9, 2, 5), (9, 3, 3), (9, 9, 1), (9, 40, 1)] {
+            assert_eq!(rows(band).count(size(13, height)), want, "{height} rows in {band}");
         }
+        assert_eq!(rows(4).pixels(13), 52);
+        assert_eq!(rows(u32::MAX).pixels(usize::MAX), usize::MAX);
+        assert_eq!(BandRows::new(0), Err(ScheduleError::EmptyBand));
     }
 }
