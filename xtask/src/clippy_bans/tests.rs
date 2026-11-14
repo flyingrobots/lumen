@@ -7,7 +7,11 @@
 
 use std::collections::BTreeSet;
 
-use super::{ban_groups, diagnostics, entries, forms, judge, Diagnostic, Entry, Form};
+use super::{ban_groups, diagnostics, forms, judge, read_entries, Diagnostic, Entry, Form};
+
+fn entries(toml: &str) -> Vec<Entry> {
+    read_entries(toml).0
+}
 
 const FIXTURE: &str = "xtask/clippy-fixture/src/entries.rs";
 
@@ -134,7 +138,7 @@ fn an_unreported_form_a_reported_look_alike_and_a_stray_finding_fail() {
     assert!(failures[0].starts_with("look-alike looks_alike is reported"), "{failures:?}");
     assert!(failures[1].contains("a finding outside every marked form"), "{failures:?}");
     assert!(
-        failures[2].starts_with("seeded form std_env is not reported under std-env"),
+        failures[2].starts_with("seeded form std_env in xtask/clippy-fixture/src/entries.rs is not reported under std-env"),
         "{failures:?}"
     );
 }
@@ -149,7 +153,9 @@ fn a_finding_under_another_rule_does_not_report_a_form() {
     let forms = forms(FIXTURE, "// seeded: std-fs\nmod std_env {\n    pub fn f() {}\n\n\n\n}\n");
     let only_env = judge(&entries[..1], &forms, &found[..1], &the_groups());
     assert_eq!(only_env.len(), 1, "{only_env:?}");
-    assert!(only_env[0].starts_with("seeded form std_env is not reported under std-fs"));
+    assert!(only_env[0].starts_with(
+        "seeded form std_env in xtask/clippy-fixture/src/entries.rs is not reported under std-fs"
+    ));
     assert_eq!(judge(&entries, &forms, &found, &the_groups()), Vec::<String>::new());
 }
 
@@ -185,4 +191,44 @@ fn a_fixture_with_only_look_alikes_fails() {
     let forms = forms(FIXTURE, "// accepted\nmod looks_alike {\n    pub fn g() {}\n}\n");
     let failures = judge(&[], &forms, &[], &the_groups());
     assert_eq!(failures, ["the fixture has no seeded form"]);
+}
+
+#[test]
+fn entries_are_read_whatever_their_spacing_and_one_the_check_cannot_read_fails() {
+    let compact = "disallowed-methods = [\n{path=\"std::mem::replace\",reason=\"std-env: compact\"},\n    { path = \"std::env::var\" , reason = \"std-env: spaced\" }, # a comment\n]\ndisallowed-types = [{ path = \"f64\", reason = \"float-type: on one line\" }]\n";
+    let (read, failures) = read_entries(compact);
+    assert_eq!(
+        read,
+        [
+            entry(2, "std::mem::replace", "std-env"),
+            entry(3, "std::env::var", "std-env"),
+            entry(5, "f64", "float-type"),
+        ]
+    );
+    assert_eq!(failures, Vec::<String>::new());
+    for bad in [
+        "disallowed-methods = [\"std::env::var\"]\n",
+        "disallowed-methods = [\n    { path = \"std::env::var\" },\n]\n",
+        "disallowed-methods = [\n    { path = \"std::env::var\", reason = \"std-env: x\", allow-invalid = true },\n]\n",
+        "disallowed-macros = [\n    { path = std::env, reason = \"std-env: x\" },\n]\n",
+        "disallowed-methods = [\n    { path = \"std::env::var\", reason = \"std-env: x\", replacement = \"y\" },\n]\n",
+    ] {
+        let (_, failures) = read_entries(bad);
+        assert_eq!(failures.len(), 1, "{bad:?}: {failures:?}");
+    }
+}
+
+#[test]
+fn a_form_is_reported_only_by_findings_in_its_own_file() {
+    let entries = [entry(2, "std::env::var", "std-env")];
+    let text = "// seeded: std-env\nmod same_name {\n    pub fn f() {}\n}\n";
+    let mut forms = forms(FIXTURE, text);
+    forms.extend(super::forms("xtask/clippy-fixture/src/forms.rs", text));
+    let found = [finding(3, "use of a disallowed method `std::env::var`")];
+    let failures = judge(&entries, &forms, &found, &the_groups());
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].starts_with("seeded form same_name in xtask/clippy-fixture/src/forms.rs"),
+        "{failures:?}"
+    );
 }

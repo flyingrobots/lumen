@@ -15,7 +15,7 @@ fn reported(source: &str) -> Vec<(usize, &'static str)> {
     core_findings(source).iter().map(|f| (f.line, f.rule)).collect()
 }
 
-const REJECTED: [Form; 63] = [
+const REJECTED: [Form; 64] = [
     ("instant: qualified call", "pub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 1),
     ("instant: use then bare call", "use std::time::Instant;\npub fn f() { let _ = Instant::now(); }", "time-instant", 1),
     ("instant: use group", "use std::time::{Duration, Instant};\npub fn f() -> Duration { Instant::now().elapsed() }", "time-instant", 1),
@@ -78,6 +78,7 @@ const REJECTED: [Form; 63] = [
     ("sleep: deprecated sleep_ms", "#[allow(deprecated)]\npub fn f() { std::thread::sleep_ms(1); }", "thread-sleep", 2),
     ("float: Duration methods without a float token", "pub fn f(d: core::time::Duration) -> core::time::Duration { d.mul_f64(d.as_secs_f64()) }", "float-type", 1),
     ("float: from_secs_f64 of a parsed string", "pub fn f(t: &str) -> Option<core::time::Duration> { Some(core::time::Duration::from_secs_f64(t.parse().ok()?)) }", "float-type", 1),
+    ("env: an alias shadowed by a sibling module's", "mod a {\n    extern crate core as host;\n    pub type D = host::time::Duration;\n}\nmod b {\n    extern crate std as host;\n    pub const OS: &str = host::env::consts::OS;\n}", "std-env", 7),
     ("float: Bunny's to_f32", "pub fn f(x: bunny_num::FixedQ32_32) -> u32 { x.to_f32().to_bits() }", "float-type", 1),
 ];
 
