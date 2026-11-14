@@ -31,6 +31,17 @@ All notable changes to lumen are recorded here. The format follows
   content identity and the generator's heights for the scene's spec are the same before and
   after.
 
+- The canyon's craft poses no longer panic or wrap on a public input (flyingrobots/lumen#160,
+  the poses half). `Rational`'s fields are private: `Rational::new` refuses a denominator that
+  is not positive and numerators off `cos^2 + sin^2 = hyp^2` with `PoseError::NotARotation`, and
+  `Rational::cos`, `sin` and `hyp` read it. `Pose::place` returns `Result`: before,
+  `Rational { cos: 1, sin: 0, hyp: 0 }` made it panic dividing by zero, and its products and
+  sums were unchecked; now a point whose posed coordinates leave `i64` is refused with
+  `PoseError::Overflow`. `craft::craft_part` and `craft::push_craft` return the error, the
+  latter as the new `CanyonError::Craft`, and the convex solids' means are checked. Tests in
+  `tests/canyon/pose.rs`. The scene's bytes are unchanged: the golden image hash, the 4K hash
+  and the content identity are the same before and after.
+
 - Documentation no longer claims more than the code does (flyingrobots/lumen#57, the
   documentation half). "Equal provenance means equal bytes" is scoped to a render of the scene as
   its own tracer: `RenderProvenance`, `render_traced`, the README and ADRs 0002, 0005 and 0007
