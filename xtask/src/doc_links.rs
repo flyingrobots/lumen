@@ -2,7 +2,7 @@
 //! names a file or directory that exists, and every `#anchor` into a Markdown page names one of
 //! that page's headings.
 //!
-//! The links are found by [`links`] and the headings' anchors made by [`anchors`], both outside
+//! The links are found by [`links()`] and the headings' anchors made by [`anchors()`], both outside
 //! fenced code blocks ([`blocks`]). A destination that starts with a URI scheme (`https:`,
 //! `mailto:`: a letter, then letters, digits, `+`, `-` or `.`, then `:`) is not checked: this
 //! gate is offline. A colon anywhere else, as in `page.md#step:1`, is no scheme. The path is
