@@ -59,7 +59,7 @@ fn the_reference_image_renders_on_one_worker_through_the_library_alone() {
 }
 
 /// On WebAssembly a thread cannot be started, so asking for more than one worker is
-/// `RenderError::Spawn`, not a panic. This is also what shows that the one-worker renders on
+/// `RenderError::Spawn` for worker 1, the first helper, not a panic. This is also what shows that the one-worker renders on
 /// that target start no thread: if they did, they would fail the same way.
 #[cfg(target_family = "wasm")]
 #[test]
@@ -69,7 +69,10 @@ fn on_webassembly_a_second_worker_is_a_spawn_error() {
     let settings = RenderSettings::new(4, 0).expect("valid settings");
     let schedule = Schedule::new(2, BandRows::new(8).expect("valid band")).expect("valid");
     let refused = render_scheduled(&scene, size, settings, schedule).map(|render| render.rays);
-    assert_eq!(refused, Err(lumen::RenderError::Spawn));
+    assert!(
+        matches!(&refused, Err(lumen::RenderError::Spawn(error)) if error.worker() == 1),
+        "{refused:?}"
+    );
 }
 
 #[test]

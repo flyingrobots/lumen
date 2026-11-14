@@ -105,7 +105,11 @@ pub struct PlacedMesh {
 }
 
 /// Why a mesh could not be placed.
+///
+/// Non-exhaustive: a later version may refuse a mesh for a new reason, so a `match` outside this
+/// crate needs a wildcard arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PlaceError {
     /// Bunny's ASCII PLY reader refused the file.
     Ply(AsciiPlyError),
@@ -145,7 +149,8 @@ impl std::error::Error for PlaceError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Ply(error) => Some(error),
-            _ => None,
+            Self::Overflow { overflow, .. } => Some(overflow),
+            Self::MissingVertex { .. } | Self::OutsideTraceDomain { .. } => None,
         }
     }
 }

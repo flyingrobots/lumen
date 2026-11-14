@@ -99,9 +99,12 @@ pub(super) fn content_id(spec: &SceneSpec<'_>) -> SceneContentId {
 
 /// A count or length as a little-endian `u64`.
 fn put_count(hasher: &mut Sha256, count: usize) {
-    // Every Rust target's `usize` is at most 64 bits wide, so this widening is lossless.
-    hasher.update(&(count as u64).to_le_bytes());
+    // `usize` is at most 64 bits wide (asserted below), so the conversion never fails and the
+    // fallback is never taken.
+    hasher.update(&u64::try_from(count).unwrap_or(u64::MAX).to_le_bytes());
 }
+
+const _: () = assert!(usize::BITS <= u64::BITS);
 
 /// Q32.32 values, each as the little-endian `i64` of its raw value.
 fn put_values<const N: usize>(hasher: &mut Sha256, values: [FixedQ32_32; N]) {

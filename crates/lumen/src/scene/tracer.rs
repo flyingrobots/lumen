@@ -29,19 +29,50 @@ pub struct Hit {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TraceError {
-    /// The traversal refused the tree.
+    /// Bunny's traversal refused the tree. Its error has no `Display` or `Error` of its own, so
+    /// lumen names each kind, and there is no `source()`.
     Traversal(TraversalError),
-    /// The traversal named a primitive that the triangle list does not hold, or whose hit
-    /// could not be repeated. Neither can happen with a tree built by
-    /// [`Scene::new`](super::Scene::new).
-    InconsistentHit,
+    /// The traversal named a primitive the triangle list does not hold. `Scene::new` checks
+    /// every index of its tree once, so the scene's own tracer never reports this.
+    UnknownPrimitive {
+        /// The primitive index named.
+        primitive: PrimitiveIndex,
+        /// The scene's triangle count: every valid index is below it.
+        triangles: usize,
+    },
+    /// The traversal's nearest hit could not be found again by testing its triangle at exactly
+    /// its distance. Bunny guarantees it can, so the scene's own tracer never reports this.
+    HitNotRepeatable {
+        /// The primitive index of the triangle.
+        primitive: PrimitiveIndex,
+        /// The distance the traversal reported, in multiples of the ray's direction.
+        distance: FixedQ32_32,
+    },
 }
 
 impl fmt::Display for TraceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Traversal(error) => write!(f, "traversal failed: {error:?}"),
-            Self::InconsistentHit => f.write_str("traversal reported no valid hit"),
+            Self::Traversal(error) => {
+                let why = match error {
+                    TraversalError::StackOverflow => "its stack of 64 nodes overflowed",
+                    TraversalError::InvalidNodeIndex => "a node names a child outside the tree",
+                    TraversalError::InvalidPrimitiveRange => {
+                        "a leaf names primitives outside the primitive-index list"
+                    }
+                };
+                write!(f, "traversal failed: {why}")
+            }
+            Self::UnknownPrimitive { primitive, triangles } => write!(
+                f,
+                "the traversal named triangle {primitive}, but the scene has {triangles} triangles"
+            ),
+            Self::HitNotRepeatable { primitive, distance } => write!(
+                f,
+                "the traversal's hit on triangle {primitive} at distance raw {} could not be \
+                 repeated",
+                distance.raw()
+            ),
         }
     }
 }

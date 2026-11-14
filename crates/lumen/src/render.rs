@@ -118,8 +118,8 @@ impl RenderSettings {
 
     /// Bunny's sampler for pixel `(x, y)` under this seed.
     #[must_use]
-    pub const fn sampler(self, x: u32, y: u32) -> PixelSampler {
-        PixelSampler::new(self.seed as u64, x, y)
+    pub fn sampler(self, x: u32, y: u32) -> PixelSampler {
+        PixelSampler::new(u64::from(self.seed), x, y)
     }
 }
 
@@ -136,7 +136,8 @@ impl RayCount {
     /// Every ray traced.
     #[must_use]
     pub const fn total(self) -> u64 {
-        self.closest + self.shadow
+        // At most 2^39 rays in all (see `Add`), so the sum never saturates.
+        self.closest.saturating_add(self.shadow)
     }
 }
 
@@ -211,7 +212,8 @@ pub fn trace_path<T: Tracer + ?Sized>(
     let h1 = Shade::at(scene, &ray0, &hit1)?;
     let d1 = direct(scene, tracer, &h1.hit, &mut count)?;
     let ray1 = h1.bounce(sampler.point(sample, BOUNCE_PAIR))?;
-    count.closest += 1;
+    // A path traces at most two closest-hit and two shadow rays, so no count saturates.
+    count.closest = count.closest.saturating_add(1);
     let b = match tracer.closest(&ray1)? {
         None => lighting.sky.radiance(),
         Some(hit2) => {
@@ -293,7 +295,7 @@ fn direct<T: Tracer + ?Sized>(
     let light = hit.light_sample(&sun);
     let visible = match light.shadow_ray() {
         Some(shadow) => {
-            rays.shadow += 1;
+            rays.shadow = rays.shadow.saturating_add(1);
             !tracer.occluded(shadow, SHADOW_T_MAX)?
         }
         None => false,
@@ -377,8 +379,9 @@ impl<T: Tracer + ?Sized> Frame<'_, T> {
 /// [`RenderError::Camera`] if Bunny refuses the camera at this size;
 /// [`RenderError::Pixel`] with the coordinates and the [`PathError`] of the first failing pixel
 /// in raster order (an error of [`pixel_radiance`] or of `write_rgba8`);
-/// [`RenderError::OutOfMemory`] if a buffer cannot be reserved; [`RenderError::Spawn`] if a
-/// worker thread cannot be started.
+/// [`RenderError::OutOfMemory`] with what was being reserved if a buffer cannot be reserved;
+/// [`RenderError::Spawn`] with the worker's number and the operating system's error if a worker
+/// thread cannot be started.
 pub fn render_traced<T: Tracer + Sync + ?Sized>(
     scene: &Scene,
     tracer: &T,
@@ -391,8 +394,10 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
     match render_pixels(size, schedule, RayCount::default(), |x, y| frame.rgba(x, y)) {
         Ok((image, rays)) => Ok(Render { image, rays }),
         Err(WorkerError::Pixel { x, y, error }) => Err(RenderError::Pixel { x, y, error }),
-        Err(WorkerError::OutOfMemory) => Err(RenderError::OutOfMemory),
-        Err(WorkerError::Spawn) => Err(RenderError::Spawn),
+        Err(WorkerError::OutOfMemory { reserving, error }) => {
+            Err(RenderError::OutOfMemory { reserving, error })
+        }
+        Err(WorkerError::Spawn(error)) => Err(RenderError::Spawn(error)),
     }
 }
 

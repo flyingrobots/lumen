@@ -165,6 +165,10 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
 - **The command owns everything at the edge**: argument parsing and the usage text (`cli.rs`,
   `cli/usage_error.rs`, with its tests in `cli/tests.rs`), the default thread count from
   `available_parallelism`, the clock, the output file and the terminal (`main.rs`, `report.rs`).
+  Every way the command can fail is a variant of one typed `Failure` (`failure.rs`), which keeps
+  the library's or the system's error as its source; its `Display` and `exit_code` are the one
+  place that turns a failure into the message after `lumen: ` and the exit status (2 for a
+  refused command line, 1 for anything after it).
 
 ### Errors
 
@@ -182,10 +186,43 @@ through the public API and checks its values and its chain.
   that none occurs. Lumen calls Bunny's fast `Option` forms and, only after a `None`, the `try_`
   form for the reason, so a render that succeeds pays nothing for it.
 - **A render** (`render`, `render_scheduled`, `render_traced`) fails with a `RenderError`: the
-  size, the scene or the camera refused, or `Pixel { x, y, error }` for the first failing pixel
-  in raster order with its `PathError`.
-- `RenderError`, `PathError`, `SceneError` and `TraceError` are `#[non_exhaustive]`
-  ([ADR 0002](docs/adr/0002-library-api-surface.md)).
+  size, the scene or the camera refused, `Pixel { x, y, error }` for the first failing pixel in
+  raster order with its `PathError`, `OutOfMemory { reserving, error }` with what was being
+  reserved (`Reservation::Image { bytes }` or `Reservation::Workers { handles }`) and the
+  allocator's `TryReserveError`, or `Spawn(SpawnError)` with the number of the worker the
+  operating system refused (from 1) and its `io::Error` as the source. `render_pixels` reports
+  the same through `WorkerError`.
+- **A ray query** (`Tracer`) fails with a `TraceError`: `Traversal` with Bunny's
+  `TraversalError`, named in lumen's text since Bunny's has none; `UnknownPrimitive` (the index
+  and the triangle count) and `HitNotRepeatable` (the triangle and the distance) for a traversal
+  that contradicts its tree. The scene's own tracer reaches only `Traversal`: `Scene::new`
+  checks once that its tree names only its own triangles (`SceneError::TreeNamesUnknownPrimitive`
+  otherwise, which no input reaches), so its traversal callbacks never meet a missing triangle,
+  and a generated test over random scenes counts that neither of the other two occurs.
+- **A scene** (`Scene::new`) is refused with a `SceneError` that carries what it saw: the
+  triangle count and the limit (`TooManyTriangles`); the triangle, the vertex and its
+  coordinates (`OutsideTraceDomain`, found by repeating Bunny's one documented check of
+  `TraceTriangle::new` on the failure path, since Bunny returns no reason); both lengths
+  (`MaterialCount`); the triangle, its material index and the material count
+  (`UnknownMaterial`); the buffer, the item count and the allocator's error (`OutOfMemory`,
+  with a `SceneBuffer`); Bunny's `CompactError` (`BvhCompact`, named in words, since Bunny's has
+  no text) or the room given when `build_bvh_sah` refuses (`BvhBuild`); and the camera, mesh and
+  constant errors as sources. `FixedPointError`, `BuiltinSceneError` and `PlaceError` return
+  theirs from `source()` too.
+- **A PNG** (`write_png`) fails with a `PngError`: `Write` with the writer's `io::Error` as its
+  source and its text; `ChunkTooLong` and `BlockTooLong` carry the length for the encoder's own
+  length checks, which no image reaches.
+- **A size** is refused with a `SizeError` carrying the width and height (or the pixel count)
+  asked for and the limit; a buffer of the wrong length for `Rgba8Image::from_bytes` with a
+  `LengthError` carrying both lengths. `ImageSize::byte_len` cannot fail: `ImageSize::new`
+  computes and checks it once, at most `2^29`.
+- **Arithmetic** on sizes, sample counts, band heights and ray counts is checked or
+  saturating, each with the bound that keeps it exact stated beside it, and values reach wider
+  types through `From` or `try_from`, not `as`; the one `as` left on such a value is `widen`
+  (`u32` to `usize`, lossless under a compile-time assertion, behind a scoped lint exception).
+- `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
+  `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `BuiltinSceneError` and
+  `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
 
 ## The reference scene
 
@@ -585,6 +622,11 @@ counts:
   scheduling, so the simulator checks the stop rule instead); and a tracer that fails real
   traversals in two regions with two different errors returns the one a raster-order loop over
   `trace_path` meets first, at every schedule.
+- a refused worker thread: helper threads are started through a spawner the unit tests can
+  replace, and one that refuses worker `n` (after starting workers 1 to `n - 1` on real threads)
+  makes the render return `Spawn` for worker `n` with the operating system's error, once the
+  started workers are joined. That workers begin no row after the halt a refusal calls is checked
+  in the simulator, under every hand-out order, band height and halt step.
 
 Each of these mutations makes tests fail in the release profile (checked by hand, each mutant's
 test run under a 120-second `timeout` as a guard, sources touched before every build so that no

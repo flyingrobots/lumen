@@ -96,21 +96,24 @@ fn step<'a>(shared: &Shared<'a>, sim: &mut Sim<'a>, pixel: &impl Fn(u32, u32) ->
 
 /// Runs `workers` simulated workers over the 13 by 9 image in bands of `rows` in the order
 /// `policy` chooses, with `pixel` as the pixel function, and returns what `render_pixels` would.
+/// With `halt` set to `(n, flag)`, the workers are halted before step `n`, as a failed spawn
+/// halts them, and `flag` is raised at that moment.
 fn simulate(
     rows: u32,
     workers: usize,
     policy: Policy,
     pixel: &impl Fn(u32, u32) -> PixelResult,
+    halt: Option<(usize, &Cell<bool>)>,
 ) -> Simulated {
     let size = ImageSize::new(WIDTH, HEIGHT).expect("size");
     let schedule = Schedule::new(1, BandRows::new(rows).expect("rows")).expect("schedule");
-    let mut bytes = blank(size)?;
+    let mut image = blank(size)?;
     let mut rng = match policy {
         Policy::Seeded(seed) => seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1,
         _ => 1,
     };
     let outcome = {
-        let shared = Shared::new(size, schedule, bytes.as_chunks_mut::<4>().0);
+        let shared = Shared::new(size, schedule, image.bytes_mut().as_chunks_mut::<4>().0);
         let mut sims: Vec<Sim<'_>> = (0..workers)
             .map(|_| Sim { outcome: Outcome::new(0), band: None, done: false })
             .collect();
@@ -121,13 +124,17 @@ fn simulate(
         let mut steps = 0;
         while let Some(n) = pick(&sims, policy, &mut rng) {
             assert!(steps < budget, "{policy:?}: no end within {budget} steps");
+            if let Some((_, flag)) = halt.filter(|(at, _)| *at == steps) {
+                shared.halt();
+                flag.set(true);
+            }
             step(&shared, &mut sims[n], pixel);
             steps += 1;
         }
         combine(0, sims.into_iter().map(|sim| sim.outcome))
     };
     let total = outcome.into_result()?;
-    Ok((bytes, total))
+    Ok((image.bytes().to_vec(), total))
 }
 
 /// The image without any scheduling: every pixel in raster order.
@@ -162,7 +169,7 @@ fn every_hand_out_order_gives_the_raster_image() {
     for rows in BANDS {
         for workers in WORKERS {
             for policy in policies() {
-                let got = simulate(rows, workers, policy, &pixel(&[]));
+                let got = simulate(rows, workers, policy, &pixel(&[]), None);
                 assert_eq!(
                     got,
                     Ok((want.clone(), u64::from(WIDTH * HEIGHT))),
@@ -190,7 +197,7 @@ fn every_hand_out_order_reports_the_raster_first_failure() {
         for rows in BANDS {
             for workers in WORKERS {
                 for policy in policies() {
-                    let got = simulate(rows, workers, policy, &pixel(failing));
+                    let got = simulate(rows, workers, policy, &pixel(failing), None);
                     let want = Err(WorkerError::Pixel { x, y, error: (x, y) });
                     assert_eq!(
                         got, want,
@@ -224,7 +231,7 @@ fn after_a_failure_no_pixel_from_its_row_down_is_rendered() {
                         failed.set(failed.get() || result.is_err());
                         result
                     };
-                    let got = simulate(rows, workers, policy, &counting);
+                    let got = simulate(rows, workers, policy, &counting, None);
                     let label =
                         format!("{policy:?}, {workers} workers, bands of {rows}, ({fx}, {fy})");
                     assert_eq!(
@@ -260,5 +267,100 @@ fn outcomes_merge_to_the_sum_and_the_raster_earlier_failure() {
                 Err(WorkerError::Pixel { x: want.0, y: want.1, error: want })
             );
         }
+    }
+}
+
+/// Oracle: the halt rule. After `halt` (what a failed spawn calls) no worker begins a row, under
+/// every order, band height and worker count, whenever it comes: before the first step, part way,
+/// or after the last band is taken. A row is one step, so "after" is exact. Witness count: halts
+/// that came while rows were still to render.
+#[test]
+fn after_a_halt_no_row_is_begun() {
+    let mut witnesses = 0_usize;
+    for rows in BANDS {
+        for workers in WORKERS {
+            for policy in policies().take(20) {
+                for halt_at in [0, 1, 2, 5, 11, 40] {
+                    let (halted, after) = (Cell::new(false), Cell::new(0_usize));
+                    let counting = |x, y| {
+                        if halted.get() {
+                            after.set(after.get() + 1);
+                        }
+                        pixel(&[])(x, y)
+                    };
+                    let label = format!("{policy:?}, {workers} workers, bands of {rows}");
+                    let got = simulate(rows, workers, policy, &counting, Some((halt_at, &halted)));
+                    assert_eq!(after.get(), 0, "{label}, halted at step {halt_at}");
+                    let full = u64::from(WIDTH * HEIGHT);
+                    if got.as_ref().is_ok_and(|(_, count)| *count < full) {
+                        witnesses += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(witnesses > 0, "no halt came while rows were left");
+}
+
+/// Starts workers with the operating system, except worker `refuse`, which it refuses with an
+/// `Other` error, as an operating system out of threads would. It counts the workers it started.
+/// Not on WebAssembly, which starts no thread at all (`tests/library.rs` checks that there).
+#[cfg(not(target_family = "wasm"))]
+struct RefuseAt {
+    refuse: u32,
+    started: Cell<u32>,
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl Spawner for RefuseAt {
+    fn spawn<'scope, 'env, T, F>(
+        &self,
+        scope: &'scope Scope<'scope, 'env>,
+        worker: u32,
+        run: F,
+    ) -> io::Result<ScopedJoinHandle<'scope, T>>
+    where
+        T: Send + 'scope,
+        F: FnOnce() -> T + Send + 'scope,
+    {
+        if worker == self.refuse {
+            return Err(io::Error::other("refused by the test"));
+        }
+        self.started.set(self.started.get() + 1);
+        OsThreads.spawn(scope, worker, run)
+    }
+}
+
+/// Oracle: the injected refusal. On real threads, when the operating system refuses worker `n`,
+/// the render returns `Spawn` for worker `n` with the operating system's error as its source,
+/// after the `n - 1` workers already started have been joined, and never more pixels than the
+/// image has (each worker asked is counted, and the count past the image fails the test). That
+/// they stop at their next row is the halt rule, checked on every order above.
+#[cfg(not(target_family = "wasm"))]
+#[test]
+fn a_refused_worker_is_reported_with_its_number_and_its_error() {
+    use std::sync::atomic::AtomicUsize;
+    let size = ImageSize::new(64, 48).expect("size");
+    for (threads, refuse) in [(4, 1), (4, 2), (4, 3), (7, 6)] {
+        let spawner = RefuseAt { refuse, started: Cell::new(0) };
+        let asked = AtomicUsize::new(0);
+        let schedule = Schedule::new(threads, BandRows::new(1).expect("rows")).expect("schedule");
+        let got = render_pixels_on(&spawner, size, schedule, 0_u64, |x, y| {
+            let n = asked.fetch_add(1, Ordering::SeqCst);
+            assert!(n < 64 * 48, "asked for more pixels than the image has");
+            pixel(&[])(x, y)
+        });
+        let label = format!("{threads} threads, worker {refuse} refused");
+        let want = SpawnError::new(refuse, io::Error::other("refused by the test"));
+        assert_eq!(got, Err(WorkerError::Spawn(want)), "{label}");
+        assert_eq!(spawner.started.get(), refuse - 1, "{label}");
+        let WorkerError::Spawn(spawn) = got.expect_err("refused") else {
+            panic!("{label}: not a spawn error")
+        };
+        let text = format!("worker thread {refuse} could not be started: refused by the test");
+        assert_eq!(spawn.to_string(), text, "{label}");
+        let os = std::error::Error::source(&spawn).map(ToString::to_string);
+        assert_eq!(os.as_deref(), Some("refused by the test"), "{label}");
+        assert_eq!(spawn.error().kind(), io::ErrorKind::Other, "{label}");
     }
 }

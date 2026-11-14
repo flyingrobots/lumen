@@ -9,7 +9,11 @@ use crate::scene::SceneError;
 
 /// Why the Fixed Point scene could not be built. None of these happens for the scene as
 /// defined; tests check that it builds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Non-exhaustive: a later version may refuse the scene for a new reason, so a `match` outside
+/// this crate needs a wildcard arm. Not `Copy`, since [`SceneError`] is not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FixedPointError {
     /// The embedded Stanford bunny could not be read or placed.
     Bunny(PlaceError),
@@ -33,11 +37,20 @@ impl fmt::Display for FixedPointError {
             Self::Overflow => f.write_str("a posed coordinate overflows"),
             Self::InexactTurn => f.write_str("a die's turn is not exact on the grid"),
             Self::Constant(error) => {
-                write!(f, "a lighting or material constant was refused: {error:?}")
+                write!(f, "a lighting or material constant was refused: {error}")
             }
             Self::Scene(error) => write!(f, "the scene could not be built: {error}"),
         }
     }
 }
 
-impl std::error::Error for FixedPointError {}
+impl std::error::Error for FixedPointError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Bunny(error) => Some(error),
+            Self::Constant(error) => Some(error),
+            Self::Scene(error) => Some(error),
+            Self::EmptyBunny | Self::Overflow | Self::InexactTurn => None,
+        }
+    }
+}
