@@ -60,6 +60,7 @@ pub(super) fn macro_rule(name: &str) -> Option<&'static str> {
 pub(super) fn host_findings(toks: &[Located]) -> Vec<(usize, &'static str, String)> {
     let mut out = Vec::new();
     let at = |i: usize| toks.get(i).map(|(_, t)| t);
+    let in_macro = macro_arguments(toks);
     for (i, (line, token)) in toks.iter().enumerate() {
         match token {
             Token::Ident(name) if at(i + 1) == Some(&Token::Punct('!')) && opens(at(i + 2)) => {
@@ -92,13 +93,31 @@ pub(super) fn host_findings(toks: &[Located]) -> Vec<(usize, &'static str, Strin
                     out.push((*line, "platform-branch", what));
                 }
             }
-            Token::Str(text) if formats_pointer(text) => {
+            Token::Str(text) if in_macro[i] && formats_pointer(text) => {
                 out.push((*line, "address", "a {:p} format".to_owned()));
             }
             _ => {}
         }
     }
     out
+}
+
+/// For each token, whether it is inside a macro invocation's arguments (`format!(..)`,
+/// `write!(f, ..)`), where a string literal is a format string.
+fn macro_arguments(toks: &[Located]) -> Vec<bool> {
+    let mut inside = vec![false; toks.len()];
+    for i in 0..toks.len() {
+        let call = matches!(toks.get(i), Some((_, Token::Ident(_))))
+            && toks.get(i + 1).map(|(_, t)| t) == Some(&Token::Punct('!'))
+            && opens(toks.get(i + 2).map(|(_, t)| t));
+        if call {
+            let len = bracketed(&toks[i + 2..]).len();
+            for flag in inside.iter_mut().skip(i + 3).take(len) {
+                *flag = true;
+            }
+        }
+    }
+    inside
 }
 
 /// Whether a token opens a macro's arguments.

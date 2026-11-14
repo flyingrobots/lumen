@@ -364,7 +364,7 @@ of `(x, y)`; each of these breaks that. Decided, each a Lumen rule of the scan (
 |---|---|---|
 | `thread-identity` | `std::thread::current`, `Thread`, `ThreadId` | which worker ran the pixel (`lumen-worker-N`) |
 | `shared-state` | `thread_local!`, `LocalKey`, every `static` item (`static mut` included, in a function body too) | state outside the pixel's inputs, shared across workers or calls; `const` holds data. The scheduler's shared state is a struct field (`Shared::end`), not a `static`, so it needs no waiver |
-| `address` | the methods `addr`, `expose_provenance`, `expose_addr`, `align_offset`, `is_aligned`, `is_aligned_to`; `as *const T as usize` and `x.as_ptr() as u64` (after `as_ptr`, `as_mut_ptr`, `from_ref`, `from_mut`, `addr_of`, `cast`); a `{:p}` format in any string; `fmt::Pointer`, `ptr::hash`; `std::backtrace` | the address-space layout (ASLR); a backtrace also reads `RUST_BACKTRACE` |
+| `address` | the methods `addr`, `expose_provenance`, `expose_addr`, `align_offset`, `is_aligned`, `is_aligned_to`; `as *const T as usize` and `x.as_ptr() as u64` (after `as_ptr`, `as_mut_ptr`, `from_ref`, `from_mut`, `addr_of`, `cast`); a `{:p}` format in a string inside a macro's arguments (`format!`, `write!`, `format_args!`); `fmt::Pointer`, `ptr::hash`; `std::backtrace` | the address-space layout (ASLR); a backtrace also reads `RUST_BACKTRACE` |
 | `host-io` | `io::stdin`, `stdout`, `stderr` and their types and locks, `IsTerminal` and `.is_terminal()`, `io::pipe`; `print!`, `println!`, `eprint!`, `eprintln!`, `dbg!` | the process's streams; the library prints nothing. The rest of `std::io` (`Write`, `Result`) stays allowed: the encoder writes to a caller's writer |
 | `std-os` | all of `std::os` | every platform module: processes, sockets, files and descriptors outside `std::process`, `net` and `fs` |
 | `host-cpu` | `is_*_feature_detected!`, `std::arch` / `core::arch` | the CPU's features and its intrinsics |
@@ -410,6 +410,7 @@ What the lexical rules cannot see: a pointer compared or ordered (`a.as_ptr() < 
 hashed through a hasher of the core's own, or cast to an integer through a binding
 (`let p = x.as_ptr(); p as usize`), since the scan knows no types; `addr` and the other
 method names are refused whatever the receiver, so a method of the core's own with one of those
-names is a finding (waive it by its rule); a `{:p}` built at run time; and a single-segment call
+names is a finding (waive it by its rule); a `{:p}` in a `const` passed to a macro by name, or
+built at run time; and a single-segment call
 through an import (`use std::any::type_name; type_name::<T>()`) is a finding at the `use`,
 not at the call.
