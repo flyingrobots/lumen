@@ -13,6 +13,7 @@ publish = false
 
 [dependencies]
 bunny-broadphase.workspace = true
+bunny-codec.workspace = true
 bunny-geom.workspace = true
 bunny-linalg.workspace = true
 bunny-num.workspace = true
