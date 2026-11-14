@@ -1,11 +1,12 @@
 //! Scenes: triangles with materials, a directional light and a sky, the acceleration structure
-//! that traces rays through them, and a camera placement.
+//! that traces rays through them, a camera placement, and the scene's content identity.
 //!
 //! A [`Scene`] is built once from a [`SceneSpec`]: a list of triangles in primitive order, a
 //! material (a Bunny [`Albedo`]) for each, the [`Lighting`] and the placement of a pinhole camera.
 //! Building it prepares everything a ray needs, so tracing allocates nothing: Bunny's
 //! `TraceTriangle` and `TriangleSurface` per triangle, and the bounding volume hierarchy (see
-//! [`Scene::new`]). The built-in reference scene is in [`crate::reference`].
+//! [`Scene::new`]), and the scene's content identity ([`SceneContentId`], ADR 0005). The built-in
+//! reference scene is in [`crate::reference`].
 
 use core::fmt;
 
@@ -20,6 +21,7 @@ use bunny_query::TraceTriangle;
 
 use crate::mesh::PlaceError;
 
+mod content_id;
 mod primitive_index;
 mod tracer;
 mod tree;
@@ -27,6 +29,7 @@ mod tree;
 #[cfg(test)]
 mod tests;
 
+pub use content_id::{SceneContentId, SCENE_CONTENT_ENCODING};
 pub use primitive_index::PrimitiveIndex;
 pub use tracer::{Hit, TraceError, Tracer, FAR};
 use tree::{build_tree, Tree};
@@ -160,10 +163,11 @@ impl fmt::Display for SceneError {
 
 impl std::error::Error for SceneError {}
 
-/// Triangles in primitive order with their surfaces, materials, lighting, acceleration structure
-/// and camera placement.
+/// Triangles in primitive order with their surfaces, materials, lighting, acceleration structure,
+/// camera placement and content identity.
 #[derive(Clone, Debug)]
 pub struct Scene {
+    content: SceneContentId,
     triangles: Vec<TraceTriangle>,
     surfaces: Vec<Option<TriangleSurface>>,
     material_of: Vec<u32>,
@@ -185,6 +189,10 @@ impl Scene {
     /// `compact_closest_hit` and `compact_any_hit`. Bunny guarantees that their answers equal
     /// those of `closest_hit` and `any_hit` on any tree over the same triangles, and so a test
     /// of every triangle; the tree changes only the speed.
+    ///
+    /// The content identity ([`Scene::content_id`]) is computed here, once, from `spec` alone,
+    /// after it is validated and before the tree is built: one SHA-256 pass over the input, with
+    /// no second copy of it.
     ///
     /// # Errors
     ///
@@ -254,12 +262,15 @@ impl Scene {
             surfaces.push(TriangleSurface::new(&triangle));
             triangles.push(triangle);
         }
+        // The identity reads only the admitted spec; the tree is built after it and is no input.
+        let content = content_id::content_id(spec);
         let tree = build_tree(&boxes)?;
         let mut material_of = reserved(count)?;
         material_of.extend_from_slice(spec.material_of);
         let mut materials = reserved(spec.materials.len())?;
         materials.extend_from_slice(spec.materials);
         Ok(Self {
+            content,
             triangles,
             surfaces,
             material_of,
@@ -300,6 +311,24 @@ impl Scene {
     #[must_use]
     pub const fn camera(&self) -> CameraPlacement {
         self.camera
+    }
+
+    /// The scene's content identity: the SHA-256 of the canonical encoding of the [`SceneSpec`]
+    /// it was built from ([`SCENE_CONTENT_ENCODING`], ADR 0005), computed once by
+    /// [`Scene::new`]. It does not depend on the tree, and is the same on every platform.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let scene = lumen::reference_scene()?;
+    /// let id = scene.content_id();
+    /// assert_eq!(id, lumen::reference_scene()?.content_id());
+    /// assert!(id.to_string().starts_with("sha256:") && id.to_string().len() == 71);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[must_use]
+    pub const fn content_id(&self) -> SceneContentId {
+        self.content
     }
 }
 
