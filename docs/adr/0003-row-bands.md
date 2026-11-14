@@ -40,15 +40,16 @@ Each worker keeps its own ray count and its own earliest failure and returns the
 value. The calling thread is one of the workers. It joins the others and combines all the
 outcomes: it adds the counts and keeps the failure with the smallest `(y, x)`. Integer sums and a
 minimum do not depend on order, so the totals and the chosen error are functions of the scene and
-settings. A panic in the pixel function is passed on with `resume_unwind` after the join. The
-record mutex is gone.
+settings. A panic in the pixel function halts the other workers (see "A panic halts the other
+workers" below) and is passed on with `resume_unwind` after the join. The record mutex is gone.
 
 ### The one shared written value: the first row no longer wanted
 
 `end: AtomicU32` starts at the image height. A worker begins row `y` only if `y < end`, and takes
 a band only if its first row is below `end`. A failure in row `y` lowers `end` to `y`
-(`fetch_min`). A worker that cannot be started sets it to 0, and the render returns
-`WorkerError::Spawn` with the worker's number and the operating system's error. Threads are
+(`fetch_min`). A halt sets it to 0: when a worker cannot be started the render returns
+`WorkerError::Spawn` with the worker's number and the operating system's error, and when a
+worker panics the panic is passed on. Threads are
 started through a spawner the unit tests replace, to refuse a chosen worker on real threads. Relaxed ordering is enough. `end` only tells a worker when it may stop
 early. Every value it takes is a failing row or 0. The results reach the caller through `join`,
 which orders them.
@@ -78,6 +79,28 @@ down, and none takes another band below it. A row that is already in progress wh
 recorded finishes. Rows above `y` still run, because an earlier failure may be there. That is
 tighter than ADR 0001's rule, which kept rendering to the end of the failing row of tiles: a row
 belongs to one worker, so the failing row needs nothing more.
+
+### A panic halts the other workers
+
+Each worker owns a guard that calls the halt when it is dropped while its thread unwinds
+(`std::thread::panicking()`). So a panic in the pixel function sets `end` to 0 as it leaves the
+worker, and the guarantee is the halt's: a worker that has seen the halt begins no further row,
+and takes no further band; a row it has already begun is finished. This is not a real-time claim.
+With relaxed ordering a worker may read the old `end` for a while, and how long depends on the
+operating system's scheduling, so on real threads the work done after a panic is not bounded by a
+number. The panic reaches the caller through `resume_unwind` once every worker has stopped: the
+scope joins every started thread before passing on a panic. No image is returned.
+
+Before this guard, the other workers rendered every row still to be handed out before the panic
+reached the caller. On a 64 by 512 image with one-row bands and a panic at `(0, 0)`, 32 705 of
+32 768 pixels were computed at 2 and 4 workers, under every hand-out order the simulator tried
+(flyingrobots/lumen#56). With the guard, no pixel is computed after the panic in the simulator,
+where a row is one step and the halt is seen at the next step.
+
+The halt on a refused spawn and the halt on a panic set the same value, and both are checked in
+the simulator through the code the threads run: `start_helpers` (the spawn sequence) driven by a
+simulated start that refuses one helper after the others have run, and `Worker::step` driven
+under `catch_unwind`, which drops the worker as the panic unwinds.
 
 ### Whole-program release builds
 
@@ -185,14 +208,21 @@ faster at 18 threads, interleaved against `main` (median 20.734 s against 23.075
 ## Evidence for correctness
 
 The unit tests in `crates/lumen/src/workers/tests.rs` run simulated workers on one thread. They
-use the same `take`, `render_row` and `combine` steps the threads use, in orders chosen by 200
-seeds and by two scripted worst cases: one worker takes everything, and bands finish in reverse.
-The image is 13 by 9, and the band heights are 1, 2, 3, 4, 5, 9 and 20 rows. The tests check the
-image, the pixel count, the chosen error and the stop rule against a raster-order loop.
+run the threads' own `Worker::step` and `combine`, in orders chosen by 200 seeds and by scripted
+worst cases: one worker takes everything, and bands finish in reverse. The image is 13 by 9, and
+the band heights are 1, 2, 3, 4, 5, 9 and 20 rows. The tests check the image, the pixel count,
+the chosen error and the stop rule against a raster-order loop. They also check the halt: after a
+halt at any step, after a helper is refused during `start_helpers`, and after a panic at `(0, 0)`
+of a 64 by 512 image (the panicking worker moving first, after 100 rows of another, last, and
+under 40 seeded orders), no worker computes a pixel. The pixels computed are then exactly the
+panicking one plus 64 for each whole row rendered before it.
 `crates/lumen/tests/threads.rs` checks real threads at fixed counts, including the golden hash at
 1, 2, 3, 4, 7 and 18 threads across ten band heights. Five mutations each fail tests: a band
 written at the wrong row offset, the last partial band dropped, the minimum failure chosen by
-`(x, y)`, one worker's ray count dropped, and the stop row ignored.
+`(x, y)`, one worker's ray count dropped, and the stop row ignored. So do three more: the guard's
+halt removed, the halt on a refused spawn removed, and the guard halting on every drop. Ignoring
+`end` when a band is taken is an equivalent mutant: the band's first row is checked against the
+same value before any pixel of it, so it costs one step and computes nothing.
 
 ## Rejected
 

@@ -656,8 +656,11 @@ one mutex, one atomic); there is no `unsafe` and no thread-pool dependency.
   pixel in raster order, top row first: the error a
   one-pixel-at-a-time render in raster order meets, at every thread count and band height. When
   a pixel in row `y` fails, no worker begins a row from `y` down: every pixel before it is in an
-  earlier row, or earlier in row `y`, which only the failing worker renders. No worker panics or
-  waits on another; a panic in the pixel function reaches the caller after every worker stops.
+  earlier row, or earlier in row `y`, which only the failing worker renders. No worker waits on
+  another. A panic in the pixel function halts the other workers: each begins no row after it has
+  seen the halt (a row already begun finishes; when it sees the halt depends on the scheduler, so
+  this is not a time bound), and the panic reaches the caller once every worker has stopped, with
+  no image.
   A scene is checked whole before any of this: `Scene::new` refuses bad triangles, material
   indices and a camera placement Bunny's camera refuses (`SceneError::Camera`), so a render of a
   built scene can be refused only for its size.
@@ -683,7 +686,12 @@ in reverse order, so the top failing band is rendered last), on a 13 by 9 image 
 The image must equal a raster-order loop byte for byte, the pixel count must be exact, the error
 must be the raster-first failure (also where column-major order would choose another), and no
 pixel at or below the failing row may be computed after the failure; a step budget ends a
-simulation that does not finish. `crates/lumen/tests/threads.rs` then runs real threads at fixed
+simulation that does not finish. The simulated workers run the threads' own `Worker::step`, under
+`catch_unwind`, so a panic in the pixel function unwinds through the worker as on a thread: on a
+64 by 512 image with one-row bands and a panic at `(0, 0)`, no pixel is computed after the panic
+and the panic reaches the caller, under scripted and seeded orders; the pixels computed are
+exactly the panicking one plus 64 for each whole row rendered before it (1 when the panicking
+worker moves first, 6 401 after 100 rows of another, 32 705 when it moves last). `crates/lumen/tests/threads.rs` then runs real threads at fixed
 counts:
 
 - the golden 96 by 54 hash at 1, 2, 3, 4, 7 and 18 threads, each with bands of 1, 2, 4, 5, 6, 7,
@@ -692,8 +700,10 @@ counts:
 - a 320 by 180 image at 8 samples: one thread equals that raster-order loop byte for byte, and 18
   threads with one-row bands, 5 threads with bands of 7 and 16 threads with bands of 32 give the
   same image and ray count;
-- errors, each test bounded by a count of work taken (pixels asked for, traversal queries) that
-  fails it if exceeded, never by a timeout: an injected pixel function that fails at chosen
+- errors, each test counting the work taken (pixels asked for, traversal queries) and failing
+  past the whole image, never on a timeout. That limit catches a scheduler that repeats work or
+  does not end; it does not check the stop rule, which a scheduler that never stops early would
+  still pass. Only the simulation checks the stop rule. An injected pixel function that fails at chosen
   pixels returns the raster-first one at every thread count and band height, also when it is not
   the first in column-major order (`(40, 0)` before `(3, 5)`); on one thread a failure asks for
   exactly the pixels a raster-order loop asks for, up to and including the failing one, at every
@@ -704,14 +714,21 @@ counts:
 - a refused worker thread: helper threads are started through a spawner the unit tests can
   replace, and one that refuses worker `n` (after starting workers 1 to `n - 1` on real threads)
   makes the render return `Spawn` for worker `n` with the operating system's error, once the
-  started workers are joined. That workers begin no row after the halt a refusal calls is checked
-  in the simulator, under every hand-out order, band height and halt step.
+  started workers are joined. That the started workers begin no row after the refusal is checked
+  in the simulator, through the spawn sequence the threads run (`start_helpers`) with a simulated
+  start that refuses helper `n` after the others have run 0, 1, 3 or 10 steps each.
+- a panic: a pixel function that panics at `(0, 0)` of a 64 by 512 image reaches the caller with
+  its own payload, and no image, at 1, 2 and 4 threads. How much the other threads compute first
+  depends on the operating system's scheduling, so it is not bounded here; the simulation bounds
+  it.
 
 Each of these mutations makes tests fail in the release profile (checked by hand, each mutant's
 test run under a 120-second `timeout` as a guard, sources touched before every build so that no
 stale build is tested): numbering a band's rows from one past its first row (pixels
 written at the wrong row offset); dropping the last partial band; choosing the first failure by
-`(x, y)` instead of `(y, x)`; dropping the calling worker's ray count; and ignoring the stop row after a failure.
+`(x, y)` instead of `(y, x)`; dropping the calling worker's ray count; ignoring the stop row after a failure;
+removing the halt a panicking worker's guard calls; removing the halt on a refused spawn; and the
+guard halting on every drop, not only while unwinding.
 
 ## Performance
 
