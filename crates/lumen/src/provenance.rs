@@ -2,7 +2,7 @@
 //! settings it was made at.
 //!
 //! This module owns [`RenderProvenance`]. It holds facts about the image only. How the image was
-//! computed on this run (the thread count, the tile size, the wall-clock times) is not provenance:
+//! computed on this run (the thread count, the band height, the wall-clock times) is not provenance:
 //! it never changes a pixel, so a front end reports it separately.
 
 use bunny_optics::{RGBA8_OPAQUE_IDENTITY, SAMPLER_ID, SHADING_ID};
@@ -18,7 +18,7 @@ pub const PROVENANCE_FIELDS: usize = 12;
 /// commit they come from, the image size and the settings.
 ///
 /// Two renders with equal provenance have the same RGBA8 bytes, and so the same image hash, on
-/// every machine, at every thread count and tile size. It is known before the render runs, so a
+/// every machine, at every thread count and band height. It is known before the render runs, so a
 /// front end can record it without rendering. It is not the render's result: the image, its
 /// hash and the ray count are in [`Render`](crate::Render) and
 /// [`Rgba8Image::hash`](crate::Rgba8Image::hash).

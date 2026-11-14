@@ -1,7 +1,7 @@
 //! Lumen: a deterministic ray tracer built on Bunny's integer math.
 //!
 //! Lumen renders a built-in scene ([`BuiltinScene`]: the reference scene, [`reference_scene`], or
-//! the Fixed Point showpiece, [`fixed_point_scene`]), in tiles on all cores
+//! the Fixed Point showpiece, [`fixed_point_scene`]), in bands of rows on all cores
 //! ([`render_scheduled`], [`Schedule`], [`render_pixels`]) with a power-of-two number of samples
 //! per pixel, each one diffuse path with a shadow-casting directional light, a uniform sky and one
 //! bounce ([`trace_path`], `lumen-diffuse-path/1`), and encodes it as a PNG ([`write_png`]). Every
@@ -9,7 +9,7 @@
 //! traversals, the triangle test, the shading steps and their order of operations, and the pixel
 //! path. So the same scene, size, sample count and seed give the same RGBA bytes, and the same
 //! image hash ([`Rgba8Image::hash`]), on every run and every machine, at every thread count and
-//! tile size. [`RenderProvenance`] records those inputs.
+//! band height. [`RenderProvenance`] records those inputs.
 //!
 //! The library is the crate root: every type and function a front end needs is re-exported
 //! here, and only [`mod@reference`] and [`scenes`] (the scenes' content) and [`mesh`] (the mesh
@@ -24,12 +24,12 @@
 //!
 //! ```
 //! use lumen::{reference_scene, render_scheduled, write_png, ImageSize, RenderProvenance};
-//! use lumen::{RenderSettings, Schedule, DEFAULT_TILE, REFERENCE_SCENE_ID};
+//! use lumen::{RenderSettings, Schedule, DEFAULT_BAND_ROWS, REFERENCE_SCENE_ID};
 //!
 //! let scene = reference_scene()?;
 //! let size = ImageSize::new(32, 18)?;
 //! let settings = RenderSettings::new(2, 7)?;
-//! let render = render_scheduled(&scene, size, settings, Schedule::new(2, DEFAULT_TILE)?)?;
+//! let render = render_scheduled(&scene, size, settings, Schedule::new(2, DEFAULT_BAND_ROWS)?)?;
 //! let provenance = RenderProvenance::new(REFERENCE_SCENE_ID, size, settings);
 //! assert_eq!(provenance.size(), render.image.size());
 //! let hash = render.image.hash();
@@ -72,5 +72,5 @@ pub use scene::{
     CameraPlacement, Hit, Lighting, Scene, SceneError, SceneSpec, TraceError, Tracer, FAR,
 };
 pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
-pub use schedule::{Schedule, ScheduleError, TileSize, DEFAULT_TILE, MAX_THREADS};
+pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};
 pub use workers::{render_pixels, WorkerError};

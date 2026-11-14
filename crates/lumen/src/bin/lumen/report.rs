@@ -1,4 +1,4 @@
-//! What `lumen render` prints: the render's provenance, the run's threads and tile, the ray
+//! What `lumen render` prints: the render's provenance, the run's threads and band height, the ray
 //! count, the image hash, the file written and the wall-clock times.
 
 use std::io::{self, Write};
@@ -17,7 +17,7 @@ pub(crate) struct Times {
 }
 
 /// What `lumen render` prints: the provenance (facts about the image), then the facts of this
-/// run (threads, tile, file, times), with the render's results (rays, hash) between them.
+/// run (threads, band height, file, times), with the render's results (rays, hash) between them.
 pub(crate) struct Report {
     pub(crate) provenance: RenderProvenance,
     pub(crate) schedule: Schedule,
@@ -42,11 +42,10 @@ impl Report {
         }
         writeln!(
             out,
-            "threads {workers}\nthreads-asked {}\ntile {}x{}\n\
+            "threads {workers}\nthreads-asked {}\nband-rows {}\n\
              rays {} (closest {}, shadow {})\nimage {hash}",
             schedule.threads(),
-            schedule.tile().width(),
-            schedule.tile().height(),
+            schedule.band().get(),
             rays.total(),
             rays.closest,
             rays.shadow,

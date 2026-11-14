@@ -13,7 +13,7 @@ if asked. `--scene reference` (the default) is the reference scene, which includ
 bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece. The
 reference render:
 
-- in tiles on all cores (`--threads`, below), with the same bytes at every thread count;
+- in bands of rows on all cores (`--threads`, below), with the same bytes at every thread count;
 - a power-of-two number of samples per pixel (1 to 1024, default 4), placed by Bunny's
   `bunny-sobol-owen/1` sampler from a seed;
 - each sample one diffuse path (`lumen-diffuse-path/1`, below): the camera ray's nearest
@@ -58,7 +58,7 @@ seed 0
 bounces 1
 threads <workers used>
 threads-asked <--threads, or what the system reports available>
-tile 32x32
+band-rows 1
 rays <total> (closest <camera and bounce rays>, shadow <shadow rays>)
 image sha256:<64 hex digits>
 png /scratch/out/reference.png (922266 bytes)
@@ -71,9 +71,10 @@ rays-per-second <rate> (information only: wall clock, all threads)
 ns-per-ray <time> (information only: wall clock, all threads)
 ```
 
-Usage: `lumen render [--scene reference|fixed-point] [--out FILE] [--width W] [--height H] [--samples N] [--seed S]
-[--threads T] [--tile N | --tile WxH]`; the defaults are the reference scene, 320 by 180, 4 samples per pixel,
-seed 0, 32 by 32 tiles and as many threads as the system reports available. Without `--out`
+Usage: `lumen render [--scene reference|fixed-point] [--out FILE] [--width W] [--height H]
+[--samples N] [--seed S] [--threads T] [--band-rows R]`; the defaults are the reference scene,
+320 by 180, 4 samples per pixel, seed 0, bands of 1 row and as many threads as the system
+reports available. Without `--out`
 nothing is written and the report says `png none`: the hash and the timing are the whole
 result. Width and height are each `1..=32768`
 (the limit of Bunny's camera) with at most `2^27` pixels in all (a 512 MiB RGBA8 buffer, enough
@@ -85,7 +86,8 @@ used as given; a non-Unicode number or option is refused like any other bad argu
 arguments exit with status 2 and the usage text; a refused size or an unwritable output path
 exits with status 1 and a message. The output file is written after the render, so nothing is
 written when the render fails. `--threads` is `1..=256` (0 and anything larger are refused with
-status 2); a tile is `N` (N by N pixels) or `WxH`, each side at least 1.
+status 2); `--band-rows` is the number of whole image rows a worker takes at a time, at least 1
+(0 is refused with status 2). There is no `--tile` option any more; it is refused as unknown.
 
 The PNG is uncompressed (see below), so it is about four bytes per pixel: 922 266 bytes at
 640 by 360, and 33 188 430 bytes (about 33 MB) at 3840 by 2160.
@@ -99,7 +101,7 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   test needs is re-exported there: scene building (`Scene`, `SceneSpec`, `CameraPlacement`,
   `Lighting`, `reference_scene`, `fixed_point_scene`, and `BuiltinScene`, the registry of
   named scenes with their identities that the command's `--scene` reads), rendering (`render`, `render_scheduled`, `render_traced`,
-  `Schedule`, `TileSize`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
+  `Schedule`, `BandRows`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
   its `hash`), its provenance (`RenderProvenance`), PNG encoding into any writer (`write_png`,
   `png_len`), and the integrator's parts for custom tracers (`trace_path`, `pixel_radiance`,
   `Tracer`, `Hit`, `TraceError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
@@ -113,7 +115,7 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   `RenderProvenance::new(scene, size, settings)` gives every field that decides the image's bytes,
   and `fields()` lists them by name in a fixed order: `scene`, `integrator`, `shading`, `sampler`,
   `tone`, `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed`, `bounces`. New fields are
-  added at the end. Equal provenance means equal bytes. The thread count, the tile size, the
+  added at the end. Equal provenance means equal bytes. The thread count, the band height, the
   output file and the wall-clock times do not change a pixel, so they are not provenance. The
   command prints them from its own report (`crates/lumen/src/bin/lumen/report.rs`), after the
   provenance, the ray count and the image hash.
@@ -379,7 +381,7 @@ built.
 A pixel's value is the mean of its samples in a Bunny `PixelAccumulator` (exact integer sums,
 rounded once), toned by `bunny-tone-srgb/1` and written by `write_rgba8`
 (`bunny-rgba8-opaque/1`). Each sample is a pure function of (scene, pixel, sample index, seed):
-the per-pixel function holds no shared mutable state, so rendering tiles on threads (below) is a
+the per-pixel function holds no shared mutable state, so rendering bands on threads (below) is a
 change of schedule only.
 
 Geordi's integrator identity is meant to pin this same composition.
@@ -425,26 +427,31 @@ costs about 7.5 % more, about 10 % more time in all. The scene has 14 % more tri
 bunny's are small and dense; this measurement does not separate the bunny's cost from the
 camera's.
 
-## Threads and tiles
+## Threads and row bands
 
-`render_scheduled` (and `lumen render`) split the image into tiles, 32 by 32 pixels by default
-(`--tile`; `crates/lumen/src/schedule.rs`), counted row-major from the top left; the tiles of
-the last column and row are cut to the image. The design, what is shared and what was rejected
-are recorded in [ADR 0001](docs/adr/0001-tile-scheduling.md). A shared atomic counter hands the next tile to whichever worker asks, so a region that
-costs more (the sphere, a shadow edge) or a slower core never leaves the others idle. That matters
-on the Apple M5 Pro, whose 6 "super" and 12 "performance" cores run at different speeds: a
-static split would make every worker wait for the slowest share. Each worker renders a whole tile
-into its own buffer and then copies the finished tile into the image at the tile's place, under a
-lock held only for the copy (`crates/lumen/src/workers.rs`, `render_pixels`, which runs any pixel
-function this way and knows nothing of rays). The code is safe Rust with the standard library
-only (`std::thread::scope`, atomics, mutexes); there is no `unsafe` and no thread-pool
-dependency.
+`render_scheduled` (and `lumen render`) cut the image into bands of whole rows, one row by
+default (`--band-rows`; `crates/lumen/src/schedule.rs`), from the top; the last band is cut to
+the image. The design, what is shared, the stop rule's proof and what was rejected are recorded
+in [ADR 0003](docs/adr/0003-row-bands.md), which supersedes the tile design of
+[ADR 0001](docs/adr/0001-tile-scheduling.md). The bands are `chunks_mut` slices of the one image
+buffer: contiguous and disjoint, which the borrow checker proves, so a worker that takes a band
+owns it and writes each pixel straight into the image. There is no per-worker buffer, no copy and
+no lock on the image. One small mutex around the band iterator hands the next band to whichever
+worker asks, so a region that costs more (the sphere, a shadow edge) or a slower core never
+leaves the others idle. That matters on the Apple M5 Pro, whose 6 "super" and 12 "performance"
+cores run at different speeds: a static split would make every worker wait for the slowest share.
+Each worker sums its own ray count and keeps its own first failure and returns both when it
+ends; the caller adds the counts and keeps the earliest failure after `join`
+(`crates/lumen/src/workers.rs`, `render_pixels`, which runs any pixel function this way and knows
+nothing of rays). The only value a worker writes that another reads is one atomic, the first row
+no longer wanted. The code is safe Rust with the standard library only (`std::thread::scope`,
+one mutex, one atomic); there is no `unsafe` and no thread-pool dependency.
 
 - **Threads**: `--threads N`, `1..=256`; by default the number `std::thread::available_parallelism`
   reports, which inside a container is the CPU limit (`--cpus` of `devrun`). Only the `lumen`
   binary asks the host; the library's `Schedule::new` takes an explicit count. The calling thread is
-  one of the workers, and a render never uses more workers than there are tiles. With one thread
-  no thread is started and the calling thread takes every tile in order: the same code path with
+  one of the workers, and a render never uses more workers than there are bands. With one thread
+  no thread is started and the calling thread takes every band in order: the same code path with
   one worker, not a separate renderer. `lumen::render` is that one-thread schedule.
 - **The scene is shared read-only.** It is built once (triangles, per-triangle surfaces, the SAH
   tree and its compact layout) before any worker starts, and every worker reads it through
@@ -453,56 +460,56 @@ dependency.
   (`scene-seconds`) from rendering (`render-seconds`).
 - **Errors**: if a pixel fails (a traversal error, a ray outside Bunny's domain), the render
   returns the typed error of the first failing pixel in raster order, top row first: the error a
-  one-pixel-at-a-time render in raster order meets, at every thread count and tile size. Every
-  pixel before it lies in the same row of tiles or an earlier one, so after a failure workers take
-  no tile past the end of that row of tiles and abandon such a tile at its next row of pixels. No
-  worker panics or waits on another.
+  one-pixel-at-a-time render in raster order meets, at every thread count and band height. When
+  a pixel in row `y` fails, no worker begins a row from `y` down: every pixel before it is in an
+  earlier row, or earlier in row `y`, which only the failing worker renders. No worker panics or
+  waits on another; a panic in the pixel function reaches the caller after every worker stops.
 - **Progress** is not reported: there is nothing on stderr during a render.
 
 ### Why the image does not depend on the threads
 
 Every pixel's samples are accumulated for that pixel alone, by the one worker that renders its
-tile, in a `PixelAccumulator` of its own, then resolved, toned and quantized; no sum ever crosses
+band, in a `PixelAccumulator` of its own, then resolved, toned and quantized; no sum ever crosses
 pixels or threads, so there is no accumulation order between threads to get wrong. The worker
-copies the finished bytes to a position fixed by the tile's index. The ray counts are sums of
-integers. Thread count, tile size, which worker takes which tile and when, and timing therefore
-decide nothing about the bytes.
+writes the finished bytes into its band at the position of the pixel's column, and the band is
+the slice of the image that starts at its first row. The ray counts are sums of integers and the
+chosen failure is a minimum, neither of which depends on order. Thread count, band height, which
+worker takes which band and when, and timing therefore decide nothing about the bytes.
 
 Tested in the test and release profiles, with no clock, no dependence on the host's core count
 and no repeat-and-hope loop. Hand-out orders are explored deterministically: unit tests in
 `crates/lumen/src/workers/tests.rs` run 1, 2, 3, 7 and 200 simulated workers on one thread through
-the same claim, render-row, store and finish steps the threads run, in orders chosen by 200 seeds
-of a generator and by two scripted worst cases (one worker takes everything; tiles finish in
-reverse order, so the earliest failing tile is rendered last), each failure naming its order. The
-image must equal a raster-order loop byte for byte and the error must be the raster-first
-failure; a step budget ends a simulation that does not finish. `crates/lumen/tests/threads.rs`
-then runs real threads at fixed counts:
+the same take-a-band, render-a-row and combine steps the threads run, in orders chosen by 200
+seeds of a generator and by two scripted worst cases (one worker takes everything; bands finish
+in reverse order, so the top failing band is rendered last), on a 13 by 9 image with bands of 1,
+2, 3, 4, 5, 9 and 20 rows (2, 4 and 5 leave a partial last band), each failure naming its order.
+The image must equal a raster-order loop byte for byte, the pixel count must be exact, the error
+must be the raster-first failure (also where column-major order would choose another), and no
+pixel at or below the failing row may be computed after the failure; a step budget ends a
+simulation that does not finish. `crates/lumen/tests/threads.rs` then runs real threads at fixed
+counts:
 
-- the golden 96 by 54 hash at 1, 2, 3, 4, 7 and 18 threads, each with tiles of
-  1 by 1, 7 by 5, 16 by 16, 32 by 32, 96 by 1, 1 by 54, 13 by 54 and 200 by 200 (larger than the
-  image), with the same ray count as a raster-order loop over `pixel_radiance` that does not use
-  the scheduler;
+- the golden 96 by 54 hash at 1, 2, 3, 4, 7 and 18 threads, each with bands of 1, 2, 4, 5, 6, 7,
+  16, 27, 54 and 200 rows, with the same ray count as a raster-order loop over `pixel_radiance`
+  that does not use the scheduler;
 - a 320 by 180 image at 8 samples: one thread equals that raster-order loop byte for byte, and 18
-  threads with 32 by 32 tiles, 5 threads with 24 by 10 tiles and 16 threads with one-row tiles
-  give the same image and ray count;
+  threads with one-row bands, 5 threads with bands of 7 and 16 threads with bands of 32 give the
+  same image and ray count;
 - errors, each test bounded by a count of work taken (pixels asked for, traversal queries) that
-  fails it if exceeded, never by a timeout: an injected pixel function that
-  fails at chosen pixels returns the raster-first one at every thread count and tile size, also
-  when it is not in the lowest-numbered failing tile (`(40, 0)` in tile 1 before `(3, 5)` in tile
-  0); on one thread a failure in the first pixel renders exactly the rest of the first row of
-  tiles and nothing more (on several threads, how much runs before the failure is recorded depends
-  on scheduling, so the simulator checks the stop rule instead: under every order, no pixel below
-  the failing pixel's row of tiles is computed after the failure); and a
-  tracer that fails real traversals in two regions with two different errors returns the one a
-  raster-order loop over `trace_path` meets first, at every schedule.
+  fails it if exceeded, never by a timeout: an injected pixel function that fails at chosen
+  pixels returns the raster-first one at every thread count and band height, also when it is not
+  the first in column-major order (`(40, 0)` before `(3, 5)`); on one thread a failure asks for
+  exactly the pixels a raster-order loop asks for, up to and including the failing one, at every
+  band height (on several threads, how much runs before the failure is recorded depends on
+  scheduling, so the simulator checks the stop rule instead); and a tracer that fails real
+  traversals in two regions with two different errors returns the one a raster-order loop over
+  `trace_path` meets first, at every schedule.
 
 Each of these mutations makes tests fail in the release profile (checked by hand, each mutant's
-test run under a 120-second `timeout` as a guard for the checking script, sources touched before
-every build so that no stale build is tested):
-copying a tile to the wrong column offset; skipping the last tile; dropping the last partial row
-of tiles; sharing one accumulator between two neighbouring pixels (thread-local state);
-stopping after the failing tile instead of the end of its row of tiles; and choosing the first
-failure in column-major order.
+test run under a 120-second `timeout` as a guard, sources touched before every build so that no
+stale build is tested): numbering a band's rows from one past its first row (pixels
+written at the wrong row offset); dropping the last partial band; choosing the first failure by
+`(x, y)` instead of `(y, x)`; dropping the calling worker's ray count; and ignoring the stop row after a failure.
 
 ## Performance
 
@@ -537,13 +544,35 @@ run with `--threads 1`.
 ### Records
 
 Dated measurement records are kept under [`docs/measurements/`](docs/measurements/). The record for
-flyingrobots/lumen#5 is [the 4K reference scene at 16 samples per pixel, 2026-11-13](docs/measurements/2026-11-13-4k-reference.md).
+flyingrobots/lumen#5 is [the 4K reference scene at 16 samples per pixel, 2026-11-13](docs/measurements/2026-11-13-4k-reference.md),
+taken with the tile scheduler. [The 4K reference scene with row bands and whole-program release
+builds](docs/measurements/2026-11-13-4k-row-bands.md) repeats it for flyingrobots/lumen#28.
 Each states its commit and conditions and applies to that commit only.
 
 ### Readings
 
-One session (`lumen-reference-scene/3`, 1280 by 720, 16 samples per pixel, seed 0, 39 479 111
-rays, 32 by 32 tiles; three runs each, render seconds):
+Row bands with whole-program release builds (`lto = "fat"`, `codegen-units = 1`) against the
+tile scheduler on `main` before flyingrobots/lumen#28 (0de5fe7, default release profile), in one
+session, interleaved, six runs each (`lumen-reference-scene/3`, 1280 by 720, 16 samples per
+pixel, seed 0; render seconds, median; the same image hash in every run):
+
+| Threads | main, tiles | row bands, LTO | Difference |
+| ---: | ---: | ---: | ---: |
+| 1 | 8.483 | 7.503 | -11.6 % |
+| 4 | 2.270 | 1.918 | -15.5 % |
+| 18 | 0.661 | 0.623 | -5.8 % |
+
+The gain is fat LTO (Bunny's kernels inline into the render loop), not the change of work unit:
+row bands without LTO measured the same as tiles. That was also the cause of the 8 %
+multi-thread slowdown after the scheduler was split out in 6a816ef. The sessions, the band-height
+sweep and what was ruled out are in [ADR 0003](docs/adr/0003-row-bands.md). Across sessions the 18
+thread gain ranged from 6 to 16 %; runs at 18 threads spread the most. The Fixed Point scene at
+3840 by 2160 and 64 samples, also interleaved, took 20.734 s against 23.075 s (median of three,
+18 threads, -10.1 %), with the same hash.
+
+An earlier session, with the tile scheduler and the default release profile
+(`lumen-reference-scene/3`, 1280 by 720, 16 samples per pixel, seed 0, 39 479 111 rays, 32 by 32
+tiles; three runs each, render seconds), shows how the render scales with threads:
 
 | Threads | Runs | Mean | Speedup | Per thread |
 | ---: | --- | ---: | ---: | ---: |
@@ -558,15 +587,16 @@ rays, 32 by 32 tiles; three runs each, render seconds):
 Scaling is near linear to 4 threads and falls off after 6. The likeliest reason, not proven
 here, is the two core classes: if the VM's busiest threads land on the 6 super cores first, the
 threads beyond 6 run on the slower performance cores. Shared memory bandwidth may add to it; the
-scene and its tree are small (31 511 triangles) and stay in cache, and the image is written once
-per tile.
+scene and its tree are small (31 511 triangles) and stay in cache, and the image is written once.
 
-Tile sizes at 18 threads, same image (render seconds, three runs each): 4 by 4: 0.661; 8 by 8:
-0.661; 16 by 16: 0.646; 32 by 32: 0.648; 64 by 64: 0.661; 128 by 128: 0.832; 256 by 256: 1.761;
-1280 by 1 (one row): 0.637; 1280 by 4: 0.669; 1280 by 16: 0.745. Everything from 4 by 4 to 64
-by 64 and single rows is within the noise; from 128 by 128 there are too few tiles to balance 18
-workers (60 tiles of 128, 15 of 256). The default stays 32 by 32: as fast as any, and 8 160 tiles
-at 4K.
+Band heights at 18 threads, with LTO, same image (render seconds, median of five): 1 row: 0.622;
+2: 0.598; 4: 0.646; 8: 0.635. Without LTO, in another session: 1: 0.662; 2: 0.667; 4: 0.698;
+8: 0.716; 16: 0.746; 45: 1.067. Up to 8 rows the differences are within the noise. From 16 rows
+the last bands leave workers idle at the end of the render: a 16-row band is about 190 ms of
+one core, and 45 rows make 16 bands for 18 workers. The default is one row: as fast as any, and
+the finest grain (2 160 bands at 4K). In the earlier tile session, tiles from 4 by 4 to
+64 by 64 and single rows measured the same (0.637 to 0.661 s at 18 threads), and 128 by 128 and
+larger were slower for the same reason (0.832 and 1.761 s at 128 and 256).
 
 ## Image hash and PNG
 
@@ -596,8 +626,8 @@ around the padding boundaries.
 ## Determinism
 
 The claim: the same scene, size, sample count and seed give the same RGBA bytes, and so the same
-image hash, on every run, every platform and every build profile, at every thread count and tile
-size, whatever order the pixels and samples are computed in. Every value that decides a pixel is integer arithmetic from Bunny: the
+image hash, on every run, every platform and every build profile, at every thread count and band
+height, whatever order the pixels and samples are computed in. Every value that decides a pixel is integer arithmetic from Bunny: the
 sampler (a pure function of seed, pixel, sample and pair), camera rays, the trees and their
 traversals, the exact triangle test, the shading steps and their order, the accumulator's exact
 sums, the tone curve and quantization. There is no floating point in the render and nothing from
@@ -638,7 +668,7 @@ How it is tested (`crates/lumen/tests/`):
   in front is lit.
 - **Two runs**: the same image rendered twice in one process, and by two separate `lumen render`
   processes, compared byte for byte along with the printed hash and ray count.
-- **Thread counts and tile sizes**: see "Why the image does not depend on the threads" above.
+- **Thread counts and band heights**: see "Why the image does not depend on the threads" above.
 - **Golden hash**: the 96 by 54 reference image at 4 samples per pixel and seed 0 has a recorded
   hash, together with the scene, integrator, sampler, shading, tone and encoding identities and the
   Bunny commit. It must be identical on every platform: it was first recorded on aarch64 Linux,

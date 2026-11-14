@@ -26,9 +26,9 @@ fn main() -> ExitCode {
             println!("lumen {} (bunny {BUNNY_REV})", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        Ok(Command::Render { scene, width, height, settings, threads, tile, out }) => {
+        Ok(Command::Render { scene, width, height, settings, threads, band, out }) => {
             let threads = threads.unwrap_or_else(available_threads);
-            let schedule = match Schedule::new(threads, tile) {
+            let schedule = match Schedule::new(threads, band) {
                 Ok(schedule) => schedule,
                 Err(error) => {
                     eprintln!("lumen: --threads: {error}");

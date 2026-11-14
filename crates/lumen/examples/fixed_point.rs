@@ -17,7 +17,7 @@ use std::io::{BufWriter, Write};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use lumen::DEFAULT_TILE;
+use lumen::DEFAULT_BAND_ROWS;
 use lumen::{render_scheduled, write_png, BuiltinScene, ImageSize, RenderSettings, Schedule};
 
 const USAGE: &str = "usage: fixed_point OUT [WIDTH HEIGHT [SAMPLES [SEED [THREADS]]]]";
@@ -49,7 +49,7 @@ fn run() -> Result<(), String> {
     let settings = RenderSettings::new(args.samples, args.seed).map_err(|e| e.to_string())?;
     let started = Instant::now();
     let scene = BuiltinScene::FixedPoint.build().map_err(|e| e.to_string())?;
-    let schedule = Schedule::new(args.threads, DEFAULT_TILE).map_err(|e| e.to_string())?;
+    let schedule = Schedule::new(args.threads, DEFAULT_BAND_ROWS).map_err(|e| e.to_string())?;
     let rendered = render_scheduled(&scene, size, settings, schedule).map_err(|e| e.to_string())?;
     let seconds = started.elapsed().as_secs_f64();
     let file = File::create(&args.out).map_err(|e| format!("{}: {e}", args.out))?;
