@@ -192,8 +192,10 @@ relative to the macro's file, not the caller's. Outside the core, each for a rea
   unbanned, and `cargo clippy` exited 0), and a `clippy.toml` or `.clippy.toml` in a crate's
   directory replaces the root one for everything under it (a one-line `xtask/.clippy.toml`
   turned off all 53 bans there). So `cargo run -p xtask -- clippy-bans`, a step of the
-  `fmt, clippy` job, runs Clippy on the fixture and fails on: any diagnostic located in
-  `clippy.toml`; an entry that never fires on the fixture (misspelt, resolving to another item,
+  `fmt, clippy` job, runs Clippy on the fixture and fails on: any item of a `disallowed-*`
+  array it cannot read as `{ path = "...", reason = "<rule-id>: ..." }` (a bare string, a
+  missing reason, any other key such as `allow-invalid`, which silences the warning below), so
+  a ban it cannot check is a failure, not a pass; any diagnostic located in `clippy.toml`; an entry that never fires on the fixture (misspelt, resolving to another item,
   or not used there: this is the stronger of the two checks, since it does not depend on the
   wording of Clippy's warning); a module marked `// seeded: <rule>` with no finding under that
   rule, a finding in a module marked `// accepted` or outside every marked module; a fixture
