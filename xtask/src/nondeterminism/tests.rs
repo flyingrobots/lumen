@@ -6,7 +6,7 @@
 //! (ADR 0006). The four Clippy alone catches (`Path::exists` and three thread spawns) are not here.
 
 use super::tokens::is_float;
-use super::{core_findings, waiver_forms};
+use super::{core_findings, denies_float_arithmetic, waiver_forms};
 
 /// A seeded violation: a label, the source, the rule and the line that must be reported.
 type Form = (&'static str, &'static str, &'static str, usize);
@@ -200,4 +200,27 @@ fn a_ban_lint_waiver_must_be_an_expect_whose_reason_starts_with_rule_ids() {
         [1]
     );
     assert_eq!(forms("#[allow(dead_code)]\n#[expect(clippy::cast_possible_truncation)]"), []);
+}
+
+#[test]
+fn a_crate_root_denies_float_arithmetic_only_in_an_inner_deny_or_forbid() {
+    for root in [
+        "//! Docs.\n#![deny(clippy::float_arithmetic)]\nmod a;",
+        "#![forbid(clippy::float_arithmetic)]",
+        "#![deny(missing_docs, clippy::float_arithmetic)]",
+    ] {
+        assert!(denies_float_arithmetic(root), "{root}");
+    }
+    for root in [
+        "#[deny(clippy::float_arithmetic)]\nfn f() {}",
+        "// #![deny(clippy::float_arithmetic)]",
+        "#![warn(clippy::float_arithmetic)]",
+        "m![deny(clippy::float_arithmetic)];",
+        "#![deny(clippy::float_cmp)]",
+        "#![deny(missing_docs)] const S: &str = \"clippy::float_arithmetic\";",
+        "#![deny(missing_docs)]\n#![allow(clippy::float_arithmetic)]",
+        "",
+    ] {
+        assert!(!denies_float_arithmetic(root), "{root}");
+    }
 }
