@@ -157,13 +157,19 @@ directory is missing or not writable, it is a directory or a link to one, it is 
 it has no file name) is refused with status 1 and a message that names the path, without computing a
 pixel and without leaving anything behind.
 
-The PNG is then written to a temporary file in the destination's directory, `.NAME.lumen-PID-N.tmp`
-(created exclusively, so it never replaces another file and two runs never share one), flushed,
+The PNG is then written to a temporary file in the destination's directory,
+`.PREFIX.lumen-PID-N.tmp` (created exclusively, so it never replaces another file and two runs
+never share one), flushed,
 `sync_all`ed and renamed over the destination. If any step fails the temporary file is removed and
 the destination is exactly as it was: a failed write (a full disk, a size limit) no longer leaves a
 truncated file or destroys the one that was there. A temporary file that cannot be removed is
-named in the error. So `--out` names either the complete new PNG or what it was before, whether
-the render or the write fails.
+named in the error. `PREFIX` is the destination's file name cut to at most 32 bytes at a
+character boundary, so the temporary name is at most 57 bytes whatever the destination's length:
+any destination name the file system accepts, up to the 255 bytes of ext4, APFS and NTFS, can be
+published. What remains is the whole path's limit: when the destination's name is shorter than
+the temporary one, a path within that difference of the system's limit (4 096 bytes on Linux) is
+refused before rendering, though the destination itself could be created. So `--out` names
+either the complete new PNG or what it was before, whether the render or the write fails.
 
 > Caution: `--out` replaces an existing file at that path without asking.
 

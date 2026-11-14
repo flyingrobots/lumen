@@ -6,15 +6,26 @@
 //! 1.96.0 ("malformed `path` attribute input"), and a `path` inside `cfg_attr` is accepted by it.
 
 use super::{Layout, Role};
+use crate::workspace::Library;
 
 const LIB: &str = "crates/lumen/src/lib.rs";
-const CRATES: [&str; 2] = ["crates/lumen", "xtask"];
+const CRATES: [&str; 3] = ["crates/lumen", "crates/dep", "xtask"];
 
-/// The layout of `files` in the two crates.
+/// A deterministic crate in `dir` with its library at `src/lib.rs`.
+fn library(name: &str, dir: &str) -> Library {
+    Library { name: name.to_owned(), dir: dir.to_owned(), root: format!("{dir}/src/lib.rs") }
+}
+
+/// The layout of `files` in the crates, with `lumen` the one deterministic crate.
 fn layout(files: &[(&str, &str)]) -> Layout {
+    layout_of(files, &[library("lumen", "crates/lumen")])
+}
+
+/// The layout of `files` in the crates, with `libraries` the deterministic crates.
+fn layout_of(files: &[(&str, &str)], libraries: &[Library]) -> Layout {
     let files: Vec<(String, String)> =
         files.iter().map(|(p, t)| ((*p).to_owned(), (*t).to_owned())).collect();
-    Layout::new(&files, &CRATES.map(str::to_owned))
+    Layout::new(&files, &CRATES.map(str::to_owned), libraries)
 }
 
 /// The failures of `files`, as (path, line).
@@ -230,4 +241,50 @@ fn an_inner_cfg_test_makes_its_inline_module_a_test_module() {
     ]);
     assert_eq!(tree.role("crates/lumen/src/support/helper.rs"), Role::Test);
     assert_eq!(tree.role("crates/lumen/src/after.rs"), Role::Source);
+}
+
+#[test]
+fn every_deterministic_crates_library_is_core_and_nothing_else_of_it() {
+    let files = [
+        (LIB, "mod render;"),
+        ("crates/lumen/src/render.rs", ""),
+        (
+            "crates/dep/src/lib.rs",
+            "mod inner;\n#[cfg(windows)]\nmod win;\n#[cfg(test)]\nmod tests;\n#[path = \"../extra/x.rs\"]\nmod x;",
+        ),
+        ("crates/dep/extra/x.rs", ""),
+        ("crates/dep/src/inner.rs", ""),
+        ("crates/dep/src/win.rs", ""),
+        ("crates/dep/src/tests.rs", ""),
+        ("crates/dep/src/orphan.rs", ""),
+        ("crates/dep/src/bin/tool.rs", ""),
+        ("crates/dep/tests/it.rs", ""),
+        ("crates/dep/examples/e.rs", ""),
+    ];
+    let both = layout_of(&files, &[library("lumen", "crates/lumen"), library("dep", "crates/dep")]);
+    for path in [
+        LIB,
+        "crates/lumen/src/render.rs",
+        "crates/dep/src/lib.rs",
+        "crates/dep/src/inner.rs",
+        "crates/dep/src/win.rs",
+        "crates/dep/src/orphan.rs",
+        "crates/dep/extra/x.rs",
+    ] {
+        assert!(both.is_core(path), "{path}");
+    }
+    for path in [
+        "crates/dep/src/tests.rs",
+        "crates/dep/src/bin/tool.rs",
+        "crates/dep/tests/it.rs",
+        "crates/dep/examples/e.rs",
+    ] {
+        assert!(!both.is_core(path), "{path}");
+    }
+    let lumen_only = layout(&files);
+    assert!(
+        !lumen_only.is_core("crates/dep/src/inner.rs"),
+        "a crate not deterministic is not core"
+    );
+    assert!(lumen_only.is_core("crates/lumen/src/render.rs"));
 }
