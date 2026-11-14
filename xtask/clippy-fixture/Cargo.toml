@@ -1,0 +1,21 @@
+[package]
+name = "lumen-clippy-fixture"
+description = "Seeded uses of every item clippy.toml bans, compiled only by `cargo run -p xtask -- clippy-bans`."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+keywords = ["ci"]
+categories = ["development-tools"]
+publish = false
+
+[dependencies]
+bunny-codec.workspace = true
+bunny-geom.workspace = true
+bunny-linalg.workspace = true
+bunny-num.workspace = true
+
+[lints]
+workspace = true
