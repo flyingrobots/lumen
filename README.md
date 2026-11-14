@@ -147,16 +147,26 @@ the file. `.gitattributes` keeps Git from rewriting its line endings.
 **Reading it: an interim, `lumen-ascii-ply-q32.32/1`.** Lumen's rule is that numerical code
 belongs in Bunny, but Bunny's PLY reader handles only binary little-endian files with exactly
 `x y z` vertices, and this file is ASCII with two more vertex columns. Until Bunny has an ASCII
-reader (flyingrobots/bunny#247), `crates/lumen/src/mesh/` (`ply.rs`, `decimal.rs`) reads exactly this file's profile and
-refuses anything else with a typed error (`PlyError`, `DecimalError`): a header of exactly
-`format ascii 1.0`, `element vertex`, the properties `x y z confidence intensity` as `float`,
-`element face` with `property list uchar int vertex_indices`, then five numbers per vertex line,
-`3 a b c` per face line with every index in range, `\n` line endings, and nothing after the last
-face. `confidence` and `intensity` are checked but not used. Each coordinate
-`[-]digits[.digits][(e|E)[+|-]digits]` is converted with integers only: the digits form a mantissa
-`m` and the point and exponent a power of ten `e`, and the Q32.32 raw value is the exact rational
-`m * 2^32 * 10^e` rounded to the nearest integer, **ties to even**, computed in `u128`. The file
-has one coordinate in exponent form, `8.20736e-05`.
+reader (flyingrobots/bunny#247), `crates/lumen/src/mesh/` (`ply.rs`, `decimal.rs`) reads exactly
+this file's profile and refuses anything else with a typed error (`PlyError`, `DecimalError`,
+each carrying the line number and what was found): a header of exactly `format ascii 1.0`,
+`element vertex`, the properties `x y z confidence intensity` as `float`, `element face` with
+`property list uchar int vertex_indices`, then five numbers per vertex line separated by single
+spaces, `3 a b c` per face line with every index in range, `\n` line endings, and nothing after
+the last face. `confidence` and `intensity` are checked but not used. Its limits, each a typed
+error: at most 2^20 vertices and 2^20 faces declared, lines of at most 256 bytes, counts and
+indices of at most ten digits. Declared counts never reserve memory.
+
+The conversion, `lumen-ascii-ply-q32.32/1`, follows Bunny's `bunny-decimal-q32-32/1` (in review
+as flyingrobots/bunny#281), so that the swap to Bunny's reader changes no bit: for decimal text
+`[+-]digits[.digits][(e|E)[+-]digits]` with exact value `v`, the raw value is `v * 2^32` rounded
+to the nearest integer, **ties to even**, applied to the magnitude and then the sign; a positive
+magnitude may reach `2^63 - 1` and a negative one `2^63`, decided after rounding. Values certainly
+out of range (`|v| >= 1e10`) or certainly below half a raw unit (`|v| < 1e-10`) are decided
+whatever their length; a value in between with more than 28 significant digits is refused.
+Everything is integer arithmetic in `u128`; no floating point. Bunny's exact tie vectors and
+range edges are among lumen's tests, and every one of the file's 5 667 coordinates agrees with an
+exact rational computation. The file has one coordinate in exponent form, `8.20736e-05`.
 
 **Placing it** (`BUNNY_PLACEMENT` in `crates/lumen/src/reference/bunny.rs`, applied by
 `crates/lumen/src/mesh/placement.rs`): every vertex is turned half a turn

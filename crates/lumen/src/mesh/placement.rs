@@ -38,9 +38,12 @@ pub struct MeshPlacement {
 }
 
 impl MeshPlacement {
-    /// The placed position of `v`, or `None` when a coordinate overflows.
-    #[must_use]
-    pub fn place(&self, v: FixedVec3) -> Option<FixedVec3> {
+    /// The placed position of `v`.
+    ///
+    /// # Errors
+    ///
+    /// [`CoordinateOverflow`] when a placed coordinate does not fit a Q32.32 raw `i64`.
+    pub fn place(&self, v: FixedVec3) -> Result<FixedVec3, CoordinateOverflow> {
         let turn = match self.turn {
             MeshTurn::None => 1,
             MeshTurn::HalfAboutY => -1,
@@ -51,13 +54,40 @@ impl MeshPlacement {
             snapped.checked_add(steps.checked_mul(GRID_RAW)?).map(FixedQ32_32::from_raw)
         };
         let [ox, oy, oz] = self.offset_steps;
-        Some(FixedVec3::new(
-            one(v.x.raw(), turn, ox)?,
-            one(v.y.raw(), 1, oy)?,
-            one(v.z.raw(), turn, oz)?,
+        let overflow = |axis| move || CoordinateOverflow { axis };
+        Ok(FixedVec3::new(
+            one(v.x.raw(), turn, ox).ok_or_else(overflow(Axis::X))?,
+            one(v.y.raw(), 1, oy).ok_or_else(overflow(Axis::Y))?,
+            one(v.z.raw(), turn, oz).ok_or_else(overflow(Axis::Z))?,
         ))
     }
 }
+
+/// A coordinate axis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    /// X.
+    X,
+    /// Y.
+    Y,
+    /// Z.
+    Z,
+}
+
+/// A placed coordinate does not fit a Q32.32 raw `i64`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CoordinateOverflow {
+    /// The axis that overflowed.
+    pub axis: Axis,
+}
+
+impl fmt::Display for CoordinateOverflow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "the placed {:?} coordinate overflows Q32.32", self.axis)
+    }
+}
+
+impl std::error::Error for CoordinateOverflow {}
 
 /// A mesh placed in the scene: its kept triangles in face order, and the faces dropped.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,7 +108,14 @@ pub enum PlaceError {
         /// The face index.
         face: usize,
     },
-    /// A placed coordinate overflows, or a placed face has a vertex outside the trace domain.
+    /// A vertex of this face overflows Q32.32 once placed.
+    Overflow {
+        /// The face index.
+        face: usize,
+        /// The overflow.
+        overflow: CoordinateOverflow,
+    },
+    /// A placed vertex of this face is outside the trace domain (256 units).
     OutsideTraceDomain {
         /// The face index.
         face: usize,
@@ -90,6 +127,7 @@ impl fmt::Display for PlaceError {
         match self {
             Self::Ply(error) => write!(f, "{error}"),
             Self::MissingVertex { face } => write!(f, "face {face} names a missing vertex"),
+            Self::Overflow { face, overflow } => write!(f, "face {face}: {overflow}"),
             Self::OutsideTraceDomain { face } => {
                 write!(f, "face {face} is outside the trace domain once placed")
             }
@@ -107,8 +145,8 @@ impl std::error::Error for PlaceError {}
 /// # Errors
 ///
 /// For the first face that fails, [`PlaceError::MissingVertex`] if it names a vertex the mesh
-/// does not have, or [`PlaceError::OutsideTraceDomain`] if a vertex overflows or leaves the trace
-/// domain once placed.
+/// does not have, [`PlaceError::Overflow`] if a placed coordinate overflows Q32.32, or
+/// [`PlaceError::OutsideTraceDomain`] if a placed vertex leaves the trace domain.
 pub fn place_mesh(mesh: &PlyMesh, placement: &MeshPlacement) -> Result<PlacedMesh, PlaceError> {
     let mut placed =
         PlacedMesh { triangles: Vec::with_capacity(mesh.faces.len()), dropped: Vec::new() };
@@ -121,7 +159,9 @@ pub fn place_mesh(mesh: &PlyMesh, placement: &MeshPlacement) -> Result<PlacedMes
                 .ok()
                 .and_then(|i| mesh.vertices.get(i))
                 .ok_or(PlaceError::MissingVertex { face })?;
-            *slot = placement.place(*vertex).ok_or(outside)?;
+            *slot = placement
+                .place(*vertex)
+                .map_err(|overflow| PlaceError::Overflow { face, overflow })?;
         }
         let [a, b, c] = vertices;
         let triangle = TraceTriangle::new(a, b, c).ok_or(outside)?;
@@ -171,6 +211,7 @@ mod tests {
         let huge = MeshPlacement { turn: MeshTurn::None, shift: 40, offset_steps: [0; 3] };
         let missing = PlyMesh { vertices: mesh.vertices.clone(), faces: vec![[0, 1, 4]] };
         assert_eq!(place_mesh(&missing, &flat), Err(PlaceError::MissingVertex { face: 0 }));
-        assert_eq!(place_mesh(&mesh, &huge), Err(PlaceError::OutsideTraceDomain { face: 0 }));
+        let overflow = CoordinateOverflow { axis: Axis::X };
+        assert_eq!(place_mesh(&mesh, &huge), Err(PlaceError::Overflow { face: 0, overflow }));
     }
 }

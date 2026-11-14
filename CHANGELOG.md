@@ -17,14 +17,18 @@ All notable changes to lumen are recorded here. The format follows
   `975e7f9b160b4ea15b0e225e21b10828ebcf678df020d2f6a46aa408fdcf5cd6`), with its provenance,
   Stanford's reconstruction README and attribution; `.gitattributes` keeps its bytes intact.
 - An interim, strict ASCII PLY reader for exactly that file's profile
-  (`crates/lumen/src/mesh/ply.rs`, `mesh/decimal.rs`), with typed errors, converting decimals to Q32.32 with integers
-  only by `lumen-ascii-ply-q32.32/1` (the exact value times `2^32`, rounded to nearest, ties to
-  even). It is to be replaced by Bunny's ASCII PLY reader (flyingrobots/bunny#247).
+  (`crates/lumen/src/mesh/ply.rs`, `mesh/decimal.rs`), with typed errors carrying line numbers
+  and found values, and explicit limits (2^20 vertices and faces, 256-byte lines, ten-digit
+  counts and indices). It converts decimals to Q32.32 with integers only by
+  `lumen-ascii-ply-q32.32/1`, which follows Bunny's `bunny-decimal-q32-32/1` (the exact value
+  times `2^32`, rounded to nearest, ties to even, sign applied after rounding). It is to be
+  replaced by Bunny's ASCII PLY reader (flyingrobots/bunny#247).
 - Mesh placement (`crates/lumen/src/mesh/placement.rs`): a half turn about `+Y`, a power-of-two scale, a
   floor to the `2^-16` grid and a whole-step translation; faces with zero area after placement
   are dropped and listed.
-- Tests: the asset hash; hand-derived conversions, exact ties and generated decimals; the
-  manifest's bounds; the reader's refusals; the placed bounds; the dropped and kept counts; the
+- Tests: the asset hash; hand-derived conversions, Bunny's tie vectors and range edges, and
+  generated decimals; the manifest's bounds; the reader's refusals and limits; generated corrupt
+  files that must be refused without a panic; the placed bounds; the dropped and kept counts; the
   winding and holes; brute force over a render that hits the bunny; the bunny's pixels and its
   shadow; a new golden hash.
 

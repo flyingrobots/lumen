@@ -26,6 +26,7 @@ pub use materials::{
     reference_material_of, reference_materials, REFERENCE_ALBEDO_256, REFERENCE_MATERIAL_OF,
 };
 
+use crate::mesh::PlaceError;
 use crate::scene::{Scene, SceneError, SceneSpec};
 
 /// The stable name and version of [`reference_scene`].
@@ -57,16 +58,16 @@ pub const REFERENCE_SCENE_ID: &str = "lumen-reference-scene/3";
 /// outward. The bunny keeps the file's winding (see [`bunny_triangles`]); shading
 /// is two-sided.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Never: the embedded bunny reads and places (a test checks it).
-#[must_use]
-pub fn reference_triangles() -> Vec<[FixedVec3; 3]> {
+/// A [`PlaceError`] if the embedded bunny is refused or does not place, which a test shows does
+/// not happen.
+pub fn reference_triangles() -> Result<Vec<[FixedVec3; 3]>, PlaceError> {
+    let bunny = bunny_triangles()?;
     let mut triangles = Vec::with_capacity(REFERENCE_TRIANGLE_COUNT);
     shapes::push_shapes(&mut triangles);
-    let bunny = bunny_triangles().expect("the embedded bunny reads");
     triangles.extend_from_slice(&bunny.triangles);
-    triangles
+    Ok(triangles)
 }
 
 /// The first primitive index of the bunny in the reference scene: every triangle of version 2
@@ -86,10 +87,11 @@ pub const REFERENCE_TRIANGLE_COUNT: usize = BUNNY_FIRST_PRIMITIVE + BUNNY_TRIANG
 ///
 /// # Errors
 ///
-/// [`SceneError::OutOfMemory`] when its buffers cannot be reserved. The other errors of
-/// [`Scene::new`] do not occur for this scene; a test checks it builds.
+/// [`SceneError::Mesh`] if the embedded bunny does not read or place, and
+/// [`SceneError::OutOfMemory`] when its buffers cannot be reserved. Neither these nor the other
+/// errors of [`Scene::new`] occur for this scene; a test checks it builds.
 pub fn reference_scene() -> Result<Scene, SceneError> {
-    let triangles = reference_triangles();
+    let triangles = reference_triangles().map_err(SceneError::Mesh)?;
     let material_of = reference_material_of();
     let materials = reference_materials();
     Scene::new(&SceneSpec {

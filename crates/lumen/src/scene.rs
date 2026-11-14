@@ -21,6 +21,8 @@ use bunny_optics::{
 };
 use bunny_query::{TraceRay, TraceTriangle, TriangleHit};
 
+use crate::mesh::PlaceError;
+
 /// The farthest distance a camera or bounce ray searches: no limit, raw `i64::MAX`.
 pub const FAR: FixedQ32_32 = FixedQ32_32::from_raw(i64::MAX);
 
@@ -107,6 +109,8 @@ pub enum SceneError {
     BvhBuild,
     /// Memory for the scene's buffers could not be reserved.
     OutOfMemory,
+    /// A mesh of the scene could not be read or placed.
+    Mesh(PlaceError),
 }
 
 impl fmt::Display for SceneError {
@@ -123,6 +127,7 @@ impl fmt::Display for SceneError {
             }
             Self::BvhBuild => f.write_str("the bounding volume hierarchy could not be built"),
             Self::OutOfMemory => f.write_str("not enough memory for the scene"),
+            Self::Mesh(error) => write!(f, "a mesh could not be placed: {error}"),
         }
     }
 }

@@ -118,26 +118,119 @@ fn malformed_decimals_are_refused() {
     for (text, error) in [
         ("", DecimalError::Empty),
         ("-", DecimalError::Malformed),
+        ("+", DecimalError::Malformed),
         (".", DecimalError::Malformed),
-        ("+1", DecimalError::Malformed),
+        ("-.", DecimalError::Malformed),
         ("--1", DecimalError::Malformed),
+        ("+-1", DecimalError::Malformed),
         ("1-", DecimalError::Malformed),
         ("0x10", DecimalError::Malformed),
         ("1.0\r", DecimalError::Malformed),
         (" 1", DecimalError::Malformed),
+        ("1 ", DecimalError::Malformed),
         ("nan", DecimalError::Malformed),
+        ("inf", DecimalError::Malformed),
         ("e5", DecimalError::Malformed),
+        ("1_000", DecimalError::Malformed),
         ("1.2.3", DecimalError::SecondPoint),
         ("-0.03.5", DecimalError::SecondPoint),
         ("1e", DecimalError::Exponent),
         ("1e+", DecimalError::Exponent),
-        ("1e12345", DecimalError::Exponent),
         ("1e1.5", DecimalError::Malformed),
         ("1e-1e", DecimalError::Malformed),
-        ("12345678901234567890123456789", DecimalError::TooManyDigits),
     ] {
         assert_eq!(decimal_to_q32_32(text), Err(error), "{text:?}");
     }
-    // Leading zeros are not significant digits.
-    assert_eq!(raw("0000000000000000000000000000001"), 1 << 32);
+}
+
+/// The sign, the empty side of the point and leading and trailing zeros follow
+/// `bunny-decimal-q32-32/1`: ten spellings of 1.2 agree (Bunny's case APLY-TP-022, raw
+/// `5153960755`: 12 * 2^32 / 10 = 5153960755.2, round down).
+#[test]
+fn spellings_of_one_value_agree() {
+    for text in [
+        "1.2",
+        "+1.2",
+        "01.2",
+        "1.20",
+        "1.2e0",
+        "12e-1",
+        "0.12e1",
+        ".12e1",
+        "120E-2",
+        "+0.000012e5",
+    ] {
+        assert_eq!(raw(text), 5_153_960_755, "{text}");
+    }
+    assert_eq!(raw("5."), 5 << 32);
+    assert_eq!(raw("-.5e1"), -(5 << 32));
+    assert_eq!(raw("+0"), 0);
+    assert_eq!(raw("-0.000"), 0);
+    // Zero with any exponent, and trailing zeros that are not significant digits.
+    assert_eq!(raw("0e99999999999999999999"), 0);
+    assert_eq!(raw("1.000000000000000000000000000000000000000"), 1 << 32);
+    assert_eq!(raw("0000000000000000000000000000000000000001"), 1 << 32);
+}
+
+/// Range edges and the significant-digit limit, with Bunny's vectors (APLY-TP-026 to 029).
+#[test]
+fn range_edges_and_long_numbers_are_decided_as_bunny_decides_them() {
+    // 2^31 - 2^-33 = 2147483647.999999999883...: just below it rounds to i64::MAX, just above
+    // it rounds to 2^63, which overflows a positive value.
+    assert_eq!(raw("2147483647.9999999998"), i64::MAX);
+    assert_eq!(decimal_to_q32_32("2147483647.9999999999"), Err(DecimalError::OutOfRange));
+    // A negative magnitude may reach 2^63: i64::MIN, also by rounding back into range.
+    assert_eq!(raw("-2147483648"), i64::MIN);
+    assert_eq!(raw("-2147483648.0000000001"), i64::MIN);
+    assert_eq!(decimal_to_q32_32("-2147483648.0000000002"), Err(DecimalError::OutOfRange));
+    // One raw unit, 2^-32 = 2.3283064365386962890625e-10, both signs.
+    assert_eq!(raw("0.00000000023283064365386962890625"), 1);
+    assert_eq!(raw("-0.00000000023283064365386962890625"), -1);
+    // Values certainly out of range or certainly below half a raw unit are decided however many
+    // digits or exponent digits they have.
+    for text in ["1e10", "-1e10", "1e400", "1e999999999999999999999999999999", "9999999999"] {
+        assert_eq!(decimal_to_q32_32(text), Err(DecimalError::OutOfRange), "{text}");
+    }
+    assert_eq!(
+        decimal_to_q32_32("123456789012345678901234567890123456789012345678901234567890"),
+        Err(DecimalError::OutOfRange)
+    );
+    assert_eq!(raw("1e-40"), 0);
+    assert_eq!(raw("9.99999999999999999999999999999999999e-11"), 0);
+    assert_eq!(raw("-1e-999999999999999999999999"), 0);
+    // In range, 28 significant digits convert and 29 are refused.
+    // 1.234567890123456789012345678 * 2^32 = 5302428712.77..., round up.
+    assert_eq!(raw("1.234567890123456789012345678"), 5_302_428_713);
+    assert_eq!(
+        decimal_to_q32_32("1.2345678901234567890123456789"),
+        Err(DecimalError::TooManyDigits)
+    );
+}
+
+/// Bunny's exact tie vectors (APLY-TP-025): `(2n + 1) / 2^33` written as `(2n + 1) * 5^33` with
+/// 33 fractional digits is exactly halfway between raw `n` and `n + 1`, and goes to the even
+/// one; the sign mirrors it; one unit in the last place either side decides the direction.
+#[test]
+fn bunnys_tie_vectors_go_to_the_even_neighbour() {
+    for (text, want) in [
+        ("0.000000000116415321826934814453125", 0),
+        ("0.000000000349245965480804443359375", 2),
+        ("0.000000000582076609134674072265625", 2),
+        ("0.000000000814907252788543701171875", 4),
+        ("-0.000000000116415321826934814453125", 0),
+        ("-0.000000000349245965480804443359375", -2),
+        ("-0.000000000582076609134674072265625", -2),
+        ("-0.000000000814907252788543701171875", -4),
+        ("0.000000000349245965480804443359374", 1),
+        ("0.000000000349245965480804443359376", 2),
+    ] {
+        assert_eq!(raw(text), want, "{text}");
+    }
+    // APLY-TP-032: 2 000 consecutive ties in Bunny's spelling.
+    let five_33 = 5_u128.pow(33);
+    for n in 0_u128..2_000 {
+        let text = format!("0.{:0>33}", five_33 * (2 * n + 1));
+        let want = i64::try_from(if n % 2 == 0 { n } else { n + 1 }).expect("small");
+        assert_eq!(raw(&text), want, "tie {n}: {text}");
+    }
 }

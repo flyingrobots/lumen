@@ -9,7 +9,7 @@ use crate::vertex_grid::{at, GRID_RAW, U};
 
 #[test]
 fn the_reference_scene_has_the_stated_triangles_and_materials() {
-    assert_eq!(reference_triangles().len(), REFERENCE_TRIANGLE_COUNT);
+    assert_eq!(reference_triangles().expect("the bunny places").len(), REFERENCE_TRIANGLE_COUNT);
     assert_eq!(BUNNY_FIRST_PRIMITIVE, 27_660);
     assert_eq!(REFERENCE_TRIANGLE_COUNT, 31_511);
     let scene = reference_scene().expect("the reference scene builds");
@@ -34,7 +34,7 @@ fn the_reference_scene_has_the_stated_triangles_and_materials() {
 
 #[test]
 fn every_coordinate_is_on_the_f32_exact_grid_inside_the_trace_domain() {
-    for triangle in reference_triangles() {
+    for triangle in reference_triangles().expect("the bunny places") {
         for vertex in triangle {
             for c in [vertex.x, vertex.y, vertex.z] {
                 assert_eq!(c.raw() % GRID_RAW, 0, "{c:?} is off the 2^-16 grid");

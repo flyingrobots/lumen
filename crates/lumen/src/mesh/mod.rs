@@ -11,8 +11,10 @@ pub mod placement;
 pub mod ply;
 
 pub use decimal::{decimal_to_q32_32, DecimalError};
-pub use placement::{place_mesh, MeshPlacement, MeshTurn, PlaceError, PlacedMesh};
-pub use ply::{parse_ascii_ply, PlyError, PlyMesh};
+pub use placement::{
+    place_mesh, Axis, CoordinateOverflow, MeshPlacement, MeshTurn, PlaceError, PlacedMesh,
+};
+pub use ply::{parse_ascii_ply, Element, PlyError, PlyMesh};
 
 /// The stable name and version of the conversion rule of [`decimal_to_q32_32`] and
 /// [`parse_ascii_ply`]. Interim: to be replaced by Bunny's ASCII PLY reader

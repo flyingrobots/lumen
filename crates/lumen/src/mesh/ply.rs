@@ -40,8 +40,35 @@ use bunny_num::FixedQ32_32;
 
 use super::decimal::{decimal_to_q32_32, DecimalError};
 
-/// The most vertices or faces a file may declare.
-const MAX_COUNT: usize = 1 << 24;
+/// The most vertices a file may declare. The bunny has 1 889.
+pub const MAX_VERTICES: usize = 1 << 20;
+
+/// The most faces a file may declare. The bunny has 3 851.
+pub const MAX_FACES: usize = 1 << 20;
+
+/// The longest line, in bytes without its `\n`. The bunny's longest is 47 bytes.
+pub const MAX_LINE_BYTES: usize = 256;
+
+/// The most digits an element count or a face index may have.
+const MAX_INTEGER_DIGITS: usize = 10;
+
+/// Which element of the file a count or a limit is about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Element {
+    /// The vertices.
+    Vertex,
+    /// The faces.
+    Face,
+}
+
+impl fmt::Display for Element {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Vertex => "vertex",
+            Self::Face => "face",
+        })
+    }
+}
 
 /// Why a PLY text was refused. Line numbers count from 1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,10 +87,32 @@ pub enum PlyError {
         /// The line the profile expects (`<count>` stands for a count).
         expected: &'static str,
     },
-    /// An element count is not a decimal integer of at most 2^24.
+    /// An element count is not one to ten decimal digits.
     BadCount {
         /// The line number.
         line: usize,
+        /// The element counted.
+        element: Element,
+    },
+    /// An element count is above its limit ([`MAX_VERTICES`], [`MAX_FACES`]).
+    CountTooLarge {
+        /// The line number.
+        line: usize,
+        /// The element counted.
+        element: Element,
+        /// The count declared.
+        declared: u64,
+        /// The limit.
+        limit: usize,
+    },
+    /// A line is longer than [`MAX_LINE_BYTES`].
+    LineTooLong {
+        /// The line number.
+        line: usize,
+        /// The line's length in bytes, without its `\n`.
+        length: usize,
+        /// The limit.
+        limit: usize,
     },
     /// The text ends before the header, a declared vertex or face line, or the last line
     /// ending.
@@ -75,21 +124,30 @@ pub enum PlyError {
     VertexFields {
         /// The line number.
         line: usize,
+        /// The fields found before the first empty one (two spaces in a row, or a space at
+        /// either end), or in all; more than five means the line has extra fields.
+        found: usize,
     },
     /// A number on a vertex line was refused.
     Number {
         /// The line number.
         line: usize,
+        /// The column, from 0 (`x`, `y`, `z`, `confidence`, `intensity`).
+        column: usize,
         /// Why.
         error: DecimalError,
     },
-    /// A face line is not a list of three indices.
+    /// A face line is not `3` followed by exactly three indices.
     FaceNotTriangle {
         /// The face's index, from 0.
         face: usize,
+        /// The line number.
+        line: usize,
     },
-    /// A face index is not a decimal integer.
+    /// A face index is not an optional `-` and one to ten decimal digits.
     BadIndex {
+        /// The face's index, from 0.
+        face: usize,
         /// The line number.
         line: usize,
     },
@@ -97,6 +155,12 @@ pub enum PlyError {
     IndexOutOfRange {
         /// The face's index, from 0.
         face: usize,
+        /// The line number.
+        line: usize,
+        /// The index found.
+        index: i64,
+        /// The number of vertices.
+        vertex_count: usize,
     },
     /// Something follows the last face's line ending.
     TrailingData {
@@ -107,7 +171,7 @@ pub enum PlyError {
 
 impl fmt::Display for PlyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
+        match *self {
             Self::NotPly => f.write_str("not a PLY file"),
             Self::UnsupportedFormat { line } => {
                 write!(f, "line {line}: the format must be `format ascii 1.0`")
@@ -115,13 +179,28 @@ impl fmt::Display for PlyError {
             Self::UnexpectedHeader { line, expected } => {
                 write!(f, "line {line}: expected `{expected}`")
             }
-            Self::BadCount { line } => write!(f, "line {line}: bad element count"),
+            Self::BadCount { line, element } => write!(f, "line {line}: bad {element} count"),
+            Self::CountTooLarge { line, element, declared, limit } => {
+                write!(f, "line {line}: {declared} {element} elements, more than {limit}")
+            }
+            Self::LineTooLong { line, length, limit } => {
+                write!(f, "line {line}: {length} bytes, more than {limit}")
+            }
             Self::Truncated { line } => write!(f, "the file ends before line {line}"),
-            Self::VertexFields { line } => write!(f, "line {line}: a vertex needs five numbers"),
-            Self::Number { line, error } => write!(f, "line {line}: {error}"),
-            Self::FaceNotTriangle { face } => write!(f, "face {face} is not a triangle"),
-            Self::BadIndex { line } => write!(f, "line {line}: bad vertex index"),
-            Self::IndexOutOfRange { face } => write!(f, "face {face} names a missing vertex"),
+            Self::VertexFields { line, found } => {
+                write!(f, "line {line}: a vertex needs five numbers, found {found}")
+            }
+            Self::Number { line, column, error } => {
+                write!(f, "line {line} column {column}: {error}")
+            }
+            Self::FaceNotTriangle { face, line } => {
+                write!(f, "line {line}: face {face} is not a triangle")
+            }
+            Self::BadIndex { face, line } => write!(f, "line {line}: face {face} has a bad index"),
+            Self::IndexOutOfRange { face, line, index, vertex_count } => write!(
+                f,
+                "line {line}: face {face} names vertex {index}, but there are {vertex_count}"
+            ),
             Self::TrailingData { line } => write!(f, "line {line}: data after the last face"),
         }
     }
@@ -163,18 +242,26 @@ const VERTEX_PROPERTIES: [&str; 5] = [
 
 /// Lines of a text, numbered from 1, each without its `\n`.
 struct Lines<'a> {
-    rest: Option<&'a str>,
+    rest: &'a str,
     number: usize,
 }
 
 impl<'a> Lines<'a> {
-    /// The next line ended by `\n`, or [`PlyError::Truncated`].
+    /// The number the next line will have.
+    const fn next_number(&self) -> usize {
+        self.number.saturating_add(1)
+    }
+
+    /// The next line ended by `\n`, [`PlyError::Truncated`] if there is none, or
+    /// [`PlyError::LineTooLong`].
     fn next(&mut self) -> Result<(usize, &'a str), PlyError> {
-        self.number += 1;
-        let line = self.number;
-        let rest = self.rest.ok_or(PlyError::Truncated { line })?;
-        let (text, after) = rest.split_once('\n').ok_or(PlyError::Truncated { line })?;
-        self.rest = Some(after);
+        let line = self.next_number();
+        let (text, after) = self.rest.split_once('\n').ok_or(PlyError::Truncated { line })?;
+        if text.len() > MAX_LINE_BYTES {
+            return Err(PlyError::LineTooLong { line, length: text.len(), limit: MAX_LINE_BYTES });
+        }
+        self.number = line;
+        self.rest = after;
         Ok((line, text))
     }
 }
@@ -186,7 +273,7 @@ impl<'a> Lines<'a> {
 ///
 /// The first [`PlyError`] in file order.
 pub fn parse_ascii_ply(text: &str) -> Result<PlyMesh, PlyError> {
-    let mut lines = Lines { rest: Some(text), number: 0 };
+    let mut lines = Lines { rest: text, number: 0 };
     let (vertex_count, face_count) = parse_header(&mut lines)?;
     // Grown line by line rather than reserved from the declared counts, so a header cannot
     // make the reader allocate more than the text holds.
@@ -200,9 +287,10 @@ pub fn parse_ascii_ply(text: &str) -> Result<PlyMesh, PlyError> {
         let (line, text) = lines.next()?;
         faces.push(parse_face(face, line, text, vertex_count)?);
     }
-    match lines.rest {
-        Some("") => Ok(PlyMesh { vertices, faces }),
-        _ => Err(PlyError::TrailingData { line: lines.number + 1 }),
+    if lines.rest.is_empty() {
+        Ok(PlyMesh { vertices, faces })
+    } else {
+        Err(PlyError::TrailingData { line: lines.next_number() })
     }
 }
 
@@ -224,12 +312,12 @@ fn parse_header(lines: &mut Lines<'_>) -> Result<(usize, usize), PlyError> {
     while header.starts_with("comment ") || header == "comment" {
         (line, header) = lines.next()?;
     }
-    let vertex_count = count(line, header, "element vertex ")?;
+    let vertex_count = count(line, header, Element::Vertex)?;
     for expected in VERTEX_PROPERTIES {
         expect(lines, expected)?;
     }
     let (line, header) = lines.next()?;
-    let face_count = count(line, header, "element face ")?;
+    let face_count = count(line, header, Element::Face)?;
     expect(lines, "property list uchar int vertex_indices")?;
     expect(lines, "end_header")?;
     Ok((vertex_count, face_count))
@@ -238,18 +326,18 @@ fn parse_header(lines: &mut Lines<'_>) -> Result<(usize, usize), PlyError> {
 /// A vertex line: five numbers separated by single spaces, of which the first three are the
 /// position.
 fn parse_vertex(line: usize, text: &str) -> Result<FixedVec3, PlyError> {
-    let mut fields = text.split(' ');
+    let fields: Vec<&str> = text.split(' ').take(VERTEX_PROPERTIES.len() + 1).collect();
+    let found = fields.iter().position(|f| f.is_empty()).unwrap_or(fields.len());
+    if found != VERTEX_PROPERTIES.len() || fields.len() != VERTEX_PROPERTIES.len() {
+        return Err(PlyError::VertexFields { line, found });
+    }
     let mut coordinates = [FixedQ32_32::ZERO; 3];
-    for column in 0..VERTEX_PROPERTIES.len() {
-        let field = fields.next().filter(|f| !f.is_empty());
-        let field = field.ok_or(PlyError::VertexFields { line })?;
-        let value = decimal_to_q32_32(field).map_err(|error| PlyError::Number { line, error })?;
+    for (column, field) in fields.iter().enumerate() {
+        let value =
+            decimal_to_q32_32(field).map_err(|error| PlyError::Number { line, column, error })?;
         if let Some(slot) = coordinates.get_mut(column) {
             *slot = value;
         }
-    }
-    if fields.next().is_some() {
-        return Err(PlyError::VertexFields { line });
     }
     let [x, y, z] = coordinates;
     Ok(FixedVec3::new(x, y, z))
@@ -262,21 +350,22 @@ fn parse_face(
     text: &str,
     vertex_count: usize,
 ) -> Result<[u32; 3], PlyError> {
+    let not_triangle = PlyError::FaceNotTriangle { face, line };
     let mut fields = text.split(' ');
     if fields.next() != Some("3") {
-        return Err(PlyError::FaceNotTriangle { face });
+        return Err(not_triangle);
     }
     let mut indices = [0_u32; 3];
     for slot in &mut indices {
-        let field = fields.next().ok_or(PlyError::FaceNotTriangle { face })?;
-        let index = parse_index(field).ok_or(PlyError::BadIndex { line })?;
+        let field = fields.next().ok_or(not_triangle)?;
+        let index = parse_index(field).ok_or(PlyError::BadIndex { face, line })?;
         *slot = u32::try_from(index)
             .ok()
             .filter(|&i| usize::try_from(i).is_ok_and(|i| i < vertex_count))
-            .ok_or(PlyError::IndexOutOfRange { face })?;
+            .ok_or(PlyError::IndexOutOfRange { face, line, index, vertex_count })?;
     }
     if fields.next().is_some() {
-        return Err(PlyError::FaceNotTriangle { face });
+        return Err(not_triangle);
     }
     Ok(indices)
 }
@@ -291,27 +380,39 @@ fn expect(lines: &mut Lines<'_>, expected: &'static str) -> Result<(), PlyError>
     }
 }
 
-/// The count of an `element` line beginning with `prefix`.
-fn count(line: usize, text: &str, prefix: &'static str) -> Result<usize, PlyError> {
-    let expected =
-        if prefix == "element vertex " { "element vertex <count>" } else { "element face <count>" };
+/// The count of an `element vertex` or `element face` line, within its limit.
+fn count(line: usize, text: &str, element: Element) -> Result<usize, PlyError> {
+    let (prefix, expected, limit) = match element {
+        Element::Vertex => ("element vertex ", "element vertex <count>", MAX_VERTICES),
+        Element::Face => ("element face ", "element face <count>", MAX_FACES),
+    };
     let digits = text.strip_prefix(prefix).ok_or(PlyError::UnexpectedHeader { line, expected })?;
-    let bad = PlyError::BadCount { line };
-    if digits.is_empty() || digits.len() > 8 || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(bad);
+    let declared = decimal_digits(digits).ok_or(PlyError::BadCount { line, element })?;
+    usize::try_from(declared).ok().filter(|&n| n <= limit).ok_or(PlyError::CountTooLarge {
+        line,
+        element,
+        declared,
+        limit,
+    })
+}
+
+/// One to ten decimal digits as a number.
+fn decimal_digits(digits: &str) -> Option<u64> {
+    if digits.is_empty() || digits.len() > MAX_INTEGER_DIGITS {
+        return None;
     }
-    let value: usize = digits.parse().map_err(|_| bad)?;
-    if value > MAX_COUNT {
-        return Err(bad);
-    }
-    Ok(value)
+    digits.bytes().try_fold(0_u64, |value, b| {
+        let digit = b.is_ascii_digit().then(|| u64::from(b - b'0'))?;
+        value.checked_mul(10)?.checked_add(digit)
+    })
 }
 
 /// A face index: an optional `-` and one to ten digits.
 fn parse_index(text: &str) -> Option<i64> {
-    let digits = text.strip_prefix('-').unwrap_or(text);
-    if digits.is_empty() || digits.len() > 10 || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    text.parse().ok()
+    let (negative, digits) = match text.strip_prefix('-') {
+        Some(digits) => (true, digits),
+        None => (false, text),
+    };
+    let magnitude = i64::try_from(decimal_digits(digits)?).ok()?;
+    Some(if negative { -magnitude } else { magnitude })
 }
