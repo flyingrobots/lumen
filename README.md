@@ -396,6 +396,12 @@ PNG; the report shows each part. `rays-per-second` and `ns-per-ray` divide the r
 by the rays traced on all threads, so they are not CPU time per ray; the single-thread figure is a
 run with `--threads 1`.
 
+### Records
+
+Dated measurement records are kept under [`docs/measurements/`](docs/measurements/). The record for
+flyingrobots/lumen#5 is [the 4K reference scene at 16 samples per pixel, 2026-11-13](docs/measurements/2026-11-13-4k-reference.md).
+Each states its commit and conditions and applies to that commit only.
+
 ### Readings
 
 One session (`lumen-reference-scene/3`, 1280 by 720, 16 samples per pixel, seed 0, 39 479 111
