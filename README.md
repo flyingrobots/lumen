@@ -841,8 +841,9 @@ rules use Echo's `ban-nondeterminism` rule IDs, plus Lumen's `thread-spawn` and 
 | `random`, `host-callback`, `json-serialization`, `wasm-serde`, crate forms of the rest | any crates.io crate | `deny.toml` (`allow-registry = []`), in `Gates / cargo-deny` |
 | `float-type`, `float-literal`, `float-cast`, the names and `std` paths above, `hand-hashed-table` | in the core, also under a `cfg` that is not built and in macro bodies: `f32`, `f64`, float literals, `as f64`; `Instant`, `SystemTime`, `HashMap` and the other banned names wherever spelled; `std::env`, `fs`, `process`, `net`, `thread::sleep` paths through `use` trees and renames; any line naming open addressing | `cargo run -p xtask -- nondeterminism`, in `Gates / nondeterminism` |
 
-The bans apply to the whole workspace. The deterministic core is the library, `src/` without
-`src/bin/`; the command (the only clock and the only `available_parallelism`), the examples,
+The bans apply to the whole workspace. The deterministic core is every file the library
+compiles outside `#[cfg(test)]`, found by following its module tree from `src/lib.rs` as `rustc`
+does, not by file name (ADR 0006); the command (the only clock and the only `available_parallelism`), the examples,
 `tests/cli.rs` and `xtask` are outside it and each carries one crate-level waiver. Inside it, the
 scheduler's threads (`render_pixels`, ADR 0003) and two unit tests carry their own. A waiver is
 `#[expect(<clippy lints>, reason = "<rule-ids>: <why it cannot reach a pixel>")]` on the
@@ -938,8 +939,8 @@ Lint posture mirrors Bunny: `unsafe` is forbidden, clippy `all` is denied and
 |---|---|---|
 | `Gates / cargo-deny` | `cargo deny --locked check` against `deny.toml` | an advisory, a yanked crate, a licence other than Apache-2.0, a second version of a crate, a wildcard version, any crate from a registry (crates.io included), a git repository other than `https://github.com/flyingrobots/bunny`, or a git dependency not pinned by `rev` |
 | `Gates / cargo-audit` | `cargo audit --deny warnings` on `Cargo.lock` | a RustSec advisory or warning for a locked crate |
-| `Gates / file length` | `cargo run -p xtask -- file-length` | a source file over 300 lines of code without a listed exception, or over 500 at all; a test file (under `tests/` or named `tests.rs`) over 750; a listed file grown past its exception; an exception no longer needed |
-| `Gates / nondeterminism` | `cargo run -p xtask -- nondeterminism` (see "Nondeterminism bans") | a float, a banned name or `std` path in the deterministic core, a malformed or unused scan waiver, or a ban lint waived with `allow` or without rule IDs in its reason |
+| `Gates / file length` | `cargo run -p xtask -- file-length` | a source file over 300 lines of code without a listed exception, or over 500 at all; a test file (one compiled only under `#[cfg(test)]`, or an integration test) over 750; a listed file grown past its exception; an exception no longer needed; an `include!`, or a `#[path]` to anything but a `.rs` file the gate reads |
+| `Gates / nondeterminism` | `cargo run -p xtask -- nondeterminism` (see "Nondeterminism bans") | a float, a banned name or `std` path in the deterministic core, a malformed or unused scan waiver, a ban lint waived with `allow` or without rule IDs in its reason, or the `include!` and `#[path]` forms above |
 | `Signal / coverage` | `cargo llvm-cov --workspace --summary-only`, in the job summary | never: coverage is reported, not gated |
 
 A line of code is a line with a character outside a comment; doc comments are comments, and so

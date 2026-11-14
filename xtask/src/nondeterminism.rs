@@ -17,7 +17,7 @@
 
 #[cfg(test)]
 mod tests;
-mod tokens;
+pub(crate) mod tokens;
 
 use tokens::{is_float, tokens, Located, Token};
 

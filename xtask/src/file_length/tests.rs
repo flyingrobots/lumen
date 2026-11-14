@@ -5,13 +5,16 @@ use super::{
     code_lines, judge, Exception, Measured, Verdict, EXCEPTIONS, SOURCE_MAX, SOURCE_REVIEW,
     TEST_MAX,
 };
+use crate::layout::Role;
 
 const SRC: &str = "crates/lumen/src/big.rs";
 const TEST: &str = "crates/lumen/tests/big.rs";
 const UNIT: &str = "crates/lumen/src/big/tests.rs";
 
+/// A measured file; its role is what `crate::layout` decides (tested there), here by the path.
 fn file(path: &str, lines: usize) -> Measured {
-    Measured { path: path.to_owned(), lines }
+    let role = if path == SRC { Role::Source } else { Role::Test };
+    Measured { path: path.to_owned(), role, lines }
 }
 
 fn exception(path: &'static str, allowed: usize) -> Exception {
