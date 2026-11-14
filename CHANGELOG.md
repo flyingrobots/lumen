@@ -57,6 +57,16 @@ All notable changes to lumen are recorded here. The format follows
   vertex normals is tested to render the flat bytes (ADR 0007 clarification): shading smooth only
   when all three are present is equivalent.
 
+- `render --out` no longer refuses a valid long file name (flyingrobots/lumen#159). The temporary
+  file was named `.NAME.lumen-PID-N.tmp` after the whole destination name, so a destination of
+  244 bytes or more made a temporary name past the 255-byte limit and was refused as unwritable
+  (`File name too long`). The temporary name now keeps at most 32 bytes of the destination's
+  name, cut at a character boundary, and is at most 57 bytes. A name of 255 bytes, the limit, now
+  publishes. It is still in the destination's directory, still created exclusively, and still
+  removed on every failure. Tests publish 244- and 255-byte names through a file system seam that
+  enforces the 255-byte limit and through the host's own, fail a rename at the longest name, and
+  check the temporary name's form.
+
 - Documentation no longer claims more than the code does (flyingrobots/lumen#57, the
   documentation half). "Equal provenance means equal bytes" is scoped to a render of the scene as
   its own tracer: `RenderProvenance`, `render_traced`, the README and ADRs 0002, 0005 and 0007
