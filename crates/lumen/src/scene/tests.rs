@@ -37,14 +37,16 @@ fn scene_construction_refuses_bad_input() {
     let good = [fine, at(U, 0, 0), at(0, U, 0)];
     let triangles = [good, [fine, far, at(0, U, 0)]];
     let second = PrimitiveIndex::new(1);
+    // Oracle: the vertices as written. The second triangle's vertex 1 is 256 units out on x.
     assert_eq!(
         spec(&triangles, &[0, 0]),
-        Some(SceneError::OutsideTraceDomain { primitive: second })
+        Some(SceneError::OutsideTraceDomain { primitive: second, vertex: 1, point: far })
     );
-    assert_eq!(spec(&[good], &[]), Some(SceneError::MaterialCount));
+    let refused = SceneError::MaterialCount { triangles: 1, material_indices: 0 };
+    assert_eq!(spec(&[good], &[]), Some(refused));
     assert_eq!(
         spec(&[good, good], &[0, 1]),
-        Some(SceneError::UnknownMaterial { primitive: second })
+        Some(SceneError::UnknownMaterial { primitive: second, material: 1, materials: 1 })
     );
     // A zero-area triangle is accepted and has no surface.
     let flat = [fine, fine, at(U, 0, 0)];

@@ -8,21 +8,18 @@
 //! [`Scene::new`]), and the scene's content identity ([`SceneContentId`], ADR 0005). The built-in
 //! reference scene is in [`crate::reference`].
 
-use core::fmt;
-
 use bunny_geom::FixedAabb3;
 use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
-    Albedo, CameraError, CameraSpec, DirectionalLight, PinholeCamera, ShadingError, SkyLight,
-    TriangleSurface,
+    Albedo, CameraError, CameraSpec, DirectionalLight, PinholeCamera, SkyLight, TriangleSurface,
 };
-use bunny_query::TraceTriangle;
+use bunny_query::{TraceTriangle, TRACE_COORD_LIMIT_RAW};
 
-use crate::mesh::PlaceError;
 use crate::schedule::widen;
 
 mod content_id;
+mod error;
 mod primitive_index;
 mod tracer;
 mod tree;
@@ -31,6 +28,7 @@ mod tree;
 mod tests;
 
 pub use content_id::{SceneContentId, SCENE_CONTENT_ENCODING};
+pub use error::{SceneBuffer, SceneError};
 pub use primitive_index::PrimitiveIndex;
 pub use tracer::{Hit, TraceError, Tracer, FAR};
 use tree::{build_tree, Tree};
@@ -102,81 +100,6 @@ pub struct SceneSpec<'a> {
 /// Bunny's limits, so any refusal is the placement's. Bunny checks the position, the tangent,
 /// the look direction and the up hint independently of the size.
 const PROBE_SIZE: u32 = 1;
-
-/// Why a scene could not be built.
-///
-/// Non-exhaustive: a later version may refuse a scene for a new reason, so a `match` outside
-/// this crate needs a wildcard arm.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum SceneError {
-    /// The scene has no triangles.
-    Empty,
-    /// The scene has more triangles than a `u32` primitive index can name.
-    TooManyTriangles,
-    /// A vertex coordinate of the triangle at this primitive index is outside the trace domain
-    /// (`abs(raw) >= 2^40`, 256 units).
-    OutsideTraceDomain {
-        /// The primitive index of the triangle.
-        primitive: PrimitiveIndex,
-    },
-    /// `material_of` does not have one entry per triangle.
-    MaterialCount,
-    /// The triangle at this primitive index names a material that does not exist.
-    UnknownMaterial {
-        /// The primitive index of the triangle.
-        primitive: PrimitiveIndex,
-    },
-    /// The bounding volume hierarchy could not be built or converted.
-    BvhBuild,
-    /// Bunny's tree builder put a primitive index in the tree that names no triangle. Bunny's
-    /// builder fills the buffer with indices of the boxes it is given, so no input reaches this;
-    /// `Scene::new` checks it once so that no traversal of the scene can meet such an index.
-    TreeNamesUnknownPrimitive {
-        /// The index found in the tree.
-        index: u32,
-        /// The scene's triangle count: every valid index is below it.
-        triangles: usize,
-    },
-    /// Memory for the scene's buffers could not be reserved.
-    OutOfMemory,
-    /// A mesh of the scene could not be read or placed.
-    Mesh(PlaceError),
-    /// Bunny's `PinholeCamera::new` refused the camera placement: its position is outside the
-    /// trace domain, its tangent is not in `(0, 256]`, its look direction is zero, or its up
-    /// hint is zero or parallel to the look direction.
-    Camera(CameraError),
-    /// A lighting or material constant of a built-in scene is outside Bunny's accepted range.
-    Constant(ShadingError),
-}
-
-impl fmt::Display for SceneError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("scene has no triangles"),
-            Self::TooManyTriangles => f.write_str("scene has more than 2^32 - 1 triangles"),
-            Self::OutsideTraceDomain { primitive } => {
-                write!(f, "triangle {primitive} has a vertex outside the trace domain")
-            }
-            Self::MaterialCount => f.write_str("scene needs one material index per triangle"),
-            Self::UnknownMaterial { primitive } => {
-                write!(f, "triangle {primitive} names a material that does not exist")
-            }
-            Self::BvhBuild => f.write_str("the bounding volume hierarchy could not be built"),
-            Self::TreeNamesUnknownPrimitive { index, triangles } => write!(
-                f,
-                "the bounding volume hierarchy names triangle {index}, but the scene has \
-                 {triangles} triangles"
-            ),
-            Self::OutOfMemory => f.write_str("not enough memory for the scene"),
-            Self::Mesh(error) => write!(f, "a mesh could not be placed: {error}"),
-            Self::Camera(error) => write!(f, "invalid camera placement: {error}"),
-            Self::Constant(error) => write!(f, "a lighting or material constant: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for SceneError {}
 
 /// Triangles in primitive order with their surfaces, materials, lighting, acceleration structure,
 /// camera placement and content identity.
@@ -252,26 +175,28 @@ impl Scene {
             return Err(SceneError::Empty);
         }
         if u32::try_from(count).is_err() {
-            return Err(SceneError::TooManyTriangles);
+            return Err(SceneError::TooManyTriangles { triangles: count, limit: u32::MAX });
         }
-        if spec.material_of.len() != count {
-            return Err(SceneError::MaterialCount);
+        let material_indices = spec.material_of.len();
+        if material_indices != count {
+            return Err(SceneError::MaterialCount { triangles: count, material_indices });
         }
         spec.camera.camera(PROBE_SIZE, PROBE_SIZE).map_err(SceneError::Camera)?;
-        let mut triangles = reserved(count)?;
-        let mut surfaces = reserved(count)?;
-        let mut boxes: Vec<FixedAabb3> = reserved(count)?;
+        let mut triangles = reserved(SceneBuffer::Triangles, count)?;
+        let mut surfaces = reserved(SceneBuffer::Surfaces, count)?;
+        let mut boxes: Vec<FixedAabb3> = reserved(SceneBuffer::Boxes, count)?;
         // `count <= u32::MAX`, so every triangle gets its index; the inclusive range cannot
         // overflow while it is zipped.
         let indices = (0..=u32::MAX).map(PrimitiveIndex::new);
         for ((&[v0, v1, v2], &material), primitive) in
             spec.triangles.iter().zip(spec.material_of).zip(indices)
         {
-            let triangle = TraceTriangle::new(v0, v1, v2)
-                .ok_or(SceneError::OutsideTraceDomain { primitive })?;
-            let known = widen(material) < spec.materials.len();
-            if !known {
-                return Err(SceneError::UnknownMaterial { primitive });
+            let Some(triangle) = TraceTriangle::new(v0, v1, v2) else {
+                return Err(outside_trace_domain(primitive, [v0, v1, v2]));
+            };
+            let materials = spec.materials.len();
+            if widen(material) >= materials {
+                return Err(SceneError::UnknownMaterial { primitive, material, materials });
             }
             boxes.push(triangle.bounds());
             surfaces.push(TriangleSurface::new(&triangle));
@@ -280,9 +205,9 @@ impl Scene {
         // The identity reads only the admitted spec; the tree is built after it and is no input.
         let content = content_id::content_id(spec);
         let tree = build_tree(&boxes)?;
-        let mut material_of = reserved(count)?;
+        let mut material_of = reserved(SceneBuffer::MaterialIndices, count)?;
         material_of.extend_from_slice(spec.material_of);
-        let mut materials = reserved(spec.materials.len())?;
+        let mut materials = reserved(SceneBuffer::Materials, spec.materials.len())?;
         materials.extend_from_slice(spec.materials);
         Ok(Self {
             content,
@@ -347,9 +272,26 @@ impl Scene {
     }
 }
 
-/// An empty vector with room for `count` items, or [`SceneError::OutOfMemory`].
-fn reserved<T>(count: usize) -> Result<Vec<T>, SceneError> {
-    let mut items = Vec::new();
-    items.try_reserve_exact(count).map_err(|_| SceneError::OutOfMemory)?;
-    Ok(items)
+/// An empty vector with room for `items` items of `buffer`, or [`SceneError::OutOfMemory`] with
+/// both and the allocator's error.
+fn reserved<T>(buffer: SceneBuffer, items: usize) -> Result<Vec<T>, SceneError> {
+    let mut vector = Vec::new();
+    vector.try_reserve_exact(items).map_err(|error| SceneError::OutOfMemory {
+        buffer,
+        items,
+        error,
+    })?;
+    Ok(vector)
+}
+
+/// Why Bunny's `TraceTriangle::new` refused `vertices`: its one documented check repeated, on
+/// the failure path only, to name the first vertex with a coordinate outside the trace domain.
+fn outside_trace_domain(primitive: PrimitiveIndex, vertices: [FixedVec3; 3]) -> SceneError {
+    let limit = TRACE_COORD_LIMIT_RAW.unsigned_abs();
+    let outside = |v: &FixedVec3| [v.x, v.y, v.z].iter().any(|c| c.raw().unsigned_abs() >= limit);
+    let first = vertices.iter().zip(0_u8..).find(|(v, _)| outside(v));
+    match first {
+        Some((&point, vertex)) => SceneError::OutsideTraceDomain { primitive, vertex, point },
+        None => SceneError::TriangleRefused { primitive },
+    }
 }
