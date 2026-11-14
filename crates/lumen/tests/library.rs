@@ -1,3 +1,5 @@
+//! Size class: small (in process, no file, no network).
+//!
 //! The library on its own: a whole render through the crate root's API, in one process, with no
 //! file, clock, environment or terminal. The oracles are the golden image hash, the identities
 //! `lumen render` prints, and the PNG bytes `lumen render` wrote before the command moved out of

@@ -8,6 +8,12 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The command-line tests are hermetic and one-behaviour-each (part of flyingrobots/lumen#24): every
+  test that runs `lumen` owns a scratch directory named for the test and the process id, used as
+  the working directory with absolute paths, and removed at the end, so refusal tests cannot
+  write into the source tree and the test and release profiles can run at once. Tests that
+  covered two behaviours or branched on the platform are split, and each integration test file
+  states a size class; the README's new Contributing section documents both conventions.
 - Generated tests for the claims that quantify over inputs (flyingrobots/lumen#24): a pixel's
   result is the same for random evaluation orders, permutations and merge trees of its samples
   (`tests/generated.rs`, also run on `wasm32-wasip1`); SHA-256 gives the digest of the whole for
