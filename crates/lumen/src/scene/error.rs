@@ -52,6 +52,13 @@ pub enum SceneError {
         /// The length of `material_of`.
         material_indices: usize,
     },
+    /// `normals` is neither empty nor one entry per triangle.
+    NormalCount {
+        /// The triangle count.
+        triangles: usize,
+        /// The length of `normals`.
+        normals: usize,
+    },
     /// The triangle at this primitive index names a material that does not exist.
     UnknownMaterial {
         /// The primitive index of the triangle.
@@ -127,6 +134,8 @@ pub enum SceneBuffer {
     MaterialIndices,
     /// The materials.
     Materials,
+    /// The vertex normals, one entry per triangle.
+    VertexNormals,
 }
 
 impl fmt::Display for SceneBuffer {
@@ -140,6 +149,7 @@ impl fmt::Display for SceneBuffer {
             Self::CompactNodes => "compact tree nodes",
             Self::MaterialIndices => "material indices",
             Self::Materials => "materials",
+            Self::VertexNormals => "vertex-normal entries",
         })
     }
 }
@@ -176,6 +186,11 @@ impl fmt::Display for SceneError {
                 f,
                 "scene needs one material index per triangle: {triangles} triangles, \
                  {material_indices} material indices"
+            ),
+            Self::NormalCount { triangles, normals } => write!(
+                f,
+                "scene needs no vertex normals or one entry per triangle: {triangles} triangles, \
+                 {normals} entries"
             ),
             Self::UnknownMaterial { primitive, material, materials } => write!(
                 f,
@@ -222,6 +237,7 @@ impl std::error::Error for SceneError {
             | Self::OutsideTraceDomain { .. }
             | Self::TriangleRefused { .. }
             | Self::MaterialCount { .. }
+            | Self::NormalCount { .. }
             | Self::UnknownMaterial { .. }
             | Self::NodeCountOverflow { .. }
             | Self::BvhBuild { .. }

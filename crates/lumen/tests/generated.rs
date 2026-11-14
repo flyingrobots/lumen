@@ -176,6 +176,7 @@ fn random_scenes_build_and_answer_every_query() {
             triangles: &triangles,
             material_of: &material_of,
             materials: &materials,
+            normals: &[],
             lighting,
             camera,
         };
