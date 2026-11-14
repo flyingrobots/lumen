@@ -273,13 +273,21 @@ fn markdown(root: &Path) -> io::Result<Files> {
     Ok(pages)
 }
 
-/// Adds every `.md` file under `dir` to `out`, skipping hidden directories, `target` and `out`.
+/// Adds every `.md` file under `dir` to `out`, skipping hidden directories, `target`, `out` and
+/// symbolic links.
 fn collect_markdown(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
-        let path = entry?.path();
+        let entry = entry?;
+        // A symbolic link is not followed: a link to a directory above it would repeat pages
+        // forever. Links in pages still resolve through one (`Path::exists` follows it).
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
         let name = path.file_name().map(|name| name.to_string_lossy().into_owned());
         let skipped = |name: &str| name.starts_with('.') || name == "target" || name == "out";
-        if path.is_dir() {
+        if kind.is_dir() {
             if name.is_some_and(|name| !skipped(&name)) {
                 collect_markdown(&path, out)?;
             }
