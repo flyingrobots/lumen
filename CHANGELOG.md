@@ -89,8 +89,9 @@ part was built.
   `rev`), `Gates / cargo-audit`, `Gates / file length`, `Gates / nondeterminism`,
   `Gates / doc links` and `Signal / coverage`. (flyingrobots/lumen#23, #25.)
 - **Nondeterminism bans** (ADR 0006): `clippy.toml` bans the clock, sleeping, the core count,
-  thread spawning, hash maps, every stable item of `std::env`, `fs`, `process` and `net`, floats,
-  `Duration`'s float methods and Bunny's float bridge, each under an Echo rule ID; `xtask
+  thread spawning, hash maps, every stable item of `std::env`, `fs`, `process` and `net`, floats
+  (also as `c_double` and `c_float` of `core::ffi` and `std::os::raw`; the scan also names `f16`
+  and `f128`), `Duration`'s float methods and Bunny's float bridge, each under an Echo rule ID; `xtask
   clippy-bans` checks on a seeded fixture that every ban resolves and fires and that the std item
   list (`xtask/bans/std-items.txt`, from the toolchain's documentation) is complete; the token
   scan (`xtask nondeterminism`) covers what Clippy cannot see, over the deterministic core found
@@ -100,7 +101,7 @@ part was built.
   classified as tooling, a path dependency outside the workspace, a dependency from anywhere but
   Bunny's repository at a full commit, a build script or procedural macro in a deterministic
   crate, a member's own lint levels, a `[patch]` or `[replace]`, and any `.cargo/config` fail.
-  (flyingrobots/lumen#17, #115, #119, #120, #158.)
+  (flyingrobots/lumen#17, #115, #119, #120, #156, #158.)
 - **Repository tooling**: `xtask` (`file-length`, `nondeterminism`, `clippy-bans`, `std-items`,
   `doc-links`) and a `Makefile` (`make demo`, `reference`, `fixed-point`, `4k`,
   `4k-fixed-point`, `canyon`, `4k-canyon`, `test`, `nondeterminism`, `clippy-bans`,
