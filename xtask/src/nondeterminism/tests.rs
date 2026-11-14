@@ -6,13 +6,13 @@
 //! (ADR 0006). The four Clippy alone catches (`Path::exists` and three thread spawns) are not here.
 
 use super::tokens::is_float;
-use super::{core_findings, denies_float_arithmetic, waiver_forms};
+use super::{core_findings, denies_float_arithmetic, waiver_forms, CrateAliases};
 
 /// A seeded violation: a label, the source, the rule and the line that must be reported.
 type Form = (&'static str, &'static str, &'static str, usize);
 
 fn reported(source: &str) -> Vec<(usize, &'static str)> {
-    core_findings(source).iter().map(|f| (f.line, f.rule)).collect()
+    core_findings(source, &CrateAliases::default()).iter().map(|f| (f.line, f.rule)).collect()
 }
 
 const REJECTED: [Form; 81] = [

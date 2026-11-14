@@ -288,3 +288,27 @@ fn every_deterministic_crates_library_is_core_and_nothing_else_of_it() {
     );
     assert!(lumen_only.is_core("crates/lumen/src/render.rs"));
 }
+
+#[test]
+fn a_module_under_any_cfg_is_followed_whatever_its_cfg() {
+    let tree = layout(&[
+        (
+            LIB,
+            "#[cfg(target_arch = \"wasm32\")]\n#[path = \"wasm_impl.rs\"]\nmod wasm;\n#[cfg(windows)]\nmod win;\n#[cfg_attr(unix, allow(dead_code))]\nmod unix_only;\n#[cfg(not(test))]\nmod not_test;",
+        ),
+        ("crates/lumen/src/wasm_impl.rs", "mod inner;"),
+        ("crates/lumen/src/wasm_impl/inner.rs", ""),
+        ("crates/lumen/src/win.rs", ""),
+        ("crates/lumen/src/unix_only.rs", ""),
+        ("crates/lumen/src/not_test.rs", ""),
+    ]);
+    for path in [
+        "crates/lumen/src/wasm_impl.rs",
+        "crates/lumen/src/wasm_impl/inner.rs",
+        "crates/lumen/src/win.rs",
+        "crates/lumen/src/unix_only.rs",
+        "crates/lumen/src/not_test.rs",
+    ] {
+        assert!(tree.is_core(path), "{path}");
+    }
+}
