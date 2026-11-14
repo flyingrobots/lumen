@@ -77,3 +77,5 @@ second front end would have had to rebuild that list by hand.
   is the front end's choice.
 - **Storing the scene's identity in `Scene`.** That would change `SceneSpec`, a struct every
   scene builder constructs. It waits for scenes that carry their own identity (flyingrobots/lumen#6).
+  ADR 0005 (flyingrobots/lumen#38) gives `Scene` a content identity derived from its
+  `SceneSpec`, which needs no change to `SceneSpec`; a scene's name is still not stored.

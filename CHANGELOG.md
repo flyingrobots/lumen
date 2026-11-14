@@ -44,6 +44,20 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- A scene's content identity (part of flyingrobots/lumen#38, ADR 0005): `Scene::content_id()`
+  returns a `SceneContentId`, the SHA-256 of the canonical encoding `lumen-scene-content/1`
+  (`SCENE_CONTENT_ENCODING`) of the `SceneSpec`: the triangles' raw coordinates in primitive
+  order, each with its material index, the material table, a tagged optional light, the sky and
+  the camera placement, little-endian with `u64` counts. `Scene::new` computes it once, from the
+  spec alone, before the tree is built: 6.8 ms of 33.7 ms for the reference scene in the release
+  profile (120 ms of 154 ms unoptimized), 1.3 ms of 5.6 ms for Fixed Point. Tests rebuild the
+  encoding by hand from the ADR, change each field once (every coordinate of a triangle, the
+  order, a material index, each albedo channel, the light's direction, irradiance and presence,
+  the sky, each camera field), build two scenes that a count-free encoding would confuse, and
+  move a triangle inside a closed cube, which changes the digest and, with every ray checked
+  against a test of every other triangle, no pixel. Mutations that drop the material indices,
+  hash in sorted order, omit a count, the light tag or the camera each fail a test. No pixel
+  changes; both golden image hashes are unchanged.
 - `lumen::PrimitiveIndex` (flyingrobots/lumen#20): the name of a triangle in its scene, a `u32`
   that is its zero-based position in `SceneSpec::triangles`, in input order. `Hit::primitive`,
   `Scene::surface`, `Scene::albedo` and `SceneError::OutsideTraceDomain` /
