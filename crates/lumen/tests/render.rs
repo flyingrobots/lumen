@@ -1,3 +1,5 @@
+//! Size class: small (in process, no file, no network).
+//!
 //! Render tests: hand-derived radiance, shadows against exact geometry, every traced ray against
 //! brute force, an independent composition of the documented order of operations, order
 //! independence, convergence, determinism and the golden image hash.

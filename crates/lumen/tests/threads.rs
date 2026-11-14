@@ -1,3 +1,5 @@
+//! Size class: medium (real threads at fixed counts).
+//!
 //! Rendering on real threads at fixed counts: the image and the ray count do not depend on the
 //! thread count or the band height; a failing pixel gives the same typed error at every thread
 //! count and band height; and the workers stop after a failure. Hand-out orders themselves are

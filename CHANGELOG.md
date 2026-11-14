@@ -8,6 +8,12 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The command-line tests are hermetic and one-behaviour-each (part of flyingrobots/lumen#24): every
+  test that runs `lumen` owns a scratch directory named for the test and the process id, used as
+  the working directory with absolute paths, and removed at the end, so refusal tests cannot
+  write into the source tree and the test and release profiles can run at once. Tests that
+  covered two behaviours or branched on the platform are split, and each integration test file
+  states a size class; the README's new Contributing section documents both conventions.
 - `Scene::new` refuses an invalid camera placement (part of flyingrobots/lumen#20): it builds
   Bunny's `PinholeCamera` at a one-pixel image before anything is allocated and returns the new
   `SceneError::Camera(CameraError)` for a position outside the trace domain, a tangent not in
