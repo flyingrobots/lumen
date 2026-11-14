@@ -58,8 +58,18 @@ struct Decl {
     test: bool,
     /// Its `#[path]`, if it has one.
     path: Option<String>,
-    /// The directories the enclosing inline modules add (their names, or their `#[path]`s).
-    inline: Vec<String>,
+    /// The enclosing inline modules, outermost first.
+    inline: Vec<InlineDir>,
+}
+
+/// What an enclosing inline module does to the directory of the modules it declares: adds its
+/// name, or, with a `#[path]`, is that directory, relative to the current one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum InlineDir {
+    /// `mod name { ... }`.
+    Name(String),
+    /// `#[path = "dir"] mod name { ... }`.
+    Path(String),
 }
 
 /// A file's declarations, whether it is `#![cfg(test)]`, and its failures by line.
@@ -76,7 +86,12 @@ impl Layout {
     pub(crate) fn new(files: &[(String, String)], crates: &[String]) -> Self {
         let text: BTreeMap<&str, &str> =
             files.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
-        let mut walk = Walk { text: &text, roles: BTreeMap::new(), failures: BTreeSet::new() };
+        let mut walk = Walk {
+            text: &text,
+            roles: BTreeMap::new(),
+            seen: BTreeMap::new(),
+            failures: BTreeSet::new(),
+        };
         walk.visit(LIBRARY, Role::Source, true);
         let library = walk.roles.iter().filter(|(_, r)| **r == Role::Source);
         let library: BTreeSet<String> = library.map(|(p, _)| p.clone()).collect();
@@ -134,6 +149,9 @@ fn root_role(krate: &str, path: &str) -> Option<Role> {
 struct Walk<'a> {
     text: &'a BTreeMap<&'a str, &'a str>,
     roles: BTreeMap<String, Role>,
+    /// Each file and directory ownership visited, with the highest role it was visited as: a
+    /// file reached both as `mod.rs`-like and not resolves its children both ways.
+    seen: BTreeMap<(String, bool), Role>,
     failures: BTreeSet<Failure>,
 }
 
@@ -143,10 +161,13 @@ impl Walk<'_> {
         let Some(text) = self.text.get(path) else { return };
         let parsed = parse(text);
         let role = if parsed.test { Role::Test } else { role };
-        if self.roles.get(path).is_some_and(|known| *known >= role) {
+        let key = (path.to_owned(), mod_rs);
+        if self.seen.get(&key).is_some_and(|known| *known >= role) {
             return;
         }
-        self.roles.insert(path.to_owned(), role);
+        self.seen.insert(key, role);
+        let known = self.roles.get(path).copied();
+        self.roles.insert(path.to_owned(), known.map_or(role, |k| k.max(role)));
         for (line, what) in parsed.failures {
             self.failures.insert(Failure { path: path.to_owned(), line, what });
         }
@@ -172,22 +193,33 @@ impl Walk<'_> {
         decl: &Decl,
     ) -> Result<Option<(String, bool)>, String> {
         let parent = path.rsplit_once('/').map_or("", |(dir, _)| dir);
-        let own = if mod_rs {
-            parent.to_owned()
-        } else {
-            format!("{parent}/{}", path.rsplit('/').next().unwrap_or("").trim_end_matches(".rs"))
-        };
-        let inline =
-            |base: &str| decl.inline.iter().fold(base.to_owned(), |dir, d| format!("{dir}/{d}"));
+        let stem = path.rsplit('/').next().unwrap_or("").trim_end_matches(".rs");
+        // rustc_expand's module.rs: a non-`mod.rs` file's own directory (`n/` for `n.rs`) is
+        // pending until a named inline module or an out-of-line `mod` needs it; an inline
+        // module's `#[path]` replaces the directory and drops the pending part.
+        let (mut dir, mut pending) = (parent.to_owned(), (!mod_rs).then_some(stem));
+        for inline in &decl.inline {
+            match inline {
+                InlineDir::Name(name) => {
+                    if let Some(own) = pending.take() {
+                        dir = format!("{dir}/{own}");
+                    }
+                    dir = format!("{dir}/{name}");
+                }
+                InlineDir::Path(to) => {
+                    dir = normalize(&format!("{dir}/{to}")).unwrap_or_default();
+                    pending = None;
+                }
+            }
+        }
         if let Some(target) = &decl.path {
-            let base = if decl.inline.is_empty() { parent.to_owned() } else { inline(&own) };
-            let file = normalize(&format!("{base}/{target}"));
+            let file = normalize(&format!("{dir}/{target}"));
             return match file {
                 Some(f) if self.text.contains_key(f.as_str()) => Ok(Some((f, true))),
                 _ => Err(format!("#[path = \"{target}\"] loads a file the gates do not read: make it a .rs module under crates/ or xtask/")),
             };
         }
-        let base = inline(&own);
+        let base = pending.map_or_else(|| dir.clone(), |own| format!("{dir}/{own}"));
         let flat = format!("{base}/{}.rs", decl.name);
         let nested = format!("{base}/{}/mod.rs", decl.name);
         Ok([(flat, false), (nested, true)]
@@ -236,7 +268,7 @@ struct Parser<'t> {
     toks: &'t [Located],
     parsed: Parsed,
     depth: usize,
-    inline: Vec<(String, usize, bool)>,
+    inline: Vec<(InlineDir, usize, bool)>,
     attrs: Vec<&'t [Located]>,
 }
 
@@ -285,8 +317,14 @@ impl Parser<'_> {
         let end = closing(self.toks, open);
         let attr = &self.toks[(open + 1).min(end)..end];
         check_attribute(line, attr, &mut self.parsed.failures);
-        if inner && is_cfg_test(attr) && self.depth == 0 {
-            self.parsed.test = true;
+        if inner && is_cfg_test(attr) {
+            // `#![cfg(test)]` at the top makes the file a test file; inside an inline module's
+            // braces, that module.
+            match self.inline.last_mut() {
+                Some((_, open, test)) if *open == self.depth => *test = true,
+                _ if self.depth == 0 => self.parsed.test = true,
+                _ => {}
+            }
         } else if !inner {
             self.attrs.push(attr);
         }
@@ -301,7 +339,8 @@ impl Parser<'_> {
             pending.iter().any(|a| is_cfg_test(a)) || self.inline.iter().any(|(_, _, t)| *t);
         let file = pending.iter().find_map(|a| path_value(a));
         if next(2) == Some(&Token::Punct('{')) {
-            self.inline.push((file.unwrap_or_else(|| name.clone()), self.depth + 1, under_test));
+            let dir = file.map_or_else(|| InlineDir::Name(name.clone()), InlineDir::Path);
+            self.inline.push((dir, self.depth + 1, under_test));
         } else if next(2) == Some(&Token::Punct(';')) {
             let dirs = self.inline.iter().map(|(d, _, _)| d.clone()).collect();
             let (line, name) = (self.toks[i].0, name.clone());
