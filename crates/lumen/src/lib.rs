@@ -4,7 +4,8 @@
 //! the Fixed Point showpiece, [`fixed_point_scene`]), in bands of rows on all cores
 //! ([`render_scheduled`], [`Schedule`], [`render_pixels`]) with a power-of-two number of samples
 //! per pixel, each one diffuse path with a shadow-casting directional light, a uniform sky and one
-//! bounce ([`trace_path`], `lumen-diffuse-path/1`), and encodes it as a PNG ([`write_png`]). Every
+//! bounce ([`trace_path`], `lumen-diffuse-path/1`, or `lumen-smooth-diffuse-path/1` with Bunny's
+//! smooth shading where a scene gives vertex normals), and encodes it as a PNG ([`write_png`]). Every
 //! number that decides a pixel comes from Bunny: the sampler, camera rays, the BVH and its
 //! traversals, the triangle test, the shading steps and their order of operations, and the pixel
 //! path. So the same scene, size, sample count and seed give the same RGBA bytes, and the same
@@ -76,8 +77,9 @@ pub use provenance::{ProvenanceValue, RenderProvenance, PROVENANCE_FIELDS};
 pub use reference::{reference_scene, REFERENCE_SCENE_ID};
 pub use render::{
     pixel_radiance, render, render_reference, render_scheduled, render_traced, trace_path,
-    PathError, PathSample, RayCount, Render, RenderError, RenderSettings, SettingsError,
-    BOUNCE_PAIR, CAMERA_PAIR, INTEGRATOR_ID, MAX_BOUNCES, TONE_CURVE,
+    Integrator, PathError, PathSample, RayCount, Render, RenderError, RenderSettings,
+    SettingsError, BOUNCE_PAIR, CAMERA_PAIR, INTEGRATOR_ID, MAX_BOUNCES, SMOOTH_INTEGRATOR_ID,
+    TONE_CURVE,
 };
 pub use scene::{
     CameraPlacement, Hit, Lighting, PrimitiveIndex, Scene, SceneBuffer, SceneContentId, SceneError,

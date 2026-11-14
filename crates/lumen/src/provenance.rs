@@ -8,7 +8,7 @@
 use bunny_optics::{RGBA8_OPAQUE_IDENTITY, SAMPLER_ID, SHADING_ID};
 
 use crate::image::ImageSize;
-use crate::render::{RenderSettings, INTEGRATOR_ID, MAX_BOUNCES, TONE_CURVE};
+use crate::render::{Integrator, RenderSettings, MAX_BOUNCES, TONE_CURVE};
 use crate::scene::{Scene, SceneContentId};
 use crate::BUNNY_REV;
 
@@ -52,6 +52,7 @@ pub const PROVENANCE_FIELDS: usize = 13;
 pub struct RenderProvenance {
     name: Option<&'static str>,
     content: SceneContentId,
+    integrator: Integrator,
     size: ImageSize,
     settings: RenderSettings,
 }
@@ -78,7 +79,8 @@ impl RenderProvenance {
     /// it was built.
     #[must_use]
     pub const fn new(scene: &Scene, size: ImageSize, settings: RenderSettings) -> Self {
-        Self { name: None, content: scene.content_id(), size, settings }
+        let integrator = Integrator::for_scene(scene);
+        Self { name: None, content: scene.content_id(), integrator, size, settings }
     }
 
     /// The provenance of a render of `scene` under the human-readable `name`, such as
@@ -91,7 +93,8 @@ impl RenderProvenance {
         size: ImageSize,
         settings: RenderSettings,
     ) -> Self {
-        Self { name: Some(name), content: scene.content_id(), size, settings }
+        let integrator = Integrator::for_scene(scene);
+        Self { name: Some(name), content: scene.content_id(), integrator, size, settings }
     }
 
     /// The scene's name, if it was given one ([`RenderProvenance::named`]).
@@ -121,8 +124,12 @@ impl RenderProvenance {
     /// Every field, named, in this order, which is stable (a new field is added at the end):
     ///
     /// 1. `scene`: the scene's name, or [`ProvenanceValue::Unnamed`];
-    /// 2. `integrator`: [`INTEGRATOR_ID`](crate::INTEGRATOR_ID);
-    /// 3. `shading`: Bunny's shading contract, `bunny_optics::SHADING_ID`;
+    /// 2. `integrator`: the scene's [`Integrator`] ([`Integrator::for_scene`]):
+    ///    [`INTEGRATOR_ID`](crate::INTEGRATOR_ID), or
+    ///    [`SMOOTH_INTEGRATOR_ID`](crate::SMOOTH_INTEGRATOR_ID) for a scene with vertex normals,
+    ///    which also uses Bunny's `bunny-smooth-shading/1` (ADR 0007);
+    /// 3. `shading`: Bunny's shading contract, `bunny_optics::SHADING_ID`, whose surface hit,
+    ///    start point, shadow ray and reflection every path uses, smooth or not;
     /// 4. `sampler`: Bunny's sampler, `bunny_optics::SAMPLER_ID`;
     /// 5. `tone`: the tone curve of [`TONE_CURVE`](crate::TONE_CURVE);
     /// 6. `encoding`: the pixel encoding, `bunny_optics::RGBA8_OPAQUE_IDENTITY`;
@@ -140,7 +147,7 @@ impl RenderProvenance {
         let pixels = u64::from(self.size.width()).saturating_mul(u64::from(self.size.height()));
         [
             ("scene", self.name.map_or(Unnamed, Identity)),
-            ("integrator", Identity(INTEGRATOR_ID)),
+            ("integrator", Identity(self.integrator.id())),
             ("shading", Identity(SHADING_ID)),
             ("sampler", Identity(SAMPLER_ID)),
             ("tone", Identity(TONE_CURVE.identity())),

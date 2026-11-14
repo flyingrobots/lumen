@@ -26,7 +26,8 @@ mod shade;
 pub use error::{PathError, RenderError};
 use shade::{direct, Shade};
 
-/// The stable name and version of lumen's integrator, [`trace_path`].
+/// The stable name and version of [`trace_path`] on a scene with no vertex normal
+/// ([`Integrator::DiffusePath`]).
 ///
 /// `lumen-diffuse-path/1` is a composition of named Bunny contracts and adds no arithmetic of
 /// its own: camera rays from `PinholeCamera::ray`; sample positions and bounce points from
@@ -38,6 +39,53 @@ use shade::{direct, Shade};
 /// `PixelAccumulator`. The pixel value then goes through [`TONE_CURVE`] and `write_rgba8`
 /// (`bunny-rgba8-opaque/1`). Geordi's integrator identity is meant to pin the same composition.
 pub const INTEGRATOR_ID: &str = "lumen-diffuse-path/1";
+
+/// The stable name and version of [`trace_path`] on a scene with at least one vertex normal
+/// ([`Integrator::SmoothDiffusePath`]).
+///
+/// `lumen-smooth-diffuse-path/1` is `lumen-diffuse-path/1` with one change, made per triangle: at
+/// a hit on a triangle with at least one vertex normal (`Scene::vertex_normals`), the hit is
+/// shaded by Bunny's `bunny-smooth-shading/1` instead of the flat steps. That is
+/// `SmoothHit::new(surface_hit, hit.barycentric_numerators(), normals)` (which interpolates the
+/// normals with `smooth_normal`, `bunny-smooth-normal/1`), then `SmoothHit::light_sample` for the
+/// direct term and `SmoothHit::bounce` for the bounce: a ray as before, or, when the direction is
+/// at or below the geometric surface, no ray and `B = 0`. Everything else (the camera ray, the
+/// sampler pairs, the queries, the surface hit and its start point, the shadow ray, the
+/// reflection, the order of operations) is `lumen-diffuse-path/1`'s, and a triangle without a
+/// vertex normal is shaded exactly as by it. It adds no arithmetic of its own.
+pub const SMOOTH_INTEGRATOR_ID: &str = "lumen-smooth-diffuse-path/1";
+
+/// Which composition [`trace_path`] is for a scene, and its stable name: the provenance's
+/// `integrator` field (ADR 0007).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Integrator {
+    /// [`INTEGRATOR_ID`]: no triangle of the scene has a vertex normal.
+    DiffusePath,
+    /// [`SMOOTH_INTEGRATOR_ID`]: at least one triangle has a vertex normal.
+    SmoothDiffusePath,
+}
+
+impl Integrator {
+    /// The integrator [`trace_path`] is for `scene`: smooth exactly when at least one triangle
+    /// has a vertex normal ([`Scene::smooth_triangles`] is nonzero).
+    #[must_use]
+    pub const fn for_scene(scene: &Scene) -> Self {
+        if scene.smooth_triangles() == 0 {
+            Self::DiffusePath
+        } else {
+            Self::SmoothDiffusePath
+        }
+    }
+
+    /// The stable name and version.
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::DiffusePath => INTEGRATOR_ID,
+            Self::SmoothDiffusePath => SMOOTH_INTEGRATOR_ID,
+        }
+    }
+}
 
 /// The most bounces a path takes: one.
 pub const MAX_BOUNCES: u32 = 1;
@@ -167,7 +215,8 @@ pub struct PathSample {
 
 const ZERO: [FixedQ32_32; 3] = [FixedQ32_32::ZERO; 3];
 
-/// `lumen-diffuse-path/1`: the radiance of sample `sample` of the pixel `sampler` belongs to.
+/// `lumen-diffuse-path/1`, or `lumen-smooth-diffuse-path/1` on a scene with vertex normals
+/// ([`Integrator::for_scene`]): the radiance of sample `sample` of the pixel `sampler` belongs to.
 ///
 /// This is Bunny's order of operations for one path (`docs/topics/optics/README.md` in Bunny,
 /// "Order Of Operations"), step for step, with `tracer` answering the ray queries:
@@ -182,6 +231,10 @@ const ZERO: [FixedQ32_32; 3] = [FixedQ32_32::ZERO; 3];
 ///    `B = sky`; a hit gives `h2`, its direct term `D2` as in step 4, and
 ///    `B = albedo[p2].reflect(D2, 0)`;
 /// 6. `L = albedo[p1].reflect(D1, B)`.
+///
+/// At a hit on a triangle with a vertex normal, steps 3 to 5 use Bunny's `SmoothHit` (see
+/// [`SMOOTH_INTEGRATOR_ID`]): its light sample, and its bounce, which may be rejected as below the
+/// geometric surface; then no bounce ray is traced and `B = 0`.
 ///
 /// Secondary rays start at Bunny's start point and are queried with a minimum distance of zero
 /// and no primitive excluded. The result depends only on the scene, the camera, the sampler's
@@ -210,15 +263,19 @@ pub fn trace_path<T: Tracer + ?Sized>(
         return Ok(PathSample { radiance: lighting.sky.radiance(), rays: count });
     };
     let h1 = Shade::at(scene, &ray0, &hit1)?;
-    let d1 = direct(scene, tracer, &h1.hit, &mut count)?;
-    let ray1 = h1.bounce(sampler.point(sample, BOUNCE_PAIR))?;
+    let d1 = direct(scene, tracer, &h1, &mut count)?;
+    let Some(ray1) = h1.bounce(sampler.point(sample, BOUNCE_PAIR))? else {
+        // Bunny's smooth shading rejected the bounce: no ray, and it contributes zero.
+        let radiance = h1.reflect(d1, ZERO)?;
+        return Ok(PathSample { radiance, rays: count });
+    };
     // A path traces at most two closest-hit and two shadow rays, so no count saturates.
     count.closest = count.closest.saturating_add(1);
     let b = match tracer.closest(&ray1)? {
         None => lighting.sky.radiance(),
         Some(hit2) => {
             let h2 = Shade::at(scene, &ray1, &hit2)?;
-            let d2 = direct(scene, tracer, &h2.hit, &mut count)?;
+            let d2 = direct(scene, tracer, &h2, &mut count)?;
             h2.reflect(d2, ZERO)?
         }
     };

@@ -116,6 +116,7 @@ pub struct Scene {
     material_of: Vec<u32>,
     materials: Vec<Albedo>,
     normals: Vec<[Option<FixedUnitVec3>; 3]>,
+    smooth_triangles: usize,
     lighting: Lighting,
     camera: CameraPlacement,
     tree: Tree,
@@ -222,6 +223,8 @@ impl Scene {
         materials.extend_from_slice(spec.materials);
         let mut normals = reserved(SceneBuffer::VertexNormals, spec.normals.len())?;
         normals.extend_from_slice(spec.normals);
+        let smooth_triangles =
+            normals.iter().filter(|normals| normals.iter().any(Option::is_some)).count();
         Ok(Self {
             content,
             triangles,
@@ -229,6 +232,7 @@ impl Scene {
             material_of,
             materials,
             normals,
+            smooth_triangles,
             lighting: spec.lighting,
             camera: spec.camera,
             tree,
@@ -260,6 +264,13 @@ impl Scene {
     #[must_use]
     pub fn vertex_normals(&self, primitive: PrimitiveIndex) -> Option<&[Option<FixedUnitVec3>; 3]> {
         self.normals.get(primitive.to_usize())
+    }
+
+    /// How many triangles have at least one vertex normal: the triangles that
+    /// `lumen-smooth-diffuse-path/1` shades smooth. Zero for a scene given no vertex normals.
+    #[must_use]
+    pub const fn smooth_triangles(&self) -> usize {
+        self.smooth_triangles
     }
 
     /// The light and the sky.
