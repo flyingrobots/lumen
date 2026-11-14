@@ -271,6 +271,13 @@ where
 /// right), the same at every thread count, band height and hand-out order. After a failure in
 /// row `y`, workers begin no row from `y` down. [`WorkerError::OutOfMemory`] if the image cannot
 /// be reserved, [`WorkerError::Spawn`] if a worker thread cannot be started.
+#[expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    reason = "thread-spawn: the one thread pool (ADR 0003); each pixel is written at the place its \
+              coordinates fix and the sums are integer, so no schedule or hand-out order reaches the \
+              image or the ray count"
+)]
 pub fn render_pixels<T, E, F>(
     size: ImageSize,
     schedule: Schedule,

@@ -4,6 +4,12 @@
 //! `xtask/` against the Rust standard's file limits ([`file_length`]) and exits 1 if any fails.
 //! Files held by an exception are printed as GitHub warning annotations, so they stay visible.
 
+#![expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_macros,
+    reason = "std-env, std-fs: repository tooling reads its arguments and the source tree"
+)]
+
 mod file_length;
 
 use std::path::{Path, PathBuf};
