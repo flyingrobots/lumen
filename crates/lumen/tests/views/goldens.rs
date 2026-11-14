@@ -39,10 +39,34 @@ pub(crate) const GOLDEN_VIEWS_96X54: &[(BuiltinScene, View, &str)] = &[
         View::ShadingNormals,
         "sha256:340dbcf9e821f04caf1b1fe18d4e26cd49ad7cca1faa89574508cb8635028b2c",
     ),
-    (BuiltinScene::Reference, View::Wireframe, "sha256:91fb137060a5eea8d384965c69a877a4b969338310b5938adee943213a0f656f"),
-    (BuiltinScene::Reference, View::BvhCost, "sha256:5c8d36082f4119aad4bf9f58be30d02790f95e0f6e71bf4c700f569225cdb7a0"),
-    (BuiltinScene::FixedPoint, View::Wireframe, "sha256:ab1bd4297f7ee42d65b663e4bdf3696502947e648d294d1c1c47c9427323c0c7"),
-    (BuiltinScene::FixedPoint, View::BvhCost, "sha256:5c2033330ad1dd4660eaf275368d22369fc0fd1f895829c708aec9214b54311e"),
-    (BuiltinScene::Canyon, View::Wireframe, "sha256:0a502eaf9b822476c6139b4481f50ef7e4a233b1a5c01385d8c215a2cc43ec10"),
-    (BuiltinScene::Canyon, View::BvhCost, "sha256:e9c2bb4f460a411ef703868acf304d88a27e3b8d67e8300039a7bda13c692dfb"),
+    (
+        BuiltinScene::Reference,
+        View::Wireframe,
+        "sha256:91fb137060a5eea8d384965c69a877a4b969338310b5938adee943213a0f656f",
+    ),
+    (
+        BuiltinScene::Reference,
+        View::BvhCost,
+        "sha256:5c8d36082f4119aad4bf9f58be30d02790f95e0f6e71bf4c700f569225cdb7a0",
+    ),
+    (
+        BuiltinScene::FixedPoint,
+        View::Wireframe,
+        "sha256:ab1bd4297f7ee42d65b663e4bdf3696502947e648d294d1c1c47c9427323c0c7",
+    ),
+    (
+        BuiltinScene::FixedPoint,
+        View::BvhCost,
+        "sha256:5c2033330ad1dd4660eaf275368d22369fc0fd1f895829c708aec9214b54311e",
+    ),
+    (
+        BuiltinScene::Canyon,
+        View::Wireframe,
+        "sha256:0a502eaf9b822476c6139b4481f50ef7e4a233b1a5c01385d8c215a2cc43ec10",
+    ),
+    (
+        BuiltinScene::Canyon,
+        View::BvhCost,
+        "sha256:e9c2bb4f460a411ef703868acf304d88a27e3b8d67e8300039a7bda13c692dfb",
+    ),
 ];
