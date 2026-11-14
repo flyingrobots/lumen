@@ -377,6 +377,35 @@ of `(x, y)`; each of these breaks that. Decided, each a Lumen rule of the scan (
 scheduler needs them and none produces a value from the host. Nothing on main is refused by
 these rules.
 
+**The compiler layer** bans what Clippy can resolve and the fixture can use on the CI host:
+`std::thread::current`, `Thread`, `ThreadId` (`thread-identity`); `thread_local!`, `LocalKey`,
+`panic::set_hook` and `take_hook` (`shared-state`); `io::stdin`, `stdout`, `stderr`, `pipe`,
+their types and locks and `IsTerminal` (`host-io`); `hash::DefaultHasher` and `SipHasher`
+(`std-hasher`); `any::TypeId`, `type_name`, `type_name_of_val` (`type-identity`); and
+`panic::Location` (`source-path`). `std::os` and `std::arch` (whose items differ by target),
+`file!` (Clippy 0.1.96 resolves `std::file` but never fires on it), `cfg!` (Clippy's `core::cfg`
+ban would also refuse `cfg!(test)`), the print macros and `dbg!` (which the tests and tools use)
+and the pointer methods (no `clippy.toml` path names a method of `*const T`) are the scan's
+alone. The binary's waiver names `host-io`, since it writes the PNG to standard output.
+
+**The std item list covers every module.** `xtask/bans/std-items.txt` now also holds every
+top-level module of std (from `std/index.html`) and every macro at its root, and the items of
+`std::io`, `hash`, `any` and `panic` as well as the six modules before; regenerated from the
+same tarball (sha256 `75a89ce0...7211317b`, 341 rows). Each module is decided
+(`xtask/src/clippy_bans/std_items/decisions.rs`): listed item by item (those ten), banned whole
+by the scan (`os`, `arch`, `backtrace`), or kept whole with a reason (the integer and float
+modules, the containers, the language's traits, `fmt`, `ptr`, `mem`, `cell`, `sync`, `alloc`,
+`collections`, `ffi`, `path` and the rest, each with what refuses its dangerous items by rule
+or by name). Each root macro is decided the same way. A decision is a Clippy ban (the
+`clippy.toml` entry must exist under its rule), a scan ban (the scan must refuse the path or
+the macro under that rule, checked against its tables), or a keep with a reason. **The rule
+for a future toolchain: a module, a root macro or an item of a listed module with no decision
+fails `clippy-bans`**, so a new std module (as `std::range` and the macro `cfg_select!`, a
+platform branch, were for 1.96.0) is decided before the pin can move. Unstable items cannot be
+used on the pinned toolchain and are kept. The items of modules kept whole are not enumerated,
+so a new dangerous item inside one (a new `std::sync` global, say) is found only if a rule or a
+name of the scan covers it; that is the list's limit.
+
 What the lexical rules cannot see: a pointer compared or ordered (`a.as_ptr() < b.as_ptr()`),
 hashed through a hasher of the core's own, or cast to an integer through a binding
 (`let p = x.as_ptr(); p as usize`), since the scan knows no types; `addr` and the other

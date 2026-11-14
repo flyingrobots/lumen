@@ -8,6 +8,13 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- `clippy.toml` bans `thread::current`, `Thread`, `ThreadId`, `thread_local!`, `LocalKey`,
+  `panic::set_hook`/`take_hook`, `io::stdin`/`stdout`/`stderr`/`pipe` with their types and
+  `IsTerminal`, `DefaultHasher`, `SipHasher`, `TypeId`, `type_name`, `type_name_of_val` and
+  `panic::Location`, each used by the fixture (flyingrobots/lumen#155). The std item list holds
+  every top-level module and root macro of std and the items of `std::io`, `hash`, `any` and
+  `panic`; each module and macro is decided, and an undecided one fails `xtask clippy-bans`.
+  A decision left to the scan is checked against the scan's own tables.
 - The scan refuses std values that depend on the host, the schedule or addresses
   (flyingrobots/lumen#155), as ten new rules: `thread::current` and `ThreadId`
   (`thread-identity`), `thread_local!` and every `static` item (`shared-state`), pointer

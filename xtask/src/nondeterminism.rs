@@ -145,6 +145,20 @@ pub(crate) fn core_findings(text: &str, aliases: &CrateAliases) -> Vec<Finding> 
     apply_waivers(text, found)
 }
 
+/// The rule under which the scan refuses the std item `path` (`std::os::unix`, `std::file` for
+/// the macro when `is_macro`), if it does: the check that a decision to leave an item to the
+/// scan is one the scan keeps ([`crate::clippy_bans::std_items`]).
+pub(crate) fn scan_rule(path: &str, is_macro: bool) -> Option<&'static str> {
+    let segments: Vec<&str> = path.split("::").collect();
+    if is_macro {
+        return host::macro_rule(segments.last()?);
+    }
+    let under = |prefix: &&[&str]| {
+        segments.len() >= prefix.len() && segments.iter().zip(*prefix).all(|(a, b)| a == b)
+    };
+    PATHS.iter().find(|(prefix, _)| under(prefix)).map(|(_, rule)| *rule)
+}
+
 /// Whether a crate root's text denies (or forbids) `clippy::float_arithmetic` in an inner
 /// attribute, `#![deny(.., clippy::float_arithmetic, ..)]`: each deterministic crate must, since
 /// the lint catches arithmetic on a float whose type is only inferred and is not a workspace

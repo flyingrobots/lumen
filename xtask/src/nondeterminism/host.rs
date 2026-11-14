@@ -5,7 +5,7 @@
 use super::tokens::{Located, Token};
 
 /// Macros, by name, and their rules. `dbg!` prints to standard error with the source path.
-const MACROS: [(&str, &str); 8] = [
+const MACROS: [(&str, &str); 9] = [
     ("thread_local", "shared-state"),
     ("file", "source-path"),
     ("dbg", "host-io"),
@@ -14,6 +14,7 @@ const MACROS: [(&str, &str); 8] = [
     ("eprint", "host-io"),
     ("eprintln", "host-io"),
     ("cfg", "platform-branch"),
+    ("cfg_select", "platform-branch"),
 ];
 
 /// Methods, by name, and their rules: a pointer's address (`addr`, `expose_provenance`) or a
@@ -43,6 +44,18 @@ const INTEGERS: [&str; 12] =
 const POINTER_CALLS: [&str; 6] =
     ["as_ptr", "as_mut_ptr", "from_ref", "from_mut", "addr_of", "cast"];
 
+/// The rule under which the scan refuses the macro `name` (`file`, `cfg`, `is_x86_feature_detected`,
+/// `env`), if it does.
+pub(super) fn macro_rule(name: &str) -> Option<&'static str> {
+    if let Some((_, rule)) = MACROS.iter().find(|(m, _)| *m == name) {
+        Some(rule)
+    } else if name.starts_with("is_") && name.ends_with("_feature_detected") {
+        Some("host-cpu")
+    } else {
+        (name == "env" || name == "option_env").then_some("std-env")
+    }
+}
+
 /// Each host finding of `toks`: its line, rule and what was found.
 pub(super) fn host_findings(toks: &[Located]) -> Vec<(usize, &'static str, String)> {
     let mut out = Vec::new();
@@ -50,12 +63,10 @@ pub(super) fn host_findings(toks: &[Located]) -> Vec<(usize, &'static str, Strin
     for (i, (line, token)) in toks.iter().enumerate() {
         match token {
             Token::Ident(name) if at(i + 1) == Some(&Token::Punct('!')) && opens(at(i + 2)) => {
-                if let Some((_, rule)) = MACROS.iter().find(|(m, _)| m == name) {
-                    if *rule != "platform-branch" || !neutral(&toks[i + 2..]) {
-                        out.push((*line, *rule, format!("{name}!")));
-                    }
-                } else if name.starts_with("is_") && name.ends_with("_feature_detected") {
-                    out.push((*line, "host-cpu", format!("{name}!")));
+                match macro_rule(name) {
+                    Some("platform-branch") if neutral(&toks[i + 2..]) => {}
+                    Some("std-env") | None => {}
+                    Some(rule) => out.push((*line, rule, format!("{name}!"))),
                 }
             }
             Token::Ident(name)

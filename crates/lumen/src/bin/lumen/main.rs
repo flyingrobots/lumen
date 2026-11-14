@@ -6,9 +6,10 @@
     clippy::disallowed_methods,
     clippy::disallowed_types,
     clippy::disallowed_macros,
-    reason = "time-instant, host-parallelism, std-env, std-fs, float-type: the command's edge reads \
-              its arguments, writes the PNG, times the phases in seconds and asks the host for the \
-              default thread count; the library gets only values"
+    reason = "time-instant, host-parallelism, std-env, std-fs, host-io, float-type: the command's \
+              edge reads its arguments, writes the PNG to a file or standard output, times the \
+              phases in seconds and asks the host for the default thread count; the library gets \
+              only values"
 )]
 
 mod cli;

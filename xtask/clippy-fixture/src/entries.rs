@@ -210,3 +210,58 @@ mod float_arithmetic_on_an_inferred_float {
         (x * x).to_bits()
     }
 }
+
+// seeded: thread-identity
+mod thread_identity {
+    pub type Types = (std::thread::Thread, std::thread::ThreadId);
+    pub fn f() -> bool {
+        std::thread::current().name().is_some()
+    }
+}
+
+// seeded: shared-state
+mod shared_state {
+    pub type Types = std::thread::LocalKey<u8>;
+    std::thread_local! { static K: u8 = const { 0 }; }
+    pub fn f() {
+        std::panic::set_hook(std::panic::take_hook());
+    }
+}
+
+// seeded: host-io
+mod host_io {
+    pub type Types = (
+        std::io::Stdin,
+        std::io::StdinLock<'static>,
+        std::io::Stdout,
+        std::io::StdoutLock<'static>,
+        std::io::Stderr,
+        std::io::StderrLock<'static>,
+        std::io::PipeReader,
+        std::io::PipeWriter,
+    );
+    pub fn f() -> bool {
+        use std::io::IsTerminal;
+        let _ = (std::io::stdin(), std::io::stderr(), std::io::pipe());
+        std::io::stdout().is_terminal()
+    }
+}
+
+// seeded: std-hasher
+mod std_hasher {
+    #[allow(deprecated, reason = "a seeded use of a deprecated item")]
+    pub type Types = (std::hash::DefaultHasher, std::hash::SipHasher);
+}
+
+// seeded: type-identity
+mod type_identity {
+    pub type Types = std::any::TypeId;
+    pub fn f() -> usize {
+        std::any::type_name::<u8>().len() + std::any::type_name_of_val(&1_u8).len()
+    }
+}
+
+// seeded: source-path
+mod source_path {
+    pub type Types = std::panic::Location<'static>;
+}
