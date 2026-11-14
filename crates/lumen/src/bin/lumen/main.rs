@@ -17,7 +17,7 @@ mod report;
 
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{self, BufWriter};
+use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
@@ -114,10 +114,91 @@ fn run(
     report.write(&mut stdout).map_err(Failure::Stdout)
 }
 
-/// Writes the PNG file and returns its length.
+/// Writes the PNG file and returns the number of bytes written to it.
 fn write_file(path: &Path, image: &Rgba8Image) -> Result<u64, PngError> {
-    let mut file = BufWriter::new(File::create(path)?);
+    let mut file = BufWriter::new(Counting { inner: File::create(path)?, bytes: 0 });
     write_png(&mut file, image)?;
-    file.into_inner().map_err(io::IntoInnerError::into_error)?.sync_all()?;
-    Ok(png_len(image))
+    let counted = file.into_inner().map_err(io::IntoInnerError::into_error)?;
+    counted.inner.sync_all()?;
+    counted.checked(png_len(image)).map_err(PngError::from)
+}
+
+/// A writer that counts the bytes its inner writer accepted.
+struct Counting<W> {
+    inner: W,
+    bytes: u64,
+}
+
+impl<W> Counting<W> {
+    /// The count of bytes written, if it is the `expected` length of the PNG.
+    ///
+    /// # Errors
+    ///
+    /// An `io::Error` naming both counts, if they differ: the file is not the PNG.
+    fn checked(&self, expected: u64) -> io::Result<u64> {
+        if self.bytes == expected {
+            Ok(self.bytes)
+        } else {
+            Err(io::Error::other(format!("wrote {} bytes where the PNG is {expected}", self.bytes)))
+        }
+    }
+}
+
+impl<W: Write> Write for Counting<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.bytes += u64::try_from(n).unwrap_or(u64::MAX);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use lumen::ImageSize;
+
+    use super::*;
+
+    fn image() -> Rgba8Image {
+        let size = ImageSize::new(9, 7).expect("valid");
+        Rgba8Image::from_bytes(size, vec![200; size.byte_len()]).expect("length")
+    }
+
+    /// A writer that takes at most `chunk` bytes per call, so the count is the sum of short
+    /// writes, not one call's length.
+    struct Short(Vec<u8>, usize);
+
+    impl Write for Short {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            let n = buf.len().min(self.1);
+            self.0.extend_from_slice(&buf[..n]);
+            Ok(n)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn the_count_is_what_the_writer_accepted_across_short_writes() {
+        let image = image();
+        let mut counting = Counting { inner: Short(Vec::new(), 5), bytes: 0 };
+        write_png(&mut counting, &image).expect("writes");
+        assert_eq!(counting.checked(png_len(&image)).expect("matches"), png_len(&image));
+        assert_eq!(u64::try_from(counting.inner.0.len()), Ok(counting.bytes));
+    }
+
+    #[test]
+    fn a_count_that_differs_from_the_expected_length_is_an_error() {
+        let image = image();
+        let mut counting = Counting { inner: Short(Vec::new(), 64), bytes: 0 };
+        write_png(&mut counting, &image).expect("writes");
+        let expected = png_len(&image) + 1;
+        let error = counting.checked(expected).expect_err("differs").to_string();
+        assert_eq!(error, format!("wrote {} bytes where the PNG is {expected}", expected - 1));
+    }
 }

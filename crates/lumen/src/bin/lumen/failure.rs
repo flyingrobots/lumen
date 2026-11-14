@@ -19,7 +19,7 @@ pub(crate) enum Failure {
     /// The thread count the system reported was refused: exit code 2. `available_threads`
     /// clamps it to the accepted range, so this happens for no host.
     Threads(ScheduleError),
-    /// The image size was refused: exit code 1.
+    /// The image size was refused: exit code 2, like every other refused argument value.
     Size(SizeError),
     /// The chosen scene could not be built: exit code 1.
     Scene(BuiltinSceneError),
@@ -37,16 +37,15 @@ pub(crate) enum Failure {
 }
 
 impl Failure {
-    /// The process exit code: 2 for a refused command line (and thread count), 1 for anything
-    /// that fails once the command line is accepted.
+    /// The process exit code: 2 for a refused command line, image size or thread count (every
+    /// argument value the command refuses), 1 for anything that fails once the arguments are
+    /// accepted.
     pub(crate) fn exit_code(&self) -> ExitCode {
         match self {
-            Self::Usage(_) | Self::Threads(_) => ExitCode::from(2),
-            Self::Size(_)
-            | Self::Scene(_)
-            | Self::Render(_)
-            | Self::Png { .. }
-            | Self::Stdout(_) => ExitCode::FAILURE,
+            Self::Usage(_) | Self::Threads(_) | Self::Size(_) => ExitCode::from(2),
+            Self::Scene(_) | Self::Render(_) | Self::Png { .. } | Self::Stdout(_) => {
+                ExitCode::FAILURE
+            }
         }
     }
 }
@@ -108,7 +107,7 @@ mod tests {
             (
                 Failure::Size(size),
                 "invalid image size: image width and height must be at least 1".to_owned(),
-                ExitCode::FAILURE,
+                ExitCode::from(2),
             ),
             (
                 Failure::Png { path: PathBuf::from("out/x.png"), error: png },

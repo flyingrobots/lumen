@@ -244,6 +244,7 @@ fn bad_arguments_are_refused_with_usage_and_write_nothing() {
     }
 }
 
+/// A refused size is a refused argument value: exit code 2, as for samples, threads and band rows.
 #[test]
 fn bad_sizes_are_refused_before_anything_is_written() {
     let dir = Scratch::new("sizes");
@@ -257,9 +258,99 @@ fn bad_sizes_are_refused_before_anything_is_written() {
     for (width, height, message) in cases {
         let output =
             dir.lumen(&["render", "--width", width, "--height", height, "--out", path_str(&out)]);
-        assert_refused(&output, 1, message);
+        assert_refused(&output, 2, message);
         assert!(!out.exists(), "{width}x{height} wrote a file");
     }
+}
+
+/// The report's lines that do not depend on the clock.
+fn stable_lines(stdout: &str) -> Vec<&str> {
+    stdout.lines().filter(|line| !line.contains("information only")).collect()
+}
+
+/// A value that reads as an option is refused for every option that takes a value, writes
+/// nothing, and exits 2; `--option=value` and negative numbers are values.
+#[test]
+fn an_option_looking_value_is_refused_unless_written_with_an_equals_sign() {
+    let dir = Scratch::new("option-like-value");
+    let cases: [(&[&str], &str); 8] = [
+        (&["render", "--out", "--width"], "--out needs a value, not the option \"--width\""),
+        (&["render", "--out", "--width", "8"], "--out needs a value, not the option \"--width\""),
+        (&["render", "--width", "--height", "5"], "--width needs a value, not the option"),
+        (&["render", "--samples", "--out", "x.png"], "--samples needs a value, not the option"),
+        (&["render", "--seed", "-h"], "--seed needs a value, not the option \"-h\""),
+        (&["render", "--threads", "--seed=1"], "--threads needs a value, not the option"),
+        (&["render", "--band-rows", "--scene"], "--band-rows needs a value, not the option"),
+        (&["render", "--scene", "--out=x.png"], "--scene needs a value, not the option"),
+    ];
+    for (args, message) in cases {
+        assert_refused(&dir.lumen(args), 2, message);
+        assert!(dir.is_empty(), "{args:?} wrote a file");
+    }
+    // The message says how to write the value; written so, it is the value.
+    let refused = dir.lumen(&["render", "--out", "--width"]);
+    assert!(text(&refused.stderr).contains("write --out=--width"), "{}", text(&refused.stderr));
+    let output = dir.lumen(&["render", "--width=8", "--height=4", "--samples=1", "--out=--width"]);
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert_eq!(field(&text(&output.stdout), "png").split(' ').next(), Some("--width"));
+    assert!(dir.file("--width").is_file());
+    // A negative number is a value, so a number option refuses it as a number.
+    assert_refused(&dir.lumen(&["render", "--height", "-3"]), 2, "--height needs a whole number");
+}
+
+/// Leading zeros are accepted for every numeric option and mean the same decimal number.
+#[test]
+fn leading_zeros_mean_the_same_number_for_every_numeric_option() {
+    let dir = Scratch::new("leading-zeros");
+    let plain = dir.lumen(&[
+        "render",
+        "--width",
+        "24",
+        "--height",
+        "16",
+        "--samples",
+        "2",
+        "--seed",
+        "7",
+        "--threads",
+        "2",
+        "--band-rows",
+        "3",
+    ]);
+    let zeros = dir.lumen(&[
+        "render",
+        "--width",
+        "000024",
+        "--height",
+        "016",
+        "--samples",
+        "0002",
+        "--seed",
+        "0007",
+        "--threads",
+        "02",
+        "--band-rows",
+        "003",
+    ]);
+    assert!(plain.status.success() && zeros.status.success());
+    let (plain, zeros) = (text(&plain.stdout), text(&zeros.stdout));
+    assert_eq!(stable_lines(&plain), stable_lines(&zeros));
+    assert_eq!(field(&zeros, "size"), "24x16");
+    // The padded zero is still zero, and a padded refused value is refused.
+    assert_refused(&dir.lumen(&["render", "--threads", "000"]), 2, "threads must be at least 1");
+    assert_refused(&dir.lumen(&["render", "--samples", "0003"]), 2, "must be a power of two");
+}
+
+/// The report's byte count is what the file holds.
+#[test]
+fn the_reported_byte_count_is_the_files_length() {
+    let dir = Scratch::new("byte-count");
+    let out = dir.file("a.png");
+    let output = dir.lumen(&small_render(path_str(&out), &[]));
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let png = field(&text(&output.stdout), "png").to_owned();
+    let length = std::fs::metadata(&out).expect("the file").len();
+    assert_eq!(png, format!("{} ({length} bytes)", out.display()));
 }
 
 #[test]

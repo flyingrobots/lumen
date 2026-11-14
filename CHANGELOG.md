@@ -37,6 +37,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The command line, part of flyingrobots/lumen#57 (the documentation claims in that issue remain):
+  a separate option value that reads as an option (`--out --width`) is a usage error, exit 2,
+  instead of a file named `--width`; every option also takes `--option=value`, which allows such a
+  value. A refused image size exits 2, like a refused sample count, thread count or band height
+  (was 1); its message is unchanged. Leading zeros in numbers stay accepted for every numeric
+  option and are now documented and tested. The report's byte count is the number of bytes
+  written to the file (checked against the PNG's length), not the expectation itself.
+
 - Bunny is pinned to `d4fe51d38fa10f8d6496bd110955314edac30bbf` (was
   `3c0dab3e77c0d45de8904906a134e846dfe5ec6c`), Bunny's main after its smooth-shading work
   (flyingrobots/bunny#289: `VertexNormals`, `smooth_normal`, `SmoothHit`, and
