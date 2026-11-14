@@ -34,6 +34,13 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- A measurement record of Fixed Point version 2 at 4K and 64 samples
+  (`docs/measurements/2026-11-14-4k-fixed-point-v2.md`, closes flyingrobots/lumen#39): three
+  exclusive runs at 18 CPUs, all with image hash
+  `sha256:d276602407edb72109ebfbc8cec9121230171cf156144f139fb2bc3ca1c13bef`, checked outside
+  lumen with Python's `zlib` and `hashlib`; totals 20.2 to 22.4 seconds (mean 21.2) against 19.2
+  for version 1 at the commit before it; the same hash at 1 and 18 threads at 960 by 540.
+
 - Ray statistics and `lumen render --stats` (part of flyingrobots/lumen#29; ADR 0008):
   `trace_path` records what each ray found in `PathSample::outcomes` (a `RayOutcomes`: camera hits
   and misses, bounce hits, misses and rejections, shadow rays occluded and unoccluded), and
