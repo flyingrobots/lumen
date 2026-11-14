@@ -8,6 +8,22 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- `docs/reference/cli.md`, the `lumen` command's reference (part of flyingrobots/lumen#25): the
+  synopsis (the `--help` text, quoted whole), each command, a table of every option with its
+  value, default and refusal, the report line by line, the output file's publication, exit
+  statuses, and every statistics key. Moved from the README, which links to it. Three tests keep
+  it in step with the program: the page quotes the usage text exactly
+  (`the_command_reference_holds_the_usage_text`), has a row for every option the parser knows
+  (`the_command_reference_has_a_row_for_every_option`), and documents every key the statistics
+  blocks print (`every_printed_key_is_in_the_command_reference`). `lumen --help` now points at
+  that page instead of the README's Statistics section.
+- `cargo run -p xtask -- doc-links`, `make doc-links` and the `Gates / doc links` job: every
+  relative link of the repository's Markdown names a file or directory that exists, and every
+  `#anchor` a heading of its page, with GitHub's anchors. Offline; links with a scheme are not
+  followed.
+
+### Added
+
 - `lumen render --stats` prints the traversal work of each kind of ray (closes
   flyingrobots/lumen#29, ADR 0008): after the ray lines and before the run lines, for camera,
   bounce and shadow rays, `traversal.KIND.COUNTER` (the total), `-mean` (per ray of that kind, two

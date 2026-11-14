@@ -297,3 +297,31 @@ fn stats_is_a_flag_of_render() {
         Err(UsageError::UnknownOption("--stats=json".into()))
     );
 }
+
+/// The command reference, `docs/reference/cli.md`, as it is in the repository.
+const REFERENCE: &str = include_str!("../../../../../../docs/reference/cli.md");
+
+/// The command reference with `\n` line ends, however the checkout wrote them (Git on Windows
+/// checks text out with `\r\n`).
+fn reference() -> String {
+    REFERENCE.replace("\r\n", "\n")
+}
+
+/// Oracle: the usage text the program prints. The command reference quotes it whole, in one
+/// `text` block, so the page and `lumen --help` cannot drift apart.
+#[test]
+fn the_command_reference_holds_the_usage_text() {
+    let block = format!("```text\n{USAGE}\n```\n");
+    assert!(reference().contains(&block), "docs/reference/cli.md does not quote the usage text");
+}
+
+/// Oracle: the parser's own option list. Every option `render` takes, and `--stats`, has a row
+/// in the command reference's option table. Witness count: nine options.
+#[test]
+fn the_command_reference_has_a_row_for_every_option() {
+    let options: Vec<&str> = OPTIONS.iter().copied().chain([STATS]).collect();
+    let missing: Vec<&&str> =
+        options.iter().filter(|option| !reference().contains(&format!("\n| `{option}"))).collect();
+    assert!(missing.is_empty(), "no row in docs/reference/cli.md for {missing:?}");
+    assert_eq!(options.len(), 9);
+}
