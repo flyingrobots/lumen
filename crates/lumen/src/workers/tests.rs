@@ -305,11 +305,12 @@ fn every_hand_out_order_reports_the_raster_first_failure() {
     }
 }
 
-/// Oracle: the stop rule. Once a pixel in row `y` fails, no worker begins a row from `y` down,
-/// and the failing worker leaves its band; rows above `y` still run, since an earlier failure
-/// may hide there. So under every order, every pixel computed after the failure is recorded is
-/// above row `y`. In the simulation the failure is recorded in the same step it happens and a
-/// row is one step, so "after" is exact, not a matter of timing.
+/// Oracle: the stop rule. A worker that has observed a failure in row `y` begins no row from `y`
+/// down, and the failing worker leaves its band; rows above `y` still run, since an earlier
+/// failure may hide there. In the simulation the failure is recorded in the same step it happens,
+/// every worker observes it at its next step and a row is one step, so under every order every
+/// pixel computed after the failure is above row `y`: "after" is exact here. On threads, when
+/// another worker observes it depends on the scheduler (ADR 0003, clarification of 2026-11-14).
 #[test]
 fn after_a_failure_no_pixel_from_its_row_down_is_rendered() {
     let witnesses = Cell::new(0_usize);
@@ -347,6 +348,36 @@ fn after_a_failure_no_pixel_from_its_row_down_is_rendered() {
     }
     // Witness count: the rule was checked on pixels computed after a failure, not vacuously.
     assert!(witnesses.get() > 0);
+}
+
+/// Oracle: the band starts, by hand. Bands of 2 rows of the 13 by 9 image start at rows 0, 2, 4,
+/// 6 and 8. After the top band is taken and a failure in row `y` is recorded, the bands handed
+/// out are exactly those starting above `y`; after a halt, none. This is the hand-out half of
+/// the stop rule, which the pixel counts above cannot see: a band taken and left before its
+/// first row computes no pixel (ADR 0003, clarification of 2026-11-14).
+#[test]
+fn after_a_failure_no_band_from_its_row_down_is_handed_out() {
+    let size = ImageSize::new(WIDTH, HEIGHT).expect("size");
+    let schedule = Schedule::new(1, BandRows::new(2).expect("rows")).expect("schedule");
+    for failing_row in 0..=HEIGHT {
+        for halted in [false, true] {
+            let mut image = blank::<Coord>(size).expect("image");
+            let shared = Shared::new(size, schedule, image.bytes_mut().as_chunks_mut::<4>().0);
+            let mut taken = vec![shared.take().map(|(first, _)| first)];
+            shared.fail(failing_row);
+            if halted {
+                shared.halt();
+            }
+            while let Some((first, _)) = shared.take() {
+                taken.push(Some(first));
+            }
+            let mut want: Vec<Option<u32>> = vec![Some(0)];
+            if !halted {
+                want.extend((2..HEIGHT).step_by(2).filter(|&first| first < failing_row).map(Some));
+            }
+            assert_eq!(taken, want, "failure in row {failing_row}, halted: {halted}");
+        }
+    }
 }
 
 /// Oracle: hand arithmetic. Outcomes merge by summing (values and bands) and by keeping the

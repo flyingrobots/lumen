@@ -6,7 +6,7 @@
 //! (ADR 0006). The four Clippy alone catches (`Path::exists` and three thread spawns) are not here.
 
 use super::tokens::is_float;
-use super::{core_findings, waiver_forms};
+use super::{core_findings, denies_float_arithmetic, waiver_forms};
 
 /// A seeded violation: a label, the source, the rule and the line that must be reported.
 type Form = (&'static str, &'static str, &'static str, usize);
@@ -15,7 +15,7 @@ fn reported(source: &str) -> Vec<(usize, &'static str)> {
     core_findings(source).iter().map(|f| (f.line, f.rule)).collect()
 }
 
-const REJECTED: [Form; 68] = [
+const REJECTED: [Form; 70] = [
     ("instant: qualified call", "pub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 1),
     ("instant: use then bare call", "use std::time::Instant;\npub fn f() { let _ = Instant::now(); }", "time-instant", 1),
     ("instant: use group", "use std::time::{Duration, Instant};\npub fn f() -> Duration { Instant::now().elapsed() }", "time-instant", 1),
@@ -37,6 +37,8 @@ const REJECTED: [Form; 68] = [
     ("set: in vec! body", "pub fn f() { let _ = vec![std::collections::HashSet::<u8>::new()]; }", "unordered-container", 1),
     ("map: type alias", "pub type Table = std::collections::HashMap<u32, u32>;", "unordered-container", 1),
     ("map: glob import", "use std::collections::*;\npub fn f() { let _ = HashMap::<u8, u8>::new(); }", "unordered-container", 2),
+    ("map: rustc-hash's FxHashMap", "pub fn f() -> rustc_hash::FxHashMap<u8, u8> { Default::default() }", "unordered-container", 1),
+    ("set: rustc-hash's FxHashSet, imported", "use rustc_hash::FxHashSet;\npub fn f() -> FxHashSet<u8> { Default::default() }", "unordered-container", 2),
     ("random state: qualified", "pub fn f() { let _ = std::hash::RandomState::new(); }", "unordered-container", 1),
     ("env: module import", "use std::env;\npub fn f() { let _ = env::var(\"X\"); }", "std-env", 1),
     ("env: std group", "use std::{env, fs};\npub fn f() { let _ = (env::var_os(\"X\"), fs::read(\"x\")); }", "std-env", 1),
@@ -201,4 +203,27 @@ fn a_ban_lint_waiver_must_be_an_expect_whose_reason_starts_with_rule_ids() {
         [1]
     );
     assert_eq!(forms("#[allow(dead_code)]\n#[expect(clippy::cast_possible_truncation)]"), []);
+}
+
+#[test]
+fn a_crate_root_denies_float_arithmetic_only_in_an_inner_deny_or_forbid() {
+    for root in [
+        "//! Docs.\n#![deny(clippy::float_arithmetic)]\nmod a;",
+        "#![forbid(clippy::float_arithmetic)]",
+        "#![deny(missing_docs, clippy::float_arithmetic)]",
+    ] {
+        assert!(denies_float_arithmetic(root), "{root}");
+    }
+    for root in [
+        "#[deny(clippy::float_arithmetic)]\nfn f() {}",
+        "// #![deny(clippy::float_arithmetic)]",
+        "#![warn(clippy::float_arithmetic)]",
+        "m![deny(clippy::float_arithmetic)];",
+        "#![deny(clippy::float_cmp)]",
+        "#![deny(missing_docs)] const S: &str = \"clippy::float_arithmetic\";",
+        "#![deny(missing_docs)]\n#![allow(clippy::float_arithmetic)]",
+        "",
+    ] {
+        assert!(!denies_float_arithmetic(root), "{root}");
+    }
 }
