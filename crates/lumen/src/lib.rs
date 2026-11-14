@@ -31,7 +31,7 @@
 //! let size = ImageSize::new(32, 18)?;
 //! let settings = RenderSettings::new(2, 7)?;
 //! let render = render_scheduled(&scene, size, settings, Schedule::new(2, DEFAULT_BAND_ROWS)?)?;
-//! let provenance = RenderProvenance::new(REFERENCE_SCENE_ID, size, settings);
+//! let provenance = RenderProvenance::named(REFERENCE_SCENE_ID, &scene, size, settings);
 //! assert_eq!(provenance.size(), render.image.size());
 //! let hash = render.image.hash();
 //! assert!(hash.starts_with("sha256:") && hash.len() == 71);

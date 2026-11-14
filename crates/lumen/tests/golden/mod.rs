@@ -51,3 +51,23 @@ pub(crate) const GOLDEN_96X54_4SPP: &str =
 )]
 pub(crate) const GOLDEN_FIXED_POINT_96X54_4SPP: &str =
     "sha256:0688b03cf16be6d0336f17eacbdaf83fe03d62e9c66b8370e8208bb9c879634e";
+
+/// The golden content identity (`Scene::content_id`, `lumen-scene-content/1`, ADR 0005) of the
+/// reference scene, `lumen-reference-scene/3`. Like the image hashes it is one value for every
+/// platform. It changes only with the scene's content (a new scene version) or the encoding (a
+/// new `lumen-scene-content` version); any other change is a bug.
+#[allow(
+    dead_code,
+    reason = "each test crate that includes this module uses only the constants it needs"
+)]
+pub(crate) const GOLDEN_REFERENCE_CONTENT: &str =
+    "sha256:84541be146ebac194b43dfc91f9205356818d517c71f52d947a3ca417178d356";
+
+/// The golden content identity of the Fixed Point scene, `lumen-fixed-point-scene/1`, on the
+/// same terms as [`GOLDEN_REFERENCE_CONTENT`].
+#[allow(
+    dead_code,
+    reason = "each test crate that includes this module uses only the constants it needs"
+)]
+pub(crate) const GOLDEN_FIXED_POINT_CONTENT: &str =
+    "sha256:10b0e9bd01ec5aa20c899d2efc8c45cca5d84a404c7c64ca48b44a38999b48a5";

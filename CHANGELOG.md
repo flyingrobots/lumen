@@ -8,6 +8,18 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- `RenderProvenance` is built from the scene, not a label (flyingrobots/lumen#38, ADR 0005):
+  `RenderProvenance::new(&scene, size, settings)` for an unnamed scene and
+  `RenderProvenance::named(name, &scene, size, settings)` with a name. The `&'static str`
+  constructor and `scene()` are gone; `name()` and `scene_content()` replace them. `fields()`
+  gains a thirteenth field, `scene-content` (`ProvenanceValue::Content`), at the end, and the
+  `scene` field of an unnamed scene is `ProvenanceValue::Unnamed`; `PROVENANCE_FIELDS` is 13.
+  lumen is unreleased, so there is no deprecation step. `lumen render` prints one more line,
+  `scene-content sha256:...`, after `bounces`; every other line is unchanged. The built-in
+  scenes' digests are pinned in `tests/golden/mod.rs` and checked by the library and command
+  tests, and a one-triangle scene's digest computed with Python's `hashlib` is pinned too. No
+  pixel changes.
+
 - `Scene::new` refuses an invalid camera placement (part of flyingrobots/lumen#20): it builds
   Bunny's `PinholeCamera` at a one-pixel image before anything is allocated and returns the new
   `SceneError::Camera(CameraError)` for a position outside the trace domain, a tangent not in
