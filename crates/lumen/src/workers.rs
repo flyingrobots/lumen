@@ -7,7 +7,8 @@
 //! pixel straight into it, at the place fixed by the pixel's coordinates: if the pixel function
 //! is a pure function of `(x, y)`, the image is the same bytes for every thread count, band
 //! height and hand-out order. Each worker returns its own sum and its own earliest failure; the
-//! caller combines them after `join`. See `docs/adr/0002-row-bands.md`.
+//! caller combines them after `join`. A worker that panics halts the others at their next row.
+//! See `docs/adr/0003-row-bands.md`.
 
 use core::iter::{StepBy, Zip};
 use core::ops::{Add, Range};
