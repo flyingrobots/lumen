@@ -96,9 +96,10 @@ fn a_path_is_resolved_from_its_pages_directory() {
     assert_eq!(resolve("docs/x.md", "../../y.md"), None);
 }
 
-/// Oracle: GitHub's rendered heading text, by hand. Emphasis underscores go, an underscore
-/// between two letters stays, a code span keeps its content as written, a link is its text and
-/// an HTML tag is dropped.
+/// Oracle: GitHub's rendered heading text, worked by hand from the GFM emphasis rule. Matched
+/// emphasis underscores go; an underscore between two letters, an unmatched one (`_private`,
+/// `trailing_`) and a lone one between spaces stay; a code span keeps its content as written, a
+/// link is its text and an HTML tag is dropped.
 #[test]
 fn a_heading_is_slugged_from_its_rendered_text() {
     let text = "\
@@ -107,9 +108,20 @@ fn a_heading_is_slugged_from_its_rendered_text() {
 ## The `my_var` field
 ## See [the guide](guide.md)
 ## Press <kbd>Q</kbd>
+## _private
+## trailing_ and _a_b_ and x _ y
+## __init__ method
 ";
-    let want =
-        ["options", "snake_case-and-bold-and-a__b", "the-my_var-field", "see-the-guide", "press-q"];
+    let want = [
+        "options",
+        "snake_case-and-bold-and-a__b",
+        "the-my_var-field",
+        "see-the-guide",
+        "press-q",
+        "_private",
+        "trailing_-and-a_b-and-x-_-y",
+        "init-method",
+    ];
     assert_eq!(anchors(text), want);
 }
 
