@@ -109,7 +109,7 @@ shading bunny-diffuse-shading/1
 sampler bunny-sobol-owen/1
 tone bunny-tone-srgb/1
 encoding bunny-rgba8-opaque/1
-bunny d4fe51d38fa10f8d6496bd110955314edac30bbf
+bunny 2cd551e248d55407a8f27e84dcb26d1b1d8768bd
 size 320x180
 pixels 57600
 samples 4

@@ -34,6 +34,25 @@ All notable changes to lumen are recorded here. The format follows
   `c_double` and `c_float` of `core::ffi` (which `std::ffi` re-exports) and of `std::os::raw`, and the
   scan names `c_double`, `c_float`, `f16` and `f128` (and names with the word `f16` or `f128`).
   Before, `<core::ffi::c_double as From<u32>>::from(x).sin()` passed both layers in the core.
+- Bunny is pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (was
+  `d4fe51d38fa10f8d6496bd110955314edac30bbf`), Bunny's main with the counted compact traversals
+  (`compact_closest_hit_counted`, `compact_any_hit_counted` and `TraversalCounts`,
+  flyingrobots/bunny#335), which part of flyingrobots/lumen#29 waits for. Between the two pins
+  Bunny also stated and tested the BVH depth contract, pinned rounding and guard boundaries in
+  `bunny-optics` with new tests, added `parse_ascii_ply_with_limits`, made `TraceRay::from_ray`
+  accept a unit direction with a component of `2^32 + 1` raw (a `None` becomes a `Some`; neither
+  lumen nor the Bunny functions it calls use `from_ray`) and tightened its own gate; no
+  function lumen calls changed its output. Lumen calls none of the new APIs yet. The three
+  scenes' golden image hashes and golden content digests (reference, Fixed Point, canyon) are
+  unchanged, as is the render time (three
+  alternated runs each at 1280 by 720, 16 samples, 18 threads; the pull request records them).
+  Re-reading Bunny's public API at the new pin for float-typed items (ADR 0006) found nothing
+  new, and one function missed before: `bunny_num::is_finite`, which takes an `f32` and whose
+  name has no float word. It is now a Clippy ban (144, up from 143, each firing on the fixture)
+  and a token-scan path. The golden tests of the three scenes check `BUNNY_REV` against one
+  constant, `GOLDEN_BUNNY_REV` in `tests/golden/mod.rs`, the commit the golden values were last
+  checked at, instead of each its own literal, so a pin move is acknowledged in one place.
+
 - The nondeterminism gate checks the workspace boundary (flyingrobots/lumen#158, ADR 0006's
   amendment of 2026-11-14): `xtask nondeterminism` reads `cargo metadata` and fails on a workspace
   member that is neither reached by `lumen`'s normal and build dependencies nor classified as
