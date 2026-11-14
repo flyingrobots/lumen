@@ -73,6 +73,8 @@ pub(crate) struct Decoded {
     pub(crate) height: u32,
     pub(crate) rgba: Vec<u8>,
     pub(crate) idat_chunks: usize,
+    /// The LEN field of each stored block, in stream order.
+    pub(crate) block_lengths: Vec<usize>,
 }
 
 fn be32(bytes: &[u8]) -> u32 {
@@ -113,6 +115,7 @@ pub(crate) fn decode(file: &[u8]) -> Decoded {
     assert_eq!((u32::from(stream[0]) * 256 + u32::from(stream[1])) % 31, 0, "FCHECK");
     let mut at = 2;
     let mut filtered = Vec::new();
+    let mut block_lengths = Vec::new();
     loop {
         let flags = stream[at];
         assert_eq!(flags & 0b110, 0, "stored block");
@@ -120,6 +123,7 @@ pub(crate) fn decode(file: &[u8]) -> Decoded {
         let nlen = u16::from_le_bytes([stream[at + 3], stream[at + 4]]);
         assert_eq!(nlen, !len, "NLEN");
         let len = usize::from(len);
+        block_lengths.push(len);
         filtered.extend_from_slice(&stream[at + 5..at + 5 + len]);
         at += 5 + len;
         if flags & 1 == 1 {
@@ -136,7 +140,7 @@ pub(crate) fn decode(file: &[u8]) -> Decoded {
         assert_eq!(line[0], 0, "filter type none");
         rgba.extend_from_slice(&line[1..]);
     }
-    Decoded { width, height, rgba, idat_chunks: idat.len() }
+    Decoded { width, height, rgba, idat_chunks: idat.len(), block_lengths }
 }
 
 fn image(width: u32, height: u32) -> Rgba8Image {
@@ -163,6 +167,33 @@ fn written_files_decode_to_the_pixels() {
         assert_eq!((decoded.width, decoded.height), (width, height));
         assert_eq!(decoded.rgba, image.bytes(), "{width}x{height}");
         assert_eq!(decoded.idat_chunks, blocks, "{width}x{height}");
+    }
+}
+
+/// Oracle: RFC 1951, section 3.2.4: a stored block's LEN is 16 bits, so a block holds at most
+/// 65 535 bytes, and the encoder fills each block before starting the next. The filtered length
+/// is `height * (1 + 4 * width)`. At exactly 65 535 (1 by 13 107, 64 by 255 and 5 461 by 3) the
+/// stream is one full block; the next sizes up hold one full block and the rest. No image has
+/// exactly 65 536 filtered bytes: `1 + 4 * width` is odd and above 1, and 65 536 has no odd
+/// factor but 1. The block headers are read by the strict decoder above, and each file's length
+/// is `png_len`'s.
+#[test]
+fn a_full_stored_block_holds_65_535_bytes() {
+    for (width, height, blocks) in [
+        (1, 13_107, &[65_535][..]),
+        (64, 255, &[65_535]),
+        (5_461, 3, &[65_535]),
+        (1, 13_108, &[65_535, 5]),
+        (64, 256, &[65_535, 257]),
+        (5_462, 3, &[65_535, 12]),
+    ] {
+        let image = image(width, height);
+        let mut file = Vec::new();
+        write_png(&mut file, &image).expect("writes to memory");
+        let decoded = decode(&file);
+        assert_eq!(decoded.block_lengths, blocks, "{width}x{height}");
+        assert_eq!(decoded.idat_chunks, blocks.len(), "{width}x{height}");
+        assert_eq!(file.len() as u64, png_len(&image), "{width}x{height}");
     }
 }
 
