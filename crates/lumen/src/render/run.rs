@@ -1,7 +1,6 @@
 //! What each worker of a render did: [`RunStatistics`], facts about the run, not the image.
 
 use super::{RayCount, RayStatistics};
-use crate::workers::WorkerRun;
 
 /// How a render's work was spread over its workers (ADR 0008).
 ///
@@ -37,11 +36,11 @@ impl WorkerStatistics {
     /// One worker's record in an image `width` pixels wide. In a render that succeeded every
     /// worker rendered whole rows, so its rows are its pixels over the width: counted per pixel
     /// already, not again per row.
-    pub(super) fn of(run: &WorkerRun<RayStatistics>, width: u32) -> Self {
-        let pixels = run.total.pixels;
+    pub(super) fn of(bands: u32, total: &RayStatistics, width: u32) -> Self {
+        let pixels = total.pixels;
         // At most the image's height, a `u32`; the width is at least 1.
         let rows = pixels.checked_div(u64::from(width)).unwrap_or(0);
         let rows = u32::try_from(rows).unwrap_or(u32::MAX);
-        Self { bands: run.bands, rows, pixels, rays: run.total.count() }
+        Self { bands, rows, pixels, rays: total.count() }
     }
 }
