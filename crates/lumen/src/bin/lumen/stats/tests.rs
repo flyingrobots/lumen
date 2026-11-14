@@ -185,7 +185,8 @@ const REFERENCE: &str = include_str!("../../../../../../docs/reference/cli.md");
 
 /// Whether the command reference documents `key`, a key `lumen stats` or `render --stats`
 /// prints. A material's or a worker's number is written `N` there, and the memory buffers are
-/// listed by name under `memory.NAME-bytes`.
+/// listed by name under `memory.NAME-bytes`; a traversal key is `traversal.KIND.COUNTER` with its
+/// `-mean` and `-max` forms, each counter named in the table.
 fn documented(key: &str) -> bool {
     let parts: Vec<&str> = key.split('.').collect();
     let general: String = parts
@@ -199,12 +200,22 @@ fn documented(key: &str) -> bool {
             named("memory.NAME-bytes") && named(buffer.strip_suffix("-bytes").unwrap_or(buffer))
         }
         ["run", "worker", _, field] => named(&general) || named(&format!(".{field}")),
+        ["traversal", _, "peak-stack"] => named("traversal.KIND.peak-stack"),
+        ["traversal", _, field] => {
+            let (counter, form) = field
+                .strip_suffix("-mean")
+                .map(|counter| (counter, "traversal.KIND.COUNTER-mean"))
+                .or_else(|| field.strip_suffix("-max").map(|c| (c, "traversal.KIND.COUNTER-max")))
+                .unwrap_or((field, "traversal.KIND.COUNTER"));
+            named(form) && named(counter)
+        }
         _ => named(&general),
     }
 }
 
 /// Oracle: the command reference's key tables. Every key the statistics blocks print, for a
-/// scene with a sun, two materials and a rendered run on two workers, is documented there.
+/// scene with a sun, two materials, a rendered run on two workers and the traversal lines (whose
+/// keys do not depend on the counts), is documented there.
 /// Witness count: the keys checked, more than the 31 the scene block alone prints.
 #[test]
 fn every_printed_key_is_in_the_command_reference() {
@@ -214,9 +225,11 @@ fn every_printed_key_is_in_the_command_reference() {
     let schedule = lumen::Schedule::new(2, lumen::DEFAULT_BAND_ROWS).expect("schedule");
     let (render, run) =
         lumen::render_traced_with_run(&scene, &scene, size, settings, schedule).expect("renders");
+    let rays = render.statistics.outcomes;
     let mut text = Vec::new();
     write_stats(&mut text, "a-name/1", &scene, &scene.statistics().expect("counts"))
         .and_then(|()| write_rays(&mut text, &render.statistics, settings))
+        .and_then(|()| write_traversal(&mut text, &lumen::TraversalStatistics::default(), &rays))
         .and_then(|()| write_run(&mut text, &run))
         .expect("writes");
     let text = String::from_utf8(text).expect("utf-8");
@@ -224,4 +237,51 @@ fn every_printed_key_is_in_the_command_reference() {
     let missing: Vec<&&str> = keys.iter().filter(|key| !documented(key)).collect();
     assert!(missing.is_empty(), "not in docs/reference/cli.md: {missing:?}");
     assert!(keys.len() > 31, "only {} keys checked", keys.len());
+}
+
+/// Oracle: the lines, written by hand from the values set. Camera rays: 3, whose box tests total
+/// 10 (mean 3.33, most 5), leaf visits 2 (0.67, 1), peak stack 4; the other counters and kinds are
+/// zero, and a kind with no rays has a mean of 0.00. Distinct values per counter, so a counter
+/// printed under another's key, or a total printed as the most, is seen.
+#[test]
+fn the_traversal_lines_of_known_counts() {
+    let mut traversal = lumen::TraversalStatistics::default();
+    let camera = &mut traversal.camera;
+    (camera.total.box_tests, camera.most.box_tests) = (10, 5);
+    (camera.total.leaf_visits, camera.most.leaf_visits) = (2, 1);
+    camera.total.peak_stack = 4;
+    let mut rays = lumen::RayOutcomes::default();
+    (rays.camera_hits, rays.camera_misses) = (2, 1);
+    let mut text = Vec::new();
+    write_traversal(&mut text, &traversal, &rays).expect("writes");
+    let text = String::from_utf8(text).expect("utf-8");
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 3 * 19);
+    assert_eq!(
+        lines[..19],
+        [
+            "traversal.camera.box-tests 10",
+            "traversal.camera.box-tests-mean 3.33",
+            "traversal.camera.box-tests-max 5",
+            "traversal.camera.box-entries 0",
+            "traversal.camera.box-entries-mean 0.00",
+            "traversal.camera.box-entries-max 0",
+            "traversal.camera.popped-skipped 0",
+            "traversal.camera.popped-skipped-mean 0.00",
+            "traversal.camera.popped-skipped-max 0",
+            "traversal.camera.interior-visits 0",
+            "traversal.camera.interior-visits-mean 0.00",
+            "traversal.camera.interior-visits-max 0",
+            "traversal.camera.leaf-visits 2",
+            "traversal.camera.leaf-visits-mean 0.67",
+            "traversal.camera.leaf-visits-max 1",
+            "traversal.camera.primitive-tests 0",
+            "traversal.camera.primitive-tests-mean 0.00",
+            "traversal.camera.primitive-tests-max 0",
+            "traversal.camera.peak-stack 4",
+        ]
+    );
+    assert_eq!(lines[19], "traversal.bounce.box-tests 0");
+    assert_eq!(lines[38], "traversal.shadow.box-tests 0");
+    assert_eq!(lines[56], "traversal.shadow.peak-stack 0");
 }
