@@ -15,7 +15,8 @@
 
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 use lumen::{render_reference, write_png, BuiltinScene, RenderSettings};
 
@@ -367,6 +368,85 @@ fn a_directory_is_not_a_file_to_write() {
     let dir = Scratch::new("directory-as-file");
     let output = dir.lumen(&["render", "--width", "4", "--height", "3", "--out", path_str(&dir)]);
     assert_refused(&output, 1, path_str(&dir));
+}
+
+/// A render that would run for hours if it started: 2^27 pixels at 1024 samples.
+const HOURS_OF_RENDERING: [&str; 7] =
+    ["render", "--width", "32768", "--height", "4096", "--samples", "1024"];
+
+/// Runs the command and fails the test if it has not exited within a minute: a refusal takes
+/// milliseconds, so a command that is still running has started to render. The child is killed
+/// by its own handle.
+fn lumen_that_must_refuse_quickly(dir: &Scratch, extra: &[&str]) -> Output {
+    let mut child = dir
+        .command()
+        .args(HOURS_OF_RENDERING)
+        .args(extra)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("lumen starts");
+    let started = Instant::now();
+    while child.try_wait().expect("polls").is_none() {
+        if started.elapsed() > Duration::from_mins(1) {
+            child.kill().expect("kills its own child");
+            child.wait().expect("reaps");
+            panic!("{extra:?}: still running after a minute: it started to render");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    child.wait_with_output().expect("output")
+}
+
+/// An unwritable destination is refused before the render starts (the render here would take
+/// hours), with the same message and exit code as before, and nothing is left behind.
+#[test]
+fn an_unwritable_destination_is_refused_before_any_pixel_is_computed() {
+    let dir = Scratch::new("refused-before-render");
+    let readonly = dir.file("readonly.png");
+    std::fs::write(&readonly, b"keep me").expect("old file");
+    let mut permissions = std::fs::metadata(&readonly).expect("meta").permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&readonly, permissions).expect("read-only");
+    let subdirectory = dir.file("sub");
+    std::fs::create_dir(&subdirectory).expect("sub");
+    let missing = dir.file("no-such-directory").join("x.png");
+    let cases = [
+        (missing.as_path(), "no-such-directory"),
+        (subdirectory.as_path(), "sub: is a directory"),
+        (readonly.as_path(), "readonly.png: the file is read-only"),
+    ];
+    for (destination, message) in cases {
+        let output = lumen_that_must_refuse_quickly(&dir, &["--out", path_str(destination)]);
+        assert_refused(&output, 1, message);
+    }
+    assert_eq!(std::fs::read(&readonly).expect("file"), b"keep me");
+    let mut names: Vec<_> = std::fs::read_dir(&*dir)
+        .expect("dir")
+        .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["readonly.png", "sub"]);
+}
+
+/// A render that replaces a file leaves the complete PNG and no temporary file next to it.
+#[test]
+fn a_render_replaces_an_existing_file_and_leaves_no_temporary_file() {
+    let dir = Scratch::new("replace");
+    let out = dir.file("a.png");
+    std::fs::write(&out, b"the old file").expect("old file");
+    let output = dir.lumen(&small_render(path_str(&out), &[]));
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let render =
+        render_reference(40, 24, RenderSettings::new(2, 5).expect("valid")).expect("renders");
+    let mut expected = Vec::new();
+    write_png(&mut expected, &render.image).expect("writes to memory");
+    assert_eq!(std::fs::read(&out).expect("the file"), expected);
+    let names: Vec<_> = std::fs::read_dir(&*dir)
+        .expect("dir")
+        .map(|entry| entry.expect("entry").file_name())
+        .collect();
+    assert_eq!(names, [std::ffi::OsString::from("a.png")]);
 }
 
 /// Arguments that are not Unicode, possible on Unix only.
