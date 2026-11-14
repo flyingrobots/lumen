@@ -6,8 +6,10 @@
 /// `bunny-sobol-owen/1` and `bunny-diffuse-shading/1`), `bunny-tone-srgb/1` and
 /// `bunny-rgba8-opaque/1`, at 96 by 54 pixels, 4 samples per pixel, seed 0, built against Bunny
 /// dcd6bd37613738de93f7084e7c8aa0283de964ea. First recorded on aarch64 Linux (the
-/// rust-dev:1.96.0 container on an Apple M5 Pro); CI checks it on x86-64 Linux in both the
-/// test and the release profile. It must be identical on every platform and build profile.
+/// rust-dev:1.96.0 container on an Apple M5 Pro). It is the one expected value for every
+/// platform and build profile: CI's `Determinism / ...` jobs check it on x86-64 and aarch64
+/// Linux, aarch64 macOS, x86-64 Windows and `wasm32-wasip1`, each in the test and the release
+/// profile. Never add a per-platform value.
 ///
 /// Updating it is legitimate only when one of those identities, the settings above or the
 /// pinned Bunny commit (`BUNNY_REV`) changes, and the change of hash is the intended effect of

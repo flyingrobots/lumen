@@ -17,7 +17,7 @@ env:
 
 jobs:
   check:
-    name: fmt, clippy, test
+    name: fmt, clippy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,9 +35,81 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+  # The same image on every platform lumen claims: each native leg runs the whole test suite,
+  # which includes the golden image hash (crates/lumen/tests/golden/mod.rs, one constant for
+  # every leg), in the test profile and in the release profile. The job names are stable: they
+  # are the names to make required checks.
+  determinism:
+    name: Determinism / ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86-64
+            os: ubuntu-24.04
+            host: x86_64-unknown-linux-gnu
+          - name: Linux aarch64
+            os: ubuntu-24.04-arm
+            host: aarch64-unknown-linux-gnu
+          - name: macOS aarch64
+            os: macos-26
+            host: aarch64-apple-darwin
+          - name: Windows x86-64
+            os: windows-2025
+            host: x86_64-pc-windows-msvc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # The leg's name is a claim about the machine: fail if the runner is not that machine.
+      - name: Check the host
+        shell: bash
+        env:
+          HOST: ${{ matrix.host }}
+        run: |
+          rustc -vV
+          rustc -vV | grep -qx "host: $HOST"
+
       - name: Test
         run: cargo test --locked --workspace
 
-      # The golden image hash must not depend on the optimization level.
       - name: Test (release profile)
         run: cargo test --locked --workspace --release
+
+  # The library compiled to WebAssembly and run: wasm32-wasip1 test binaries under Node's
+  # built-in WASI (scripts/wasi-run.mjs), on one worker thread (WebAssembly here has no
+  # threads). See docs/adr/0003-webassembly-determinism-leg.md.
+  wasm:
+    name: Determinism / WebAssembly (wasm32-wasip1, Node)
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_TARGET_WASM32_WASIP1_RUNNER: node ${{ github.workspace }}/scripts/wasi-run.mjs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: Add the WebAssembly targets
+        run: |
+          rustup target add wasm32-wasip1 wasm32-unknown-unknown
+          rustc -vV
+          node --version
+
+      # The browser target has no test runner here; this shows the library builds for it.
+      - name: Check the library for wasm32-unknown-unknown
+        run: cargo check -p lumen --lib --target wasm32-unknown-unknown --locked
+
+      - name: Test on wasm32-wasip1
+        run: cargo test --locked -p lumen --target wasm32-wasip1 --lib --test render --test library
+
+      - name: Test on wasm32-wasip1 (release profile)
+        run: cargo test --locked -p lumen --target wasm32-wasip1 --release --lib --test render --test library

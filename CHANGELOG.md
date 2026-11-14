@@ -8,6 +8,20 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- A determinism matrix in CI (flyingrobots/lumen#23): `Determinism / Linux x86-64`,
+  `Determinism / Linux aarch64`, `Determinism / macOS aarch64` and `Determinism / Windows x86-64`
+  run the whole test suite in the test and the release profile, each first checking that the
+  runner's `rustc` host is the platform the job is named for; `Determinism / WebAssembly
+  (wasm32-wasip1, Node)` runs the library's unit tests, `tests/render.rs` and `tests/library.rs`
+  as `wasm32-wasip1` programs under Node's built-in WASI (`scripts/wasi-run.mjs`) in both
+  profiles, and compiles the library for `wasm32-unknown-unknown`. Every job checks the one
+  golden hash constant.
+- `tests/library.rs`: the golden image rendered on one worker through the library alone (runs on
+  every platform, WebAssembly included), and on WebAssembly a two-worker render must be
+  `RenderError::Spawn`.
+- `docs/adr/0003-webassembly-determinism-leg.md`: WebAssembly is tested on `wasm32-wasip1` under
+  Node's WASI with the standard test harness and no added dependency, on one worker.
+
 - `RenderProvenance` (flyingrobots/lumen#19): the record of what was rendered, built from the
   scene's identity, the image size and the settings. `fields()` lists `scene`, `integrator`,
   `shading`, `sampler`, `tone`, `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed` and
@@ -118,6 +132,10 @@ All notable changes to lumen are recorded here. The format follows
   optimization.
 
 ### Changed
+
+- CI: the `fmt, clippy, test` job is now `fmt, clippy`; the tests run in the `Determinism / ...`
+  jobs (flyingrobots/lumen#23). The README's and the crate documentation's platform claim is
+  narrowed to the five platforms those jobs check, with a table of which job proves which.
 
 - The command line moves out of the library (flyingrobots/lumen#19): `lumen::cli` is gone, and
   argument parsing, the usage text, the default thread count, the clock, the file and the

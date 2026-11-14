@@ -31,6 +31,9 @@ fn from_hex(lines: &[&str]) -> Vec<u8> {
         .collect()
 }
 
+/// Three worker threads. WebAssembly here has no threads, so on that target the same request is
+/// a typed refusal (below) and the golden image is checked on one worker by the next test.
+#[cfg(not(target_family = "wasm"))]
 #[test]
 fn the_reference_image_renders_through_the_library_alone() {
     let scene = reference_scene().expect("the reference scene builds");
@@ -39,6 +42,31 @@ fn the_reference_image_renders_through_the_library_alone() {
     let schedule = Schedule::new(3, TileSize::new(8, 8).expect("valid tile")).expect("valid");
     let render = render_scheduled(&scene, size, settings, schedule).expect("renders");
     assert_eq!(render.image.hash(), GOLDEN_96X54_4SPP);
+}
+
+/// One worker: no thread is started, so this runs wherever the library builds, WebAssembly
+/// included, and gives the one golden hash every platform must give.
+#[test]
+fn the_reference_image_renders_on_one_worker_through_the_library_alone() {
+    let scene = reference_scene().expect("the reference scene builds");
+    let size = ImageSize::new(96, 54).expect("valid size");
+    let settings = RenderSettings::new(4, 0).expect("valid settings");
+    let render = render_scheduled(&scene, size, settings, Schedule::single()).expect("renders");
+    assert_eq!(render.image.hash(), GOLDEN_96X54_4SPP);
+}
+
+/// On WebAssembly a thread cannot be started, so asking for more than one worker is
+/// `RenderError::Spawn`, not a panic. This is also what shows that the one-worker renders on
+/// that target start no thread: if they did, they would fail the same way.
+#[cfg(target_family = "wasm")]
+#[test]
+fn on_webassembly_a_second_worker_is_a_spawn_error() {
+    let scene = reference_scene().expect("the reference scene builds");
+    let size = ImageSize::new(96, 54).expect("valid size");
+    let settings = RenderSettings::new(4, 0).expect("valid settings");
+    let schedule = Schedule::new(2, TileSize::new(8, 8).expect("valid tile")).expect("valid");
+    let refused = render_scheduled(&scene, size, settings, schedule).map(|render| render.rays);
+    assert_eq!(refused, Err(lumen::RenderError::Spawn));
 }
 
 #[test]

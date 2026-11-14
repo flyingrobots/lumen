@@ -2,7 +2,8 @@
 
 A deterministic ray tracer: a [Geordi](https://github.com/flyingrobots/geordi) runtime built on
 [Bunny](https://github.com/flyingrobots/bunny)'s fixed-point math. The same scene renders to the same bytes on
-every machine.
+every platform CI checks: x86-64 and aarch64 Linux, aarch64 macOS, x86-64 Windows and
+WebAssembly (see [Determinism](#determinism)).
 
 Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
 
@@ -488,8 +489,11 @@ around the padding boundaries.
 ## Determinism
 
 The claim: the same scene, size, sample count and seed give the same RGBA bytes, and so the same
-image hash, on every run, every platform and every build profile, at every thread count and tile
-size, whatever order the pixels and samples are computed in. Every value that decides a pixel is integer arithmetic from Bunny: the
+image hash, on every run, in the test and the release profile, at every thread count and tile
+size, whatever order the pixels and samples are computed in, on each of these platforms and no
+others: x86-64 Linux, aarch64 Linux, aarch64 macOS, x86-64 Windows (MSVC) and WebAssembly
+(`wasm32-wasip1`, one worker thread). Other targets are expected to agree, since nothing from the
+host enters the render, but they are not checked. Every value that decides a pixel is integer arithmetic from Bunny: the
 sampler (a pure function of seed, pixel, sample and pair), camera rays, the trees and their
 traversals, the exact triangle test, the shading steps and their order, the accumulator's exact
 sums, the tone curve and quantization. There is no floating point in the render and nothing from
@@ -533,9 +537,25 @@ How it is tested (`crates/lumen/tests/`):
 - **Thread counts and tile sizes**: see "Why the image does not depend on the threads" above.
 - **Golden hash**: the 96 by 54 reference image at 4 samples per pixel and seed 0 has a recorded
   hash, together with the scene, integrator, sampler, shading, tone and encoding identities and the
-  Bunny commit. It must be identical on every platform: it was first recorded on aarch64 Linux,
-  and CI checks it on x86-64 Linux in both the test and release profiles. Updating it is
+  Bunny commit. It is one constant (`crates/lumen/tests/golden/mod.rs`) that every platform must
+  give; there is no per-platform value. It was first recorded on aarch64 Linux. Updating it is
   legitimate only when one of those identities, the settings or the Bunny commit changes.
+
+Which CI job proves which platform (`.github/workflows/ci.yml`; each runs in the test and the
+release profile, and checks that the runner's `rustc` host is the platform it is named for):
+
+| Platform | Job | What it runs | Oracle |
+|---|---|---|---|
+| x86-64 Linux | `Determinism / Linux x86-64` | `cargo test --workspace` | `GOLDEN_96X54_4SPP`, the recorded PNG bytes and every other exact test |
+| aarch64 Linux | `Determinism / Linux aarch64` | `cargo test --workspace` | the same |
+| aarch64 macOS | `Determinism / macOS aarch64` | `cargo test --workspace` | the same |
+| x86-64 Windows (MSVC) | `Determinism / Windows x86-64` | `cargo test --workspace` | the same |
+| WebAssembly (`wasm32-wasip1`, Node) | `Determinism / WebAssembly (wasm32-wasip1, Node)` | the library's unit tests, `tests/render.rs` and `tests/library.rs`, on one worker | the same constant; two workers must be `RenderError::Spawn` |
+
+On WebAssembly the thread and command tests (`tests/threads.rs`, `tests/cli.rs`) do not run:
+that target starts no threads or processes. The same job compiles the library for
+`wasm32-unknown-unknown`, the browser target, without running it. Why WebAssembly is tested
+this way is recorded in [ADR 0003](docs/adr/0003-webassembly-determinism-leg.md).
 
 ## Bunny dependency
 
@@ -575,7 +595,17 @@ python3 $D lumen ~/git/lumen --worktree -- cargo check -p lumen --lib --target w
 The tests include the doc examples (one per workflow: build a scene, render it, hash it and
 record its provenance, write a PNG into memory) and `crates/lumen/tests/library.rs`, which renders
 through the library alone. The `wasm32-unknown-unknown` check shows the library builds without the
-command; it is not in CI yet (flyingrobots/lumen#23).
+command.
+
+The WebAssembly tests need the `wasm32-wasip1` target and Node 20 or later, which the container
+image does not have; CI runs them (`Determinism / WebAssembly (wasm32-wasip1, Node)`). Where both
+are installed, from the repository root:
+
+```sh
+rustup target add wasm32-wasip1
+CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/scripts/wasi-run.mjs" \
+  cargo test --locked -p lumen --target wasm32-wasip1 --lib --test render --test library
+```
 
 `--fetch` is needed on the first run in a worktree; it downloads the Bunny git dependency, and
 later phases build offline. Use `--commit HEAD` instead of `--worktree` for evidence pinned to a
