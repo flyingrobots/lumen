@@ -650,6 +650,43 @@ off the face and chest.
   commit. Any change to the scene's triangles, their order, materials, lighting or camera is a
   new scene version and a new hash. Every platform in [Determinism](#determinism) checks it.
 
+## Canyon terrain: `lumen-canyon-heightfield/1`
+
+`lumen::scenes::canyon::heightfield` generates a canyon's terrain heights in integers only:
+`generate(&HeightfieldSpec)` returns one height, in whole `2^-16` grid steps, for every vertex
+of a grid of `columns` by `rows` (column `i` across the canyon, row `j` along it). A height is a
+pure function of the spec and `(i, j)`: the same spec gives the same heights, bit for bit, on
+every platform. The algorithm, specified exactly in the module's documentation so that it can be
+reimplemented, is:
+
+1. **Lattice hash**: the seed, a layer tag and a lattice point mixed with three odd constants,
+   then the SplitMix64 output function; its top 16 bits scaled to the layer's amplitude.
+2. **Noise**: value noise, one layer per `NoiseLayer` (lattice spacing in vertices, amplitude in
+   grid steps), each the bilinear blend of its four lattice values, floored, summed.
+3. **Centre line**: a one-dimensional noise layer (the meander) moves the canyon's centre from
+   row to row, carried in 256ths of a column so that a wall stays smooth where the line bends
+   by less than a column per row.
+4. **Carve**: by distance from the centre line, a floor, walls of `Terraces` (each tier a steep
+   riser and a level tread) and a plateau.
+5. **Height**: the carve's profile plus the noise, weighted by zone (`NoiseWeights`, in
+   quarters): little on the floor, most on the walls.
+6. **Shelves**: each `Shelf` cuts the rock in its rectangle down to its height, leaving a level
+   ledge whose edges stay rough where the rock was already lower.
+
+`HeightfieldSpec::bounds` states the range every height lies in; `generate` refuses a spec
+outside its stated ranges (`HeightfieldError`, naming the parameter) before computing anything,
+and those ranges keep every product inside `i64`. Any change to the steps, their constants or
+their order is a new version of the generator.
+
+Tests (`crates/lumen/tests/canyon/heightfield.rs`): exact values on tiny grids, from SplitMix64's
+published first output and from an independent Python model of the documented algorithm (a 3 by
+3 grid, a hand-worked profile, and the sum, weighted sum, extremes and two vertices of a 64 by 96
+canyon with every step in use); determinism; every height within the stated bounds; the channel
+(the floor at the centre line below every plateau vertex of its row by a stated margin); a wall
+smooth to within its slope where the centre line bends; the shelf's rule; and each refusal.
+Seeded mutations of the noise blend, the carve's floor width, the centre line's fraction and the
+shelf's rule each fail at least one of them.
+
 ## The integrator
 
 `lumen-diffuse-path/1` (`crates/lumen/src/render.rs`, `trace_path`) is a composition of named

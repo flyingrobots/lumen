@@ -34,6 +34,15 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- The canyon terrain generator, `lumen-canyon-heightfield/1` (part of flyingrobots/lumen#40):
+  `lumen::scenes::canyon::heightfield::generate` computes a canyon's heights from a
+  `HeightfieldSpec` in integers only: layered value noise from a SplitMix64 lattice hash, a
+  meandering centre line carried in 256ths of a column, a floor, terraced walls and a plateau,
+  and level shelves cut into the rock. The algorithm is specified in the module documentation and
+  the README ("Canyon terrain"); `HeightfieldSpec::bounds` states the range of every height and
+  `HeightfieldError` names a refused parameter. Tests check exact values against SplitMix64's
+  published output and an independent Python model. No scene uses it yet.
+
 - The compiler layer's own check (part of flyingrobots/lumen#115 and flyingrobots/lumen#119):
   `cargo run -p xtask -- clippy-bans`, `make clippy-bans`, and a `Clippy bans` step in the
   `fmt, clippy` job. It runs Clippy on `xtask/clippy-fixture` (a workspace member that compiles
