@@ -8,9 +8,12 @@
 //! ([`TOOLING`]); an unclassified member fails, so a new crate is a decision, not a default.
 //! The boundary also fails on what would let code the gates do not read decide the library:
 //! a path dependency outside the workspace, a dependency from anywhere but Bunny's repository at
-//! a pinned commit, and a build script or a procedural macro in a deterministic crate.
+//! a pinned commit, a build script or a procedural macro in a deterministic crate, a
+//! deterministic crate outside the directories the gates read, a member that sets its own lint
+//! levels, a `[patch]` or `[replace]`, and any Cargo configuration file ([`manifest`]).
 
 pub(crate) mod json;
+mod manifest;
 pub(crate) mod run;
 #[cfg(test)]
 mod tests;
@@ -162,6 +165,14 @@ pub(crate) fn boundary(packages: &[Package]) -> Boundary {
         out.failures.extend(foreign_dependencies(package, packages));
         if deterministic {
             out.failures.extend(code_from_outside(package));
+            let under = |r: &&str| package.dir == *r || package.dir.starts_with(&format!("{r}/"));
+            if !crate::ROOTS.iter().any(under) {
+                out.failures.push(format!(
+                    "`{}` is a deterministic crate in {}, outside crates/ and xtask/, which are all \
+                     the gates read",
+                    package.name, package.dir
+                ));
+            }
             if let Some((_, root)) =
                 package.targets.iter().find(|(k, _)| k.iter().any(|k| k == "lib"))
             {

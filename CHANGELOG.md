@@ -34,6 +34,11 @@ All notable changes to lumen are recorded here. The format follows
   repository at a full commit, and on a build script or procedural macro in a deterministic
   crate. Before, a second workspace crate with floats, or a `build.rs` setting a `cfg`, decided
   library behaviour with no finding.
+- The scan reads every deterministic crate's library as core, not only `crates/lumen/src`, and
+  fails a deterministic crate whose root does not deny `clippy::float_arithmetic`, one outside
+  `crates/` and `xtask/`, a member whose manifest sets its own lint levels (a `[lints]` table
+  other than `workspace = true`), a `[patch]` or `[replace]` in the root manifest, and any
+  `.cargo/config.toml` or `.cargo/config` in the repository (flyingrobots/lumen#158).
 
 ### Fixed
 
