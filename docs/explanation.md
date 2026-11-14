@@ -1,10 +1,16 @@
-# How Lumen renders
+# How Lumen renders, and why the image is the same everywhere
 
-## What lumen does today
+This page explains what happens when Lumen renders a scene and why the result is the same bytes
+on every run, at every thread count and on every platform CI checks. It ends with a
+[map from each of those claims to the tests and jobs that check it](#requirements-and-their-evidence).
+For the options, see the [command reference](reference/cli.md); for the scenes, the
+[scene reference](reference/scenes.md).
+
+## What a render is
 
 Lumen renders a built-in scene, prints its image hash and timing, and writes it to a PNG file
-if asked; `lumen stats` prints what a scene holds ([Statistics](#statistics)). `--scene reference` (the default) is the reference scene, which includes the Stanford
-bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece. The
+if asked; `lumen stats` prints what a scene holds ([statistics](reference/cli.md#statistics)). `--scene reference` (the default) is the reference scene, which includes the Stanford
+bunny; `--scene fixed-point` is [Fixed Point](reference/scenes.md#the-fixed-point-scene), a showpiece. The
 reference render:
 
 - in bands of rows on all cores (`--threads`, below), with the same bytes at every thread count;
@@ -82,7 +88,7 @@ change, made per triangle: at a hit on a triangle with a vertex normal, steps 3 
   strongly tilted shading normals slightly; the ray count then has one closest-hit query fewer.
 
 A triangle without a vertex normal in the same scene is shaded flat, exactly as by
-`lumen-diffuse-path/1`. Lumen adds no arithmetic. [ADR 0007](docs/adr/0007-smooth-shading.md)
+`lumen-diffuse-path/1`. Lumen adds no arithmetic. [ADR 0007](adr/0007-smooth-shading.md)
 records why the integrator's name follows the scene and why the normals are stored per triangle.
 `tests/smooth.rs` checks the choice of integrator, that the reference scene given its own face
 normals at every vertex renders its flat bytes, a hand-derived value (a pyramid whose normals all
@@ -104,45 +110,25 @@ adapter that builds Bunny's tree and answers the port's queries with it.
 `crates/lumen/examples/traversal.rs` repeats the measurement, checks that all four give the same radiance bits, and prints the build times:
 
 ```sh
-python3 $D lumen ~/git/lumen --worktree --exclusive -- \
-  cargo run --locked --release -q -p lumen --example traversal -- 160 90 4 7
+cargo run --locked --release -q -p lumen --example traversal -- 160 90 4 7
 ```
+
+Any timing it prints is a reading for information; for one worth comparing, run it alone on the
+machine ([measure performance](how-to/measure-performance.md)).
 
 A test checks that the chosen structure returns the same hit as `closest_hit` (and the same
 answer as `any_hit`) on a plain `build_bvh` tree for every camera ray of a small image.
 
-One reading of that command (Apple M5 Pro, the `rust-dev:1.96.0` container, run alone with
-`--exclusive`, release profile; the median of 7 rounds over 150 726 rays, every ray including its
-share of sampling and shading), for information:
-
-| Tree and layout | ns per ray | Build |
-| --- | ---: | ---: |
-| `build_bvh`, `closest_hit` / `any_hit` | 243.7 | 99.7 ms |
-| `build_bvh_sah`, `closest_hit` / `any_hit` | 225.9 | 17.2 ms |
-| `build_bvh`, compact layout | 205.5 | 99.7 ms |
-| `build_bvh_sah`, compact layout (lumen) | 192.5 | 17.2 ms |
-
-The table was measured on `lumen-reference-scene/2`. The 640 by 360 render at 64 samples per
-pixel, in the same setting (the median of three runs of `lumen render`, one thread, all work
-included):
-
-| Scene | Triangles | Rays | Time | ns per ray |
-| --- | ---: | ---: | ---: | ---: |
-| `lumen-reference-scene/2` | 27 660 | 38 588 953 | 7.18 s | 186.1 |
-| `lumen-reference-scene/3` | 31 511 | 39 478 487 | 7.90 s | 200.1 |
-
-Version 3 traces 2.3 % more rays (the moved camera sees more ground and less sky) and each ray
-costs about 7.5 % more, about 10 % more time in all. The scene has 14 % more triangles, and the
-bunny's are small and dense; this measurement does not separate the bunny's cost from the
-camera's.
+Readings of that command and of the scene's cost per ray, which this page does not repeat, are
+in [the README readings record](measurements/2026-11-13-readme-readings.md).
 
 ## Threads and row bands
 
 `render_scheduled` (and `lumen render`) cut the image into bands of whole rows, one row by
 default (`--band-rows`; `crates/lumen/src/schedule.rs`), from the top; the last band is cut to
 the image. The design, what is shared, the stop rule's proof and what was rejected are recorded
-in [ADR 0003](docs/adr/0003-row-bands.md), which supersedes the tile design of
-[ADR 0001](docs/adr/0001-tile-scheduling.md). The bands are `chunks_mut` slices of the one image
+in [ADR 0003](adr/0003-row-bands.md), which supersedes the tile design of
+[ADR 0001](adr/0001-tile-scheduling.md). The bands are `chunks_mut` slices of the one image
 buffer: contiguous and disjoint, which the borrow checker proves, so a worker that takes a band
 owns it and writes each pixel straight into the image. There is no per-worker buffer, no copy and
 no lock on the image. One small mutex around the band iterator hands the next band to whichever
@@ -365,17 +351,17 @@ platform it is named for):
 | aarch64 Linux | `Determinism / Linux aarch64` | `cargo test --workspace` | the same |
 | aarch64 macOS | `Determinism / macOS aarch64` | `cargo test --workspace` | the same |
 | x86-64 Windows (MSVC) | `Determinism / Windows x86-64` | `cargo test --workspace` | the same |
-| WebAssembly (`wasm32-wasip1`, Node) | `Determinism / WebAssembly (wasm32-wasip1, Node)` | the library's unit tests, `tests/render.rs`, `tests/library.rs` and `tests/fixed_point/`, on one worker | the same constants; two workers must be `RenderError::Spawn` |
+| WebAssembly (`wasm32-wasip1`, Node) | `Determinism / WebAssembly (wasm32-wasip1, Node)` | the library's unit tests, `tests/render.rs`, `tests/library.rs`, `tests/fixed_point/`, `tests/generated.rs` and `tests/smooth.rs`, on one worker | the same constants; two workers must be `RenderError::Spawn` |
 
 On WebAssembly the thread and command tests (`tests/threads.rs`, `tests/cli.rs`) do not run:
 that target starts no threads or processes. The same job compiles the library for
 `wasm32-unknown-unknown`, the browser target, without running it. Why WebAssembly is tested
-this way is recorded in [ADR 0004](docs/adr/0004-webassembly-determinism-leg.md).
+this way is recorded in [ADR 0004](adr/0004-webassembly-determinism-leg.md).
 
 ### Nondeterminism bans
 
 The golden hashes find a difference only in the scenes they render, so the sources of one are
-banned before they can reach a pixel ([ADR 0006](docs/adr/0006-nondeterminism-gate.md)). The
+banned before they can reach a pixel ([ADR 0006](adr/0006-nondeterminism-gate.md)). The
 rules use Echo's `ban-nondeterminism` rule IDs, plus Lumen's `thread-spawn` and `float-type`:
 
 | Rule | Banned | Enforced by |
@@ -407,7 +393,7 @@ Not covered: a `usize`-dependent value reaching the hash, which the WebAssembly 
 Run the scan with `make nondeterminism`, or:
 
 ```sh
-python3 $D lumen ~/git/lumen --worktree -- cargo run --locked -q -p xtask -- nondeterminism
+cargo run --locked -q -p xtask -- nondeterminism
 ```
 
 Clippy only warns about a `clippy.toml` path that does not resolve, so the `fmt, clippy` job also
@@ -424,3 +410,31 @@ entry, an item without a decision, or a list made for another toolchain fails th
 gives the commands that regenerate the list when the toolchain moves
 (`cargo run -p xtask -- std-items <rust-docs std dir> <version>`).
 
+
+## Requirements and their evidence
+
+Every determinism claim on this page, in the README, the reference pages and the rustdoc maps to
+one row here. A row's evidence is the narrowest executable check; test names are written
+`file::test`, files relative to `crates/lumen/` unless they start with `xtask/` or `.github/`.
+**Covered** means the named checks run in CI on every pull request. **Not verified** marks what
+no check covers; those rows say so wherever the claim is made. The IDs are stable: a new
+requirement gets a new number, and a removed one keeps its number unused.
+
+| ID | Claim | Executable evidence | Fixture or input | Exact oracle | Status |
+| --- | --- | --- | --- | --- | --- |
+| R-DET-1 | The same scene, size, samples and seed give the same RGBA8 bytes, and image hash, on every run | `tests/render.rs::rendering_twice_in_one_process_gives_the_same_bytes`; `tests/cli.rs::two_processes_write_the_same_file_and_print_the_same_hash`; the golden tests below on every run | the reference scene; two `lumen render` processes | byte equality of the images and files; equal printed hash and ray count | covered |
+| R-DET-2 | The bytes do not depend on the thread count, the band height or the hand-out order | `src/workers/tests.rs::every_hand_out_order_gives_the_raster_image`; `tests/threads.rs::the_golden_hashes_hold_at_every_thread_count_and_band_height`, `::a_larger_image_is_the_same_on_one_thread_and_on_many`; `tests/cli.rs::the_hash_and_ray_count_are_the_same_at_every_thread_count_and_band_height`; `tests/run_statistics.rs::both_tallies_render_the_golden_images_and_the_same_statistics` | simulated: 1, 2, 3, 7 and 200 workers, bands of 1, 2, 3, 4, 5, 9 and 20 rows, 200 seeded and 2 scripted orders; threads: 1, 2, 3, 4, 7 and 18 at ten band heights | the raster-order loop's bytes; `GOLDEN_96X54_4SPP` | covered for the counts and heights tried; other counts follow from the argument in [Why the image does not depend on the threads](#why-the-image-does-not-depend-on-the-threads) |
+| R-DET-3 | The bytes are the same on x86-64 and aarch64 Linux, aarch64 macOS and x86-64 Windows (MSVC), in the test and the release profile | CI jobs `Determinism / Linux x86-64`, `Linux aarch64`, `macOS aarch64`, `Windows x86-64`, each `cargo test --workspace` and `--release`, after checking the runner's host | both scenes at 96 by 54, 4 samples, seed 0 | `GOLDEN_96X54_4SPP` and `GOLDEN_FIXED_POINT_96X54_4SPP` (`tests/golden/mod.rs`, one value for every platform) through `tests/render.rs::the_reference_image_has_its_golden_hash` and `tests/fixed_point/rendering.rs::the_fixed_point_image_has_its_golden_hash` | covered; any other target is **not verified** |
+| R-DET-4 | The bytes are the same under WebAssembly | CI job `Determinism / WebAssembly (wasm32-wasip1, Node)`: the library's unit tests, `tests/render.rs`, `tests/library.rs`, `tests/fixed_point/`, `tests/generated.rs` and `tests/smooth.rs`, both profiles; `tests/library.rs::on_webassembly_a_second_worker_is_a_spawn_error` | `wasm32-wasip1`, one worker | the same golden constants; two workers must be `RenderError::Spawn` | covered for `wasm32-wasip1`; `wasm32-unknown-unknown` is compiled, not run: **not verified** |
+| R-DET-5 | A pixel does not depend on the order its samples are computed or accumulated, nor the image on the order of its pixels | `tests/render.rs::a_pixel_does_not_depend_on_the_order_of_its_samples`, `::an_image_does_not_depend_on_the_order_of_its_pixels`; `tests/generated.rs::a_pixel_does_not_depend_on_the_order_its_samples_are_evaluated_accumulated_or_merged` | forwards, backwards, shuffled and merged partial accumulators; generated permutations and merge trees, seeded | equal bits; equal image hash | covered |
+| R-PROV-1 | Equal provenance means equal bytes, for a render of the scene as its own tracer (`render`, `render_scheduled`, `render_traced` given the scene) | R-DET-1 to R-DET-4 and R-PROV-2; `tests/library.rs::the_provenance_lists_what_the_command_prints_in_its_order` | the two built-in scenes | as R-DET-1 to R-DET-4 | covered for the two built-in scenes; for any other scene it follows from R-PROV-2 and is not tested scene by scene; a caller-supplied `Tracer` is outside the claim |
+| R-PROV-2 | Provenance binds the scene's content: the content identity is the SHA-256 of ADR 0005's encoding, the same on every platform, and changes with every input that can change a pixel | `src/scene/content_id/tests.rs::the_digest_is_the_sha256_of_the_adr_encoding_built_by_hand`, `::every_single_change_to_the_content_changes_the_digest`, `::the_counts_keep_lists_of_different_lengths_apart`, `::the_same_spec_gives_the_same_digest_and_the_tree_is_no_input`; `tests/library.rs::two_scenes_under_one_name_have_different_provenance`, `::a_one_triangle_scene_has_the_content_identity_python_computed`, `::every_builtin_scene_builds_renders_and_has_its_own_identity` (on every Determinism job) | the encoding built by hand from ADR 0005's table; a one-triangle scene with and without normals | digests computed outside lumen with Python's `hashlib`; `GOLDEN_REFERENCE_CONTENT`, `GOLDEN_FIXED_POINT_CONTENT` | covered |
+| R-HASH-1 | The image hash is `sha256:` and the lowercase hex SHA-256 of the raw RGBA8 bytes, row-major from the top, with no width or height ([ADR 0009](adr/0009-image-hash.md)) | the doc example of `Rgba8Image::hash` (`src/image.rs`); `src/sha256.rs::published_test_vectors`, `::padding_boundaries_match_an_independent_implementation`; `tests/cli.rs::the_printed_hash_ray_count_and_file_are_the_librarys` | one opaque black pixel; FIPS 180-2 vectors | the published SHA-256 of `00 00 00 ff`; the published vectors and Python's `hashlib` | covered |
+| R-PNG-1 | The PNG's bytes are a fixed function of the pixels | `tests/library.rs::a_png_written_to_memory_has_the_bytes_the_command_wrote`; `src/png/tests.rs::a_one_pixel_file_is_byte_for_byte_as_constructed_by_hand`, `::written_files_decode_to_the_pixels`; `src/png/generated.rs::files_of_any_size_decode_to_the_same_pixels_and_have_the_length_png_len_gives` | a 5 by 3 render; one pixel; 73 generated sizes | the 131 bytes recorded before flyingrobots/lumen#19; a file built by hand; a strict decoder | covered |
+| R-PUB-1 | `--out` names the complete new PNG or what was there before, whether the render or the write fails | `src/bin/lumen/publish/tests.rs::a_write_that_fails_part_way_leaves_the_old_file_and_no_temporary_file`, `::a_failed_sync_or_rename_leaves_the_old_file_and_no_temporary_file`, `::two_publications_to_one_destination_each_leave_a_complete_file`, `::a_count_that_differs_from_the_expected_length_publishes_nothing`; `tests/cli.rs::an_unwritable_destination_is_refused_before_any_pixel_is_computed`, `::a_render_replaces_an_existing_file_and_leaves_no_temporary_file` | an injected file system that fails at each step | the old file's bytes unchanged; no temporary file left | covered for failures the process sees; survival of a power loss after the rename is **not verified** (no crash test) |
+| R-STOP-1 | A failed render reports the first failing pixel in raster order, at every thread count, band height and hand-out order | `src/workers/tests.rs::every_hand_out_order_reports_the_raster_first_failure`; `tests/threads.rs::the_first_failing_pixel_in_raster_order_is_reported_at_every_schedule`, `::a_traversal_failure_is_the_same_typed_error_at_every_schedule`; `tests/run_statistics.rs::both_tallies_report_the_same_failure` | failing pixels chosen so that column-major order would pick another | the failing pixel picked by inspection; a raster-order loop over `trace_path` | covered |
+| R-STOP-2 | After a failure in row `y`, a worker that has observed it begins no row and takes no band from `y` down | `src/workers/tests.rs::after_a_failure_no_pixel_from_its_row_down_is_rendered`, `::after_a_failure_no_band_from_its_row_down_is_handed_out`; `tests/threads.rs::workers_stop_after_a_failure` | the simulation, where a worker observes the failure at its next step; one real thread | no pixel at or below `y` after the failure; the bands starting above `y`, by hand; exactly the raster prefix on one thread | covered in the simulation and on one thread; how much other threads compute before they observe it is **not verified** and not bounded |
+| R-STOP-3 | A panic in the pixel function or a refused worker thread halts the other workers, and the panic or the refusal reaches the caller with no image | `src/workers/tests.rs::after_a_halt_no_row_is_begun`, `::a_panic_in_the_pixel_function_stops_every_worker_at_its_next_row`, `::after_a_refused_start_no_started_worker_begins_a_row`, `::a_refused_worker_is_reported_with_its_number_and_its_error`; `tests/threads.rs::a_panic_in_the_pixel_function_reaches_the_caller_without_an_image` | a 64 by 512 image, a panic at `(0, 0)`; a spawner that refuses worker `n` | `1 + 64 * rows` pixels computed in the simulation; the panic's own payload; `Spawn` for worker `n` | covered in the simulation; on real threads the work done before the halt is seen is **not verified** |
+| R-STAT-1 | Every statistic but the per-worker split and the memory bytes is a function of the scene and settings, the same at every schedule | `tests/statistics.rs::statistics_are_a_function_of_the_scene`; `tests/run_statistics.rs::the_workers_add_up_to_the_render_at_every_schedule` | two calls and two builds of a scene; a 23 by 17 render at 1, 2, 4 and 18 threads and bands of 1, 2 and 5 rows | equal statistics; the render equal to the one-thread render; per-worker figures summing to its totals | covered |
+| R-DEP-1 | Lumen takes no third-party crate: Bunny's crates from one git repository, pinned by commit, and nothing from a registry | CI job `Gates / cargo-deny` (`deny.toml`: `allow-registry = []`, one allowed git repository, `rev` required); `tests/render.rs::the_lockfile_resolves_bunny_to_the_recorded_commit` | `Cargo.lock` | no registry source in `Cargo.lock`; every Bunny crate at `BUNNY_REV` | covered |
+| R-NDET-1 | No clock, sleep, core count, thread spawn, hash map, environment, file, process, socket or float reaches the deterministic core | CI job `fmt, clippy` (the `clippy.toml` bans, and `cargo run -p xtask -- clippy-bans`, which checks on `xtask/clippy-fixture` that every ban resolves and fires); CI job `Gates / nondeterminism` (`cargo run -p xtask -- nondeterminism`, its forms in `xtask/src/nondeterminism/tests.rs`); `#![deny(clippy::float_arithmetic)]` in `src/lib.rs` | seeded forms and look-alikes in the fixture and the scan's tests | each seeded form reported under its rule; no look-alike reported; no finding on the core | covered; a `usize`-dependent value reaching the hash is caught only by R-DET-4's 32-bit leg ([ADR 0006](adr/0006-nondeterminism-gate.md)) |
