@@ -211,7 +211,8 @@ pub(crate) fn preflight<F: Filesystem>(fs: &F, destination: &Path) -> Result<(),
     }
 }
 
-/// Publishes `image` as a PNG at `destination` and returns the PNG's length.
+/// Publishes `image` as a PNG at `destination` and returns the number of bytes the file accepted.
+/// The count is checked against [`png_len`]: a difference is an error and publishes nothing.
 ///
 /// # Errors
 ///
@@ -222,32 +223,83 @@ pub(crate) fn publish<F: Filesystem>(
     destination: &Path,
     image: &Rgba8Image,
 ) -> Result<u64, PublishError> {
+    publish_expecting(fs, destination, image, png_len(image))
+}
+
+/// [`publish`] with the expected length given, so a test can make the count disagree.
+fn publish_expecting<F: Filesystem>(
+    fs: &F,
+    destination: &Path,
+    image: &Rgba8Image,
+    expected: u64,
+) -> Result<u64, PublishError> {
     if fs.mode(destination).map_err(PublishError::Io)? == Mode::InPlace {
         let file = fs.open_in_place(destination).map_err(PublishError::Io)?;
         // No sync: a device has no storage to force (`fsync` on /dev/null is `EINVAL`).
-        flush_png(file, image)?;
-        return Ok(png_len(image));
+        return flush_png(file, image, expected).map(|(_, bytes)| bytes);
     }
     let (file, temporary) = create_temporary(fs, destination).map_err(PublishError::Io)?;
-    let published = flush_png(file, image)
-        .and_then(|mut file| fs.sync(&mut file).map_err(PublishError::Io))
-        .and_then(|()| fs.rename(&temporary, destination).map_err(PublishError::Io));
-    if let Err(error) = published {
-        // Best effort: the original error is the one to report; a leftover is added to it.
-        return Err(match fs.remove(&temporary) {
-            Ok(()) => error,
-            Err(left) => leftover(&error, &temporary, &left),
+    let published = flush_png(file, image, expected)
+        .and_then(|(mut file, bytes)| {
+            fs.sync(&mut file).map_err(PublishError::Io)?;
+            Ok(bytes)
+        })
+        .and_then(|bytes| {
+            fs.rename(&temporary, destination).map_err(PublishError::Io)?;
+            Ok(bytes)
         });
-    }
+    let bytes = match published {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            // Best effort: the original error is the one to report; a leftover is added to it.
+            return Err(match fs.remove(&temporary) {
+                Ok(()) => error,
+                Err(left) => leftover(&error, &temporary, &left),
+            });
+        }
+    };
     fs.sync_directory(directory_of(destination)).map_err(PublishError::DirectorySync)?;
-    Ok(png_len(image))
+    Ok(bytes)
 }
 
-/// Writes the PNG to `file`, flushes the buffer and returns the file.
-fn flush_png<W: Write>(file: W, image: &Rgba8Image) -> Result<W, PublishError> {
-    let mut buffered = BufWriter::new(file);
+/// Writes the PNG to `file`, flushes the buffer and returns the file with the number of bytes it
+/// accepted (counted under the buffer, so it is what reached the file). A count other than
+/// `expected` is an error.
+fn flush_png<W: Write>(
+    file: W,
+    image: &Rgba8Image,
+    expected: u64,
+) -> Result<(W, u64), PublishError> {
+    let mut buffered = BufWriter::new(Counting { inner: file, bytes: 0 });
     write_png(&mut buffered, image).map_err(PublishError::Png)?;
-    buffered.into_inner().map_err(|error| PublishError::Png(PngError::Write(error.into_error())))
+    let counted = buffered
+        .into_inner()
+        .map_err(|error| PublishError::Png(PngError::Write(error.into_error())))?;
+    if counted.bytes != expected {
+        return Err(PublishError::Io(io::Error::other(format!(
+            "wrote {} bytes where the PNG is {expected}",
+            counted.bytes
+        ))));
+    }
+    Ok((counted.inner, counted.bytes))
+}
+
+/// A writer that counts the bytes its inner writer accepted.
+struct Counting<W> {
+    inner: W,
+    bytes: u64,
+}
+
+impl<W: Write> Write for Counting<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.bytes += u64::try_from(n).unwrap_or(u64::MAX);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 /// `error` with the note that the temporary file could not be removed either.

@@ -214,3 +214,41 @@ fn non_unicode_arguments_never_panic() {
     assert_eq!(args(&[bytes]), Err(UsageError::UnknownOption("out-\u{fffd}\u{fffd}.png".into())));
     assert_eq!(parse([bytes]), Err(UsageError::UnknownCommand("out-\u{fffd}\u{fffd}.png".into())));
 }
+
+#[test]
+fn an_option_value_may_be_written_after_an_equals_sign_and_may_then_look_like_an_option() {
+    let command = |line: &str| parse_str(line).expect("parses");
+    let Command::Render { width, out, .. } = command("render --width=96 --out=--width") else {
+        unreachable!()
+    };
+    assert_eq!((width, out), (96, Some("--width".into())));
+    // Only the first `=` splits: the value may hold more.
+    let Command::Render { out, .. } = command("render --out=a=b") else { unreachable!() };
+    assert_eq!(out, Some("a=b".into()));
+}
+
+#[test]
+fn a_separate_value_that_looks_like_an_option_is_refused_but_not_a_negative_number() {
+    for option in OPTIONS {
+        assert_eq!(
+            parse_str(&format!("render {option} --width")),
+            Err(UsageError::OptionLikeValue { option, value: "--width".into() }),
+            "{option}"
+        );
+    }
+    assert!(matches!(parse_str("render --out -h"), Err(UsageError::OptionLikeValue { .. })));
+    assert!(matches!(parse_str("render --width -3"), Err(UsageError::InvalidNumber { .. })));
+    // A lone dash is a file name.
+    let Ok(Command::Render { out, .. }) = parse_str("render --out -") else { panic!("refused") };
+    assert_eq!(out, Some("-".into()));
+}
+
+#[test]
+fn leading_zeros_are_decimal_for_every_numeric_option() {
+    assert_eq!(
+        parse_str(
+            "render --width 0096 --height 054 --samples 004 --seed 0000 --threads 02 --band-rows 007"
+        ),
+        parse_str("render --width 96 --height 54 --samples 4 --seed 0 --threads 2 --band-rows 7")
+    );
+}

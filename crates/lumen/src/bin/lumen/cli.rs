@@ -101,15 +101,23 @@ where
     let mut out: Option<PathBuf> = None;
     let mut scene: Option<BuiltinScene> = None;
     while let Some(option) = args.next() {
-        let name = match option.to_str() {
+        let (name, inline) = match option.to_str() {
             Some("--help" | "-h") => return Ok(Command::Help),
-            Some(name) => OPTIONS.iter().copied().find(|known| *known == name),
-            None => None,
+            Some(text) => {
+                // `--name=value` carries its value in the same argument, whatever it looks like.
+                let (name, inline) = text.split_once('=').unzip();
+                (OPTIONS.iter().copied().find(|known| *known == name.unwrap_or(text)), inline)
+            }
+            None => (None, None),
         };
         let Some(name) = name else {
             return Err(UsageError::UnknownOption(option.to_string_lossy().into_owned()));
         };
-        let value = args.next().ok_or(UsageError::MissingValue(name))?;
+        let value = if let Some(inline) = inline {
+            OsString::from(inline)
+        } else {
+            separate_value(&mut args, name)?
+        };
         let repeated = match OPTIONS.iter().position(|known| *known == name) {
             Some(slot @ 0..=5) => numbers[slot].replace(number(name, &value)?).is_some(),
             Some(7) => scene.replace(scene_name(&value)?).is_some(),
@@ -137,6 +145,33 @@ where
         band,
         out,
     })
+}
+
+/// The next argument as the value of `option`: missing, or reading as an option, is refused.
+fn separate_value(
+    args: &mut impl Iterator<Item = OsString>,
+    option: &'static str,
+) -> Result<OsString, UsageError> {
+    let value = args.next().ok_or(UsageError::MissingValue(option))?;
+    if looks_like_option(&value) {
+        return Err(UsageError::OptionLikeValue {
+            option,
+            value: value.to_string_lossy().into_owned(),
+        });
+    }
+    Ok(value)
+}
+
+/// Whether a value given as a separate argument reads as an option: it starts with `-`, has more
+/// after it, and is not a negative number (`-3` is a value, refused as a number where a number
+/// is needed). A lone `-` is a value. This is the rule of `clap` and `argparse`: to use such a
+/// value, write `--option=value`. A value that is not Unicode is never an option.
+fn looks_like_option(value: &OsStr) -> bool {
+    let Some(text) = value.to_str() else {
+        return false;
+    };
+    let mut chars = text.chars();
+    chars.next() == Some('-') && chars.next().is_some_and(|c| !c.is_ascii_digit())
 }
 
 /// A scene name: one of `BuiltinScene::ALL`, exactly as `BuiltinScene::name` gives it.

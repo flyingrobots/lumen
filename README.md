@@ -112,10 +112,11 @@ sampler states its stratification for aligned power-of-two blocks of samples, an
 accumulator takes at most 1024. The seed is `0..=4294967295`, the domain of Geordi's render
 settings. Arguments are read as OS strings, so an output path that is not valid Unicode is
 used as given; a non-Unicode number or option is refused like any other bad argument. Bad
-arguments exit with status 2 and the usage text; a refused size or an unwritable output path
-exits with status 1 and a message. The output file is published atomically (see below), so
-`--out` names either the complete new PNG or what it was before, whether the render or the write
-fails. `--threads` is `1..=256` (0 and anything larger are refused with
+arguments and every refused value (a size, samples, threads, band rows, a scene) exit with
+status 2 and a message, with the usage text for those the parser refuses; an unwritable output
+path or a failed render exits with status 1 and a message. The output file is published
+atomically (see below), so `--out` names either the complete new PNG or what it was before,
+whether the render or the write fails. `--threads` is `1..=256` (0 and anything larger are refused with
 status 2); `--band-rows` is the number of whole image rows a worker takes at a time, at least 1
 (0 is refused with status 2). There is no `--tile` option any more; it is refused as unknown.
 
@@ -145,6 +146,20 @@ named in the error.
 - A device, pipe or socket (`--out /dev/null`) is written in place, without a temporary file or
   a sync, since replacing it would destroy the node.
 - The rename needs write permission on the directory, not on the old file.
+
+Option values. Each value is the next argument or, for any option, part of the same argument
+after an equals sign (`--out=FILE`, `--width=96`); only the first `=` splits, so `--out=a=b` names
+`a=b`. A separate value that starts with `-`, has more after it and is not a negative number is
+read as an option and refused with status 2 (`--out --width` is an error, not a file called
+`--width`), the rule of `clap` and `argparse`; to use such a value, write `--out=--width`. A lone
+`-` and a negative number such as `-3` are values (the latter is then refused as a number where a
+number is needed). `--` is not an option: lumen has no positional arguments for it to separate.
+The `=` form needs an argument that is valid Unicode; a non-Unicode path is passed as a separate
+argument. Numbers are decimal digits with no sign, space or underscore; leading zeros are
+accepted for every numeric option and change nothing (`--width 000096` is 96, never octal, and
+the report prints `96`), because a refusal would only reject a value whose meaning is clear.
+The report's `png` line gives the number of bytes written to the file, counted as the file
+accepted them; the command checks that it equals the PNG's length, and fails if it does not.
 
 The PNG is uncompressed (see below), so it is about four bytes per pixel: 922 266 bytes at
 640 by 360, and 33 188 430 bytes (about 33 MB) at 3840 by 2160.

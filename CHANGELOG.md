@@ -73,6 +73,14 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The command line, part of flyingrobots/lumen#57 (the documentation claims in that issue remain):
+  a separate option value that reads as an option (`--out --width`) is a usage error, exit 2,
+  instead of a file named `--width`; every option also takes `--option=value`, which allows such a
+  value. A refused image size exits 2, like a refused sample count, thread count or band height
+  (was 1); its message is unchanged. Leading zeros in numbers stay accepted for every numeric
+  option and are now documented and tested. The report's byte count is the number of bytes
+  written to the file (checked against the PNG's length), not the expectation itself.
+
 - The scene content encoding is `lumen-scene-content/2` (part of flyingrobots/lumen#39; ADR
   0005): after the camera, a `u64` count of vertex-normal entries (zero, or one per triangle),
   then per vertex a tag and, if present, the normal's three raw components. Every content digest
