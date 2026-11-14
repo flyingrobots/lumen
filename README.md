@@ -51,7 +51,7 @@ shading bunny-diffuse-shading/1
 sampler bunny-sobol-owen/1
 tone bunny-tone-srgb/1
 encoding bunny-rgba8-opaque/1
-bunny dcd6bd37613738de93f7084e7c8aa0283de964ea
+bunny 3c395f9950ac63d5ecfbd2055c306954111daf9d
 size 640x360
 pixels 230400
 samples 64
@@ -207,8 +207,8 @@ the last face. `confidence` and `intensity` are checked but not used. Its limits
 error: at most 2^20 vertices and 2^20 faces declared, lines of at most 256 bytes, counts and
 indices of at most ten digits. Declared counts never reserve memory.
 
-The conversion, `lumen-ascii-ply-q32.32/1`, follows Bunny's `bunny-decimal-q32-32/1` (in review
-as flyingrobots/bunny#281), so that the swap to Bunny's reader changes no bit: for decimal text
+The conversion, `lumen-ascii-ply-q32.32/1`, follows Bunny's `bunny-decimal-q32-32/1` (merged to Bunny's main as
+flyingrobots/bunny#281, not yet released), so that the swap to Bunny's reader changes no bit: for decimal text
 `[+-]digits[.digits][(e|E)[+-]digits]` with exact value `v`, the raw value is `v * 2^32` rounded
 to the nearest integer, **ties to even**, applied to the magnitude and then the sign; a positive
 magnitude may reach `2^63 - 1` and a negative one `2^63`, decided after rounding. Values certainly
@@ -708,10 +708,10 @@ this way is recorded in [ADR 0004](docs/adr/0004-webassembly-determinism-leg.md)
 ## Bunny dependency
 
 Lumen uses Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`, `bunny-broadphase`
-and `bunny-optics` at version 0.7.0. That version is tagged but not yet published on crates.io,
-so the crates come in as git dependencies pinned to the full commit
-`dcd6bd37613738de93f7084e7c8aa0283de964ea` of `https://github.com/flyingrobots/bunny`. They move
-to the crates.io registry once 0.7.0 is published there. `BUNNY_REV` in `crates/lumen/src/lib.rs`
+and `bunny-optics` at version 0.7.1. The crates come in as git dependencies pinned to the full
+commit `3c395f9950ac63d5ecfbd2055c306954111daf9d` of `https://github.com/flyingrobots/bunny`, a commit of Bunny's
+main after the 0.7.1 release. They move to the crates.io registry when a release holds what lumen
+needs. `BUNNY_REV` in `crates/lumen/src/lib.rs`
 records the commit, and a test checks that `Cargo.lock` resolves every Bunny crate to it.
 
 Dependencies build with `opt-level = 2` even in debug builds and tests, so the brute-force tests
