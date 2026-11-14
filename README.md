@@ -635,9 +635,35 @@ off the face and chest.
   commit. Any change to the scene's triangles, their order, materials, lighting or camera is a
   new scene version and a new hash. Every platform in [Determinism](#determinism) checks it.
 
+## The canyon scene
+
+The canyon scene (flyingrobots/lumen#40) is built in `crates/lumen/src/scenes/canyon/`. Its
+terrain exists in the library so far: `scenes::canyon::terrain` places the heights of
+`lumen-canyon-heightfield/1` ([below](#canyon-terrain-lumen-canyon-heightfield1)) on the scene's
+grid and makes the mesh, and `terrain_triangles` returns its triangles with their materials.
+
+**The terrain** (480 256 triangles) is a grid of 513 by 470 vertices, an eighth of a unit apart
+across the canyon (X, from -40 to 24) and three eighths along it (Z, from 16 to -159.875), so
+that a wall's facets are about as tall as they are long; two triangles per cell, wound up, none
+of zero area (each projects onto half a cell), every coordinate a whole number of `2^-16` grid
+steps. The spec (`terrain::CANYON_HEIGHTFIELD`, seed 2009): a floor 14 units across, walls of
+four tiers each rising 3 units over one unit with a half-unit tread, a ragged plateau about 12
+units up, eight noise layers (lattice spacings 128 to 1, amplitudes from 1.5 units, each three
+quarters of the one before, the finest two halved again) weighted a quarter on the floor, twice
+on the walls and one and a half times on the plateau, and a centre line that bends about 9 units
+to the left between 30 and 60 units from `z = 12`. One shelf (`LEDGE`) cuts a level ledge 3
+units up into the left wall near the canyon's mouth. Each cell is coloured by its rock stratum:
+its four corners' mean height in bands 1.5 units thick picks material 0, 1, 0, 2 in turn (`STRATA`).
+
+Tests (`crates/lumen/tests/canyon/terrain.rs`): two triangles per cell in row order on the grid
+points of their corners, inside Bunny's trace domain, none degenerate, each facing up (an exact
+integer cross product); every cell's material from the stratum rule written out in the test,
+each of the three used. The generator's bound and channel tests also run on the scene's spec
+(the floor at the centre line at least 2.5 units below every plateau vertex of its row).
+
 ## Canyon terrain: `lumen-canyon-heightfield/1`
 
-`lumen::scenes::canyon::heightfield` generates a canyon's terrain heights in integers only:
+`lumen::scenes::canyon::heightfield` generates the canyon scene's terrain heights in integers only:
 `generate(&HeightfieldSpec)` returns one height, in whole `2^-16` grid steps, for every vertex
 of a grid of `columns` by `rows` (column `i` across the canyon, row `j` along it). A height is a
 pure function of the spec and `(i, j)`: the same spec gives the same heights, bit for bit, on

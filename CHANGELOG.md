@@ -34,6 +34,13 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- The canyon scene's terrain (part of flyingrobots/lumen#40): `scenes::canyon::terrain` places
+  `CANYON_HEIGHTFIELD` (seed 2009, a 513 by 470 vertex grid an eighth of a unit apart across the
+  canyon and three eighths along it, a floor 14 units across, four-tier walls, a ragged plateau
+  about 12 units up, a bend, and a ledge cut into the left wall) and `terrain_triangles` meshes
+  it: 480 256 triangles, two per cell, each cell coloured by its rock stratum (three materials in
+  bands 1.5 units thick). README, "The canyon scene".
+
 - The canyon terrain generator, `lumen-canyon-heightfield/1` (part of flyingrobots/lumen#40):
   `lumen::scenes::canyon::heightfield::generate` computes a canyon's heights from a
   `HeightfieldSpec` in integers only: layered value noise from a SplitMix64 lattice hash, a
@@ -41,7 +48,7 @@ All notable changes to lumen are recorded here. The format follows
   and level shelves cut into the rock. The algorithm is specified in the module documentation and
   the README ("Canyon terrain"); `HeightfieldSpec::bounds` states the range of every height and
   `HeightfieldError` names a refused parameter. Tests check exact values against SplitMix64's
-  published output and an independent Python model. No scene uses it yet.
+  published output and an independent Python model.
 
 - A measurement record of Fixed Point version 2 at 4K and 64 samples
   (`docs/measurements/2026-11-14-4k-fixed-point-v2.md`, closes flyingrobots/lumen#39): three

@@ -137,8 +137,9 @@ fn every_height_lies_within_the_stated_bounds() {
     }
 }
 
-/// The specs the bound and channel tests run on: the small canyon.
-const SPECS: [HeightfieldSpec<'static>; 1] = [SMALL];
+/// The specs the bound and channel tests run on: the small canyon and the scene's.
+const SPECS: [HeightfieldSpec<'static>; 2] =
+    [SMALL, lumen::scenes::canyon::terrain::CANYON_HEIGHTFIELD];
 
 /// Whether `(column, row)` is inside one of `spec`'s shelves.
 fn shelved(spec: &HeightfieldSpec<'_>, column: u32, row: u32) -> bool {
@@ -151,11 +152,11 @@ fn shelved(spec: &HeightfieldSpec<'_>, column: u32, row: u32) -> bool {
 /// Oracle: the bounds again, per zone. For every row, the floor at the centre line is at most
 /// the floor's noise bound above 0, and every plateau vertex of the row outside a shelf is at
 /// least the rim less the plateau's noise bound. The margin between the two is stated per
-/// spec: 51 875 steps for the small canyon. Witness: every row has plateau on both sides of
-/// the channel.
+/// spec: 51 875 steps for the small canyon, and for the scene's 2.5 units (163 840 steps) or
+/// more. Witness: every row has plateau on both sides of the channel.
 #[test]
 fn the_channel_runs_below_the_rim_along_every_row() {
-    for (spec, margin) in SPECS.iter().zip([51_875]) {
+    for (spec, margin) in SPECS.iter().zip([51_875, 163_840]) {
         let field = generate(spec).expect("valid");
         let noise: i64 = spec.layers.iter().map(|layer| layer.amplitude).sum();
         let floor_top = noise * spec.weights.floor / 4;
