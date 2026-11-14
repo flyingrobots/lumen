@@ -15,13 +15,13 @@ version = "0.1.0"
 # `mesh-hash`, which would bring in `sha2` and its tree. They move to the registry when a
 # release holds what lumen needs.
 [workspace.dependencies]
-bunny-broadphase = { git = "https://github.com/flyingrobots/bunny", rev = "d4fe51d38fa10f8d6496bd110955314edac30bbf" }
-bunny-codec = { git = "https://github.com/flyingrobots/bunny", rev = "d4fe51d38fa10f8d6496bd110955314edac30bbf", default-features = false }
-bunny-geom = { git = "https://github.com/flyingrobots/bunny", rev = "d4fe51d38fa10f8d6496bd110955314edac30bbf" }
-bunny-linalg = { git = "https://github.com/flyingrobots/bunny", rev = "d4fe51d38fa10f8d6496bd110955314edac30bbf" }
-bunny-num = { git = "https://github.com/flyingrobots/bunny", rev = "d4fe51d38fa10f8d6496bd110955314edac30bbf" }
-bunny-optics = { git = "https://github.com/flyingrobots/bunny", rev = "d4fe51d38fa10f8d6496bd110955314edac30bbf" }
-bunny-query = { git = "https://github.com/flyingrobots/bunny", rev = "d4fe51d38fa10f8d6496bd110955314edac30bbf" }
+bunny-broadphase = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd" }
+bunny-codec = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd", default-features = false }
+bunny-geom = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd" }
+bunny-linalg = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd" }
+bunny-num = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd" }
+bunny-optics = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd" }
+bunny-query = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
