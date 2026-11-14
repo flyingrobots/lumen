@@ -143,9 +143,10 @@ ns-per-ray <time> (information only: wall clock, all threads)
   accepted them; the command checks that it equals the PNG's length and fails if it does not.
   `png none` without `--out`.
 - The `-seconds` lines time each part with a monotonic clock; `total-seconds` is the whole
-  command after argument parsing. `rays-per-second` and `ns-per-ray` divide the render's wall
-  time by the rays traced on all threads, so they are not CPU time per ray. None of these
-  reaches the image.
+  command after argument parsing. `rays-per-second` is the rays traced on all threads divided
+  by the render's wall time in seconds, and `ns-per-ray` the render's wall time in nanoseconds
+  divided by those rays (by 1 if there were none); both use wall time, so neither is CPU time
+  per ray. None of these reaches the image.
 
 The PNG is uncompressed, so it is about four bytes per pixel: 230 699 bytes at the default
 320 by 180, 922 266 bytes at 640 by 360, and 33 188 430 bytes (about 33 MB) at 3840 by 2160.
