@@ -1,8 +1,9 @@
 //! The file-length gate: the Rust standard's limits on lines of code per file.
 //!
 //! A source file may hold 300 lines of code; from 301 to 500 it needs a listed exception that
-//! names its decomposition issue, and above 500 it does not merge at all. A test file (under a
-//! `tests` directory, or named `tests.rs`) may hold 750, with no exception past that. A line of code is one with a character
+//! names its decomposition issue, and above 500 it does not merge at all. A test file (one the
+//! compiler builds only into tests, [`Role::Test`]) may hold 750, with no exception past that.
+//! A line of code is one with a character
 //! outside a comment ([`code_lines`]). An exception records the count it was granted at; the
 //! file may shrink but not grow past it, and an exception that is no longer needed is itself a
 //! failure, so the list only gets shorter.
@@ -14,6 +15,8 @@ mod tests;
 
 pub(crate) use count::code_lines;
 pub(crate) use exceptions::EXCEPTIONS;
+
+use crate::layout::Role;
 
 /// Lines of code a source file may hold without an exception.
 pub(crate) const SOURCE_REVIEW: usize = 300;
@@ -35,11 +38,13 @@ pub(crate) struct Exception {
     pub(crate) issue: &'static str,
 }
 
-/// A file and its lines of code.
+/// A file, its role and its lines of code.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Measured {
     /// The file, relative to the repository root, with `/` separators.
     pub(crate) path: String,
+    /// Whether the compiler builds it only into tests ([`crate::layout::Layout::role`]).
+    pub(crate) role: Role,
     /// Its lines of code ([`code_lines`]).
     pub(crate) lines: usize,
 }
@@ -53,28 +58,19 @@ pub(crate) struct Verdict {
     pub(crate) notices: Vec<String>,
 }
 
-/// Whether `path` is a test file: under a `tests` directory, or named `tests.rs`.
-pub(crate) fn is_test(path: &str) -> bool {
-    let mut parts = path.split('/').rev();
-    let file = parts.next();
-    file == Some("tests.rs") || parts.any(|dir| dir == "tests")
-}
-
-/// The most lines of code `path` may hold without an exception.
-pub(crate) fn limit(path: &str) -> usize {
-    if is_test(path) {
-        TEST_MAX
-    } else {
-        SOURCE_REVIEW
+/// The most lines of code a file of `role` may hold without an exception.
+pub(crate) fn limit(role: Role) -> usize {
+    match role {
+        Role::Test => TEST_MAX,
+        Role::Source => SOURCE_REVIEW,
     }
 }
 
-/// The most lines of code `path` may hold at all: no exception goes past it.
-pub(crate) fn hard_limit(path: &str) -> usize {
-    if is_test(path) {
-        TEST_MAX
-    } else {
-        SOURCE_MAX
+/// The most lines of code a file of `role` may hold at all: no exception goes past it.
+pub(crate) fn hard_limit(role: Role) -> usize {
+    match role {
+        Role::Test => TEST_MAX,
+        Role::Source => SOURCE_MAX,
     }
 }
 
@@ -82,7 +78,7 @@ pub(crate) fn hard_limit(path: &str) -> usize {
 pub(crate) fn judge(files: &[Measured], exceptions: &[Exception]) -> Verdict {
     let mut verdict = Verdict::default();
     for file in files {
-        let (limit, hard) = (limit(&file.path), hard_limit(&file.path));
+        let (limit, hard) = (limit(file.role), hard_limit(file.role));
         match exceptions.iter().find(|e| e.path == file.path) {
             _ if file.lines <= limit => {}
             _ if file.lines > hard => verdict.failures.push(format!(
@@ -107,7 +103,7 @@ pub(crate) fn judge(files: &[Measured], exceptions: &[Exception]) -> Verdict {
     for e in exceptions {
         match files.iter().find(|f| f.path == e.path) {
             None => verdict.failures.push(format!("{}: an exception for a missing file", e.path)),
-            Some(f) if f.lines <= limit(&f.path) => verdict.failures.push(format!(
+            Some(f) if f.lines <= limit(f.role) => verdict.failures.push(format!(
                 "{}: {} lines of code is within the limit; remove its exception ({})",
                 f.path, f.lines, e.issue
             )),

@@ -717,3 +717,24 @@ fn render_stats_appends_the_statistics_after_the_unchanged_report() {
     let max = format!("\nrays.per-pixel-max {}\n", render.statistics.max_pixel_rays);
     assert!(rays.contains(&max), "{rays}");
 }
+
+/// Oracle: the schedule asked for. `render --stats` ends with the band height, the band count,
+/// one record per worker, each labelled information only, whose rows sum to the image height.
+#[test]
+fn render_stats_ends_with_what_each_worker_did() {
+    let dir = Scratch::new("render-stats-run");
+    let args = ["render", "--width", "8", "--height", "7", "--samples", "1", "--threads", "3"];
+    let output = dir.lumen(&[&args[..], &["--band-rows", "2", "--stats"]].concat());
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let stdout = text(&output.stdout);
+    assert_eq!(field(&stdout, "run.band-rows"), "2");
+    assert_eq!(field(&stdout, "run.bands"), "4");
+    assert_eq!(field(&stdout, "run.workers"), "3");
+    let note = " (information only: differs from run to run)";
+    let rows: u32 = (0..3)
+        .map(|n| field(&stdout, &format!("run.worker.{n}.rows")))
+        .map(|value| value.strip_suffix(note).expect("labelled").parse::<u32>().expect("a count"))
+        .sum();
+    assert_eq!(rows, 7);
+    assert!(stdout.lines().last().is_some_and(|line| line.starts_with("run.worker.2.rays ")));
+}
