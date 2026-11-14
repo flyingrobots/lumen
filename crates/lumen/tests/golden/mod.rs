@@ -96,8 +96,9 @@ pub(crate) const GOLDEN_FIXED_POINT_CONTENT: &str =
 /// Recorded for `lumen-canyon-scene/1` (terrain by `lumen-canyon-heightfield/1`),
 /// `lumen-smooth-diffuse-path/1` (Bunny's `bunny-sobol-owen/1`, `bunny-diffuse-shading/1`,
 /// `bunny-smooth-shading/1` and `bunny-smooth-normal/1`), `bunny-tone-srgb/1` and
-/// `bunny-rgba8-opaque/1`, against Bunny d4fe51d38fa10f8d6496bd110955314edac30bbf; first
-/// recorded on aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). The same rules
+/// `bunny-rgba8-opaque/1`, at the pinned Bunny commit, `BUNNY_REV` (it was
+/// d4fe51d38fa10f8d6496bd110955314edac30bbf when this value was recorded); first recorded on
+/// aarch64 Linux (the rust-dev:1.96.0 container on an Apple M5 Pro). The same rules
 /// as the other scenes' hashes: one value for every platform and build profile, updated only
 /// with an identity, these settings or the Bunny commit, and a change to the scene's triangles,
 /// their order, its materials, normals, lighting or camera is a new scene version.

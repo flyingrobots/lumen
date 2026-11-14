@@ -288,8 +288,9 @@ through the public API and checks its values and its chain.
   types through `From` or `try_from`, not `as`. In the library the one `as` left on such a value
   is `widen` (`u32` to `usize`, lossless under a compile-time assertion, behind a scoped lint
   exception); the command converts the ray count to `f64` with `as` for the information-only
-  `rays-per-second` and `ns-per-ray`, also behind a scoped exception, and `png.rs` builds its
-  CRC table with one `as` on an index below 256.
+  `rays-per-second` and `ns-per-ray`, also behind a scoped exception. Two constant expressions
+  use `as` on a small literal: `png.rs` builds its CRC table on an index below 256, and the
+  canyon's planet sizes an array by `PLANET_BANDS as usize` (8).
 - `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
   `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `CanyonError`,
   `HeightfieldError`, `BuiltinSceneError` and `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
