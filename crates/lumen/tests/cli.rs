@@ -70,6 +70,14 @@ fn two_processes_write_the_same_file_and_print_the_same_hash() {
         assert_eq!(field(&stdout, "samples"), "2");
         assert_eq!(field(&stdout, "seed"), "5");
         assert_eq!(field(&stdout, "bounces"), "1");
+        assert_eq!(field(&stdout, "pixels"), "960");
+        assert_eq!(field(&stdout, "tile"), "32x32");
+        assert!(field(&stdout, "threads").parse::<u32>().is_ok_and(|n| (1..=2).contains(&n)));
+        for timing in ["scene", "render", "hash", "png", "total"] {
+            let line = field(&stdout, &format!("{timing}-seconds"));
+            let seconds: f64 = line.split(' ').next().expect("value").parse().expect("number");
+            assert!(seconds >= 0.0, "{timing}: {line}");
+        }
         rays.push(field(&stdout, "rays").to_owned());
         hashes.push(field(&stdout, "image").to_owned());
     }
@@ -108,7 +116,18 @@ fn help_and_version() {
 fn bad_arguments_are_refused_with_usage() {
     assert_refused(&lumen(&[]), 2, "no command given");
     assert_refused(&lumen(&["paint"]), 2, "unknown command \"paint\"");
-    assert_refused(&lumen(&["render"]), 2, "render needs --out FILE");
+    assert_refused(
+        &lumen(&["render", "--threads", "0"]),
+        2,
+        "--threads: threads must be at least 1",
+    );
+    assert_refused(
+        &lumen(&["render", "--threads", "257"]),
+        2,
+        "--threads: threads must be at most 256, not 257",
+    );
+    assert_refused(&lumen(&["render", "--tile", "0x4"]), 2, "--tile: tile width and height");
+    assert_refused(&lumen(&["render", "--tile", "4by4"]), 2, "--tile needs N or WxH");
     assert_refused(&lumen(&["render", "--out"]), 2, "--out needs a value");
     assert_refused(&lumen(&["render", "--out", "x.png", "--spp", "4"]), 2, "unknown option");
     assert_refused(
@@ -210,4 +229,33 @@ fn non_unicode_arguments_never_panic() {
         .output()
         .expect("lumen runs");
     assert_refused(&output, 2, "--samples needs a whole number, not the non-Unicode");
+}
+
+/// Without `--out` nothing is written and `png none` is printed; the hash and ray count are the
+/// same at every thread count and tile size, and the report names the threads and the tile.
+#[test]
+fn the_hash_is_the_same_at_every_thread_count_without_a_file() {
+    let dir = scratch("threads");
+    let mut seen = Vec::new();
+    for (threads, tile) in [("1", "32"), ("3", "5x3"), ("8", "1"), ("2", "40x1")] {
+        let output = Command::new(env!("CARGO_BIN_EXE_lumen"))
+            .current_dir(&dir)
+            .args(["render", "--width", "40", "--height", "24", "--samples", "2", "--seed", "5"])
+            .args(["--threads", threads, "--tile", tile])
+            .output()
+            .expect("lumen runs");
+        assert!(output.status.success(), "{}", text(&output.stderr));
+        let stdout = text(&output.stdout);
+        assert_eq!(field(&stdout, "threads-asked"), threads);
+        assert_eq!(field(&stdout, "threads"), threads);
+        let want_tile = if tile.contains('x') { tile.to_owned() } else { format!("{tile}x{tile}") };
+        assert_eq!(field(&stdout, "tile"), want_tile);
+        assert_eq!(field(&stdout, "png"), "none");
+        seen.push((field(&stdout, "image").to_owned(), field(&stdout, "rays").to_owned()));
+    }
+    assert!(std::fs::read_dir(&dir).expect("dir").next().is_none(), "a file was written");
+    let render =
+        render_reference(40, 24, RenderSettings::new(2, 5).expect("valid")).expect("renders");
+    assert!(seen.iter().all(|(hash, _)| *hash == render.image.hash()), "{seen:?}");
+    assert!(seen.iter().all(|(_, rays)| *rays == seen[0].1), "{seen:?}");
 }

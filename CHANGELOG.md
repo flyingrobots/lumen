@@ -8,6 +8,36 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Rendering on all cores (flyingrobots/lumen#4): `lumen render --threads N` (`1..=256`, default
+  what `std::thread::available_parallelism` reports) and `--tile N | WxH` (default 32 by 32).
+  Tiles are handed out from an atomic counter to whichever worker asks next; each worker renders
+  a tile into its own buffer and copies it into the image. Safe Rust and the standard library
+  only. The image is the same bytes at every thread count and tile size, and one thread is the
+  same code path with one worker. A failing pixel gives the typed error of the first failing
+  pixel in raster order at every schedule, and stops the other workers.
+- Library: `Schedule`, `TileSize`, `ScheduleError`, `MAX_THREADS`, `DEFAULT_TILE`,
+  `render_scheduled`, `render_traced` (any `Tracer + Sync`) and `render_pixels` (the scheduler
+  over any pixel function); `RenderError::Spawn`.
+- A timing report: `lumen render` prints the pixels, threads used and asked for, the tile, and
+  wall-clock `scene-seconds`, `render-seconds`, `hash-seconds`, `png-seconds`, `total-seconds`,
+  `rays-per-second` and `ns-per-ray`, all from a monotonic clock and never part of the image.
+- Tests (`crates/lumen/tests/threads.rs`): the golden hash at 1, 2, 3, 4, 7 and the default thread
+  count and eight tile sizes; a 320 by 180 image equal on one thread, on many and in a raster-order
+  loop without the scheduler; 200 threaded renders with one hash; deterministic errors with a time
+  limit, for injected pixel failures and for failing traversals; worker stop after a failure.
+- A "Performance" section in the README: how to reproduce the thread-scaling, tile and 4K
+  measurements through `devrun` with `--cpus` and `--exclusive`.
+
+### Changed
+
+- `lumen render --out FILE` is optional: without it the image is rendered and hashed but not
+  written, and the report says `png none`. `UsageError::MissingOut` is gone; `UsageError` gains
+  `Schedule` and `InvalidTile`, and `Command::Render` gains `threads` and `tile`.
+- `render` (one thread) now runs through the tile scheduler with one worker; its bytes, ray count
+  and errors are unchanged (the golden hash holds).
+- The report's `render-seconds` no longer includes the scene build, and `ns-per-ray` is the
+  render's wall time divided by the rays traced (on all threads).
+
 - A lit render (flyingrobots/lumen#3): `lumen render` takes `--samples N` (a power of two from 1
   to 1024, default 4) and `--seed S` (`0..=4294967295`, default 0), and renders each sample as
   one diffuse path, `lumen-diffuse-path/1`: Bunny's `bunny-sobol-owen/1` sampler (pair 0 for the
