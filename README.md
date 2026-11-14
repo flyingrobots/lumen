@@ -8,9 +8,10 @@ Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
 
 ## What lumen does today
 
-Lumen renders a built-in reference scene, which includes the Stanford bunny, prints its image
-hash and timing, and writes it to a PNG file if asked. The library also builds a second scene,
-[Fixed Point](#the-fixed-point-scene), which an example program renders. The reference render:
+Lumen renders a built-in scene, prints its image hash and timing, and writes it to a PNG file
+if asked. `--scene reference` (the default) is the reference scene, which includes the Stanford
+bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece. The
+reference render:
 
 - in bands of rows on all cores (`--threads`, below), with the same bytes at every thread count;
 - a power-of-two number of samples per pixel (1 to 1024, default 4), placed by Bunny's
@@ -70,9 +71,10 @@ rays-per-second <rate> (information only: wall clock, all threads)
 ns-per-ray <time> (information only: wall clock, all threads)
 ```
 
-Usage: `lumen render [--out FILE] [--width W] [--height H] [--samples N] [--seed S]
-[--threads T] [--band-rows R]`; the defaults are 320 by 180, 4 samples per pixel,
-seed 0, bands of 1 row and as many threads as the system reports available. Without `--out`
+Usage: `lumen render [--scene reference|fixed-point] [--out FILE] [--width W] [--height H]
+[--samples N] [--seed S] [--threads T] [--band-rows R]`; the defaults are the reference scene,
+320 by 180, 4 samples per pixel, seed 0, bands of 1 row and as many threads as the system
+reports available. Without `--out`
 nothing is written and the report says `png none`: the hash and the timing are the whole
 result. Width and height are each `1..=32768`
 (the limit of Bunny's camera) with at most `2^27` pixels in all (a 512 MiB RGBA8 buffer, enough
@@ -97,7 +99,8 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
 
 - **The library's API is the crate root.** Every type and function a front end, a `Tracer` or a
   test needs is re-exported there: scene building (`Scene`, `SceneSpec`, `CameraPlacement`,
-  `Lighting`, `reference_scene`, `fixed_point_scene`), rendering (`render`, `render_scheduled`, `render_traced`,
+  `Lighting`, `reference_scene`, `fixed_point_scene`, and `BuiltinScene`, the registry of
+  named scenes with their identities that the command's `--scene` reads), rendering (`render`, `render_scheduled`, `render_traced`,
   `Schedule`, `BandRows`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
   its `hash`), its provenance (`RenderProvenance`), PNG encoding into any writer (`write_png`,
   `png_len`), and the integrator's parts for custom tracers (`trace_path`, `pixel_radiance`,
@@ -250,10 +253,21 @@ craps the point is the number the shooter must roll again, and the ON puck marks
 show four pips on every face, so every roll is a hard eight and the point is fixed: a picture of
 determinism, from a ray tracer built on fixed-point arithmetic.
 
-The library builds it with `lumen::fixed_point_scene()`; `fixed_point_content()` returns its
+Render it with the command (`--scene fixed-point`):
+
+```sh
+python3 $D lumen ~/git/lumen --worktree --fetch --export fixed-point.png --out "$(mktemp -d)" -- \
+  bash -c 'mkdir -p /scratch/out && cargo run --locked --release -q -p lumen -- render --scene fixed-point --width 1280 --height 720 --samples 64 --out /scratch/out/fixed-point.png'
+```
+
+The library builds it with `BuiltinScene::FixedPoint.build()` (or `lumen::fixed_point_scene()`);
+`fixed_point_content()` returns its
 triangles with the part each belongs to (`PartKind`: felt, rail, numeral 8, left die's pips,
-left lens and so on) and its material. The CLI does not select it yet (its `--scene` option is
-the second part of flyingrobots/lumen#15). Render it with the example:
+left lens and so on) and its material. `BuiltinScene::ALL` lists the scenes, `name()` is the
+text `--scene` accepts and `id()` the identity that `lumen render` prints on its `scene` line.
+`BuiltinScene::from_str` rejects any other name with a typed error that lists the valid ones;
+the command turns it into a usage error with exit code 2. The scene keeps its own camera and lighting. The example program
+(`crates/lumen/examples/fixed_point.rs`) renders the same scene through the library alone:
 
 ```sh
 python3 $D lumen ~/git/lumen --worktree --fetch --export fixed-point.png --out "$(mktemp -d)" -- \

@@ -46,7 +46,8 @@ second front end would have had to rebuild that list by hand.
 - Moving an item between private modules does not change the API. Removing or renaming a root
   re-export does.
 - The caller names the scene in `RenderProvenance::new`, because a `Scene` does not carry its
-  identity yet. When scenes are read from Geordi artifacts (flyingrobots/lumen#6), the identity
+  identity yet. For lumen's own scenes `BuiltinScene::id()` gives it, so the `lumen` command takes
+  it from the scene it chose. When scenes are read from Geordi artifacts (flyingrobots/lumen#6), the identity
   should come from the scene. The `&'static str` type of identities will then need revisiting.
 - A branch written against the old module paths (`lumen::render::trace_path`,
   `lumen::scene::SceneSpec`, `lumen::png::write_png`) must import from the root instead.

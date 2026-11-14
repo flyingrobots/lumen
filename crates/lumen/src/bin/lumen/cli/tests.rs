@@ -17,6 +17,7 @@ fn render_with_defaults_and_options() {
     assert_eq!(
         parse_str("render --out a.png"),
         Ok(Command::Render {
+            scene: BuiltinScene::Reference,
             width: 320,
             height: 180,
             settings: settings(4, 0),
@@ -28,6 +29,7 @@ fn render_with_defaults_and_options() {
     assert_eq!(
         parse_str("render --height 9 --seed 7 --out b.png --samples 16 --width 16"),
         Ok(Command::Render {
+            scene: BuiltinScene::Reference,
             width: 16,
             height: 9,
             settings: settings(16, 7),
@@ -39,6 +41,7 @@ fn render_with_defaults_and_options() {
     assert_eq!(
         parse_str("render --samples 1024 --seed 4294967295 --out c"),
         Ok(Command::Render {
+            scene: BuiltinScene::Reference,
             width: 320,
             height: 180,
             settings: settings(1024, u32::MAX),
@@ -50,6 +53,7 @@ fn render_with_defaults_and_options() {
     assert_eq!(
         parse_str("render --threads 7 --band-rows 8"),
         Ok(Command::Render {
+            scene: BuiltinScene::Reference,
             width: 320,
             height: 180,
             settings: settings(4, 0),
@@ -61,6 +65,7 @@ fn render_with_defaults_and_options() {
     assert_eq!(
         parse_str("render --band-rows 64 --threads 256"),
         Ok(Command::Render {
+            scene: BuiltinScene::Reference,
             width: 320,
             height: 180,
             settings: settings(4, 0),
@@ -72,6 +77,43 @@ fn render_with_defaults_and_options() {
     assert_eq!(parse_str("--help"), Ok(Command::Help));
     assert_eq!(parse_str("render --help"), Ok(Command::Help));
     assert_eq!(parse_str("--version"), Ok(Command::Version));
+}
+
+#[test]
+fn the_scene_is_chosen_by_name() {
+    let scene_of = |line: &str| match parse_str(line) {
+        Ok(Command::Render { scene, .. }) => scene,
+        other => panic!("{line}: {other:?}"),
+    };
+    assert_eq!(scene_of("render"), BuiltinScene::Reference);
+    for scene in BuiltinScene::ALL {
+        assert_eq!(scene_of(&format!("render --scene {}", scene.name())), scene);
+    }
+    assert_eq!(scene_of("render --out a --scene fixed-point"), BuiltinScene::FixedPoint);
+}
+
+#[test]
+fn a_bad_scene_option_is_refused() {
+    let unknown =
+        |name: &str| UsageError::Scene(name.parse::<BuiltinScene>().expect_err("unknown"));
+    for bad in ["Reference", "fixed_point", "fixed point", "", "bunny"] {
+        assert_eq!(parse(["render", "--scene", bad]), Err(unknown(bad)), "{bad:?}");
+    }
+    assert_eq!(parse_str("render --scene"), Err(UsageError::MissingValue("--scene")));
+    assert_eq!(
+        parse_str("render --scene reference --scene reference"),
+        Err(UsageError::Repeated("--scene"))
+    );
+    let message = unknown("bunny").to_string();
+    assert_eq!(message, "--scene: unknown scene \"bunny\"; the scenes are reference, fixed-point");
+}
+
+#[test]
+fn the_usage_text_lists_every_scene() {
+    for scene in BuiltinScene::ALL {
+        assert!(USAGE.contains(scene.name()), "{}", scene.name());
+    }
+    assert!(USAGE.contains("--scene NAME"));
 }
 
 #[test]
@@ -166,6 +208,8 @@ fn non_unicode_arguments_never_panic() {
             Err(UsageError::NotUnicode { option, value: "out-\u{fffd}\u{fffd}.png".into() })
         );
     }
+    // A non-Unicode scene name is an unknown scene.
+    assert!(matches!(args(&[OsStr::new("--scene"), bytes]), Err(UsageError::Scene(_))));
     // A non-Unicode option or command is unknown.
     assert_eq!(args(&[bytes]), Err(UsageError::UnknownOption("out-\u{fffd}\u{fffd}.png".into())));
     assert_eq!(parse([bytes]), Err(UsageError::UnknownCommand("out-\u{fffd}\u{fffd}.png".into())));

@@ -3,7 +3,10 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use lumen::{render_reference, write_png, RenderSettings};
+use lumen::{render_reference, write_png, BuiltinScene, RenderSettings};
+
+mod golden;
+use golden::{GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP};
 
 fn lumen(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_lumen")).args(args).output().expect("lumen runs")
@@ -259,4 +262,49 @@ fn the_hash_is_the_same_at_every_thread_count_without_a_file() {
         render_reference(40, 24, RenderSettings::new(2, 5).expect("valid")).expect("renders");
     assert!(seen.iter().all(|(hash, _)| *hash == render.image.hash()), "{seen:?}");
     assert!(seen.iter().all(|(_, rays)| *rays == seen[0].1), "{seen:?}");
+}
+
+/// `--scene` names the scene: the reported identity is that scene's, and the image is the one
+/// the library's golden hash records for it (96 by 54 pixels, 4 samples, seed 0). With no
+/// `--scene` the reference scene is rendered.
+#[test]
+fn each_scene_renders_with_its_identity_and_golden_hash() {
+    let golden = |scene: BuiltinScene| match scene {
+        BuiltinScene::Reference => GOLDEN_96X54_4SPP,
+        BuiltinScene::FixedPoint => GOLDEN_FIXED_POINT_96X54_4SPP,
+    };
+    let render = |extra: &[&str]| {
+        let mut args = vec!["render", "--width", "96", "--height", "54", "--samples", "4"];
+        args.extend_from_slice(extra);
+        let output = lumen(&args);
+        assert!(output.status.success(), "{}", text(&output.stderr));
+        text(&output.stdout)
+    };
+    for scene in BuiltinScene::ALL {
+        let stdout = render(&["--scene", scene.name()]);
+        assert_eq!(field(&stdout, "scene"), scene.id());
+        assert_eq!(field(&stdout, "image"), golden(scene), "{}", scene.name());
+    }
+    let stdout = render(&[]);
+    assert_eq!(field(&stdout, "scene"), BuiltinScene::Reference.id());
+    assert_eq!(field(&stdout, "image"), GOLDEN_96X54_4SPP);
+}
+
+#[test]
+fn an_unknown_scene_is_a_usage_error_listing_the_scenes() {
+    let output = lumen(&["render", "--scene", "bunny"]);
+    assert_refused(
+        &output,
+        2,
+        "--scene: unknown scene \"bunny\"; the scenes are reference, fixed-point",
+    );
+    assert!(text(&output.stderr).contains("usage: lumen render"));
+}
+
+#[test]
+fn help_lists_the_scenes() {
+    let help = text(&lumen(&["--help"]).stdout);
+    for scene in BuiltinScene::ALL {
+        assert!(help.contains(scene.name()), "{}", scene.name());
+    }
 }

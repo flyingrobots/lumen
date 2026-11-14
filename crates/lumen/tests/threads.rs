@@ -11,13 +11,13 @@ use bunny_optics::write_rgba8;
 use bunny_query::TraceRay;
 use lumen::{
     pixel_radiance, reference_scene, render, render_pixels, render_scheduled, render_traced,
-    trace_path, BandRows, Hit, ImageSize, RayCount, RenderError, RenderSettings, Rgba8Image, Scene,
-    Schedule, ScheduleError, TraceError, Tracer, WorkerError, DEFAULT_BAND_ROWS, MAX_THREADS,
-    TONE_CURVE,
+    trace_path, BandRows, BuiltinScene, Hit, ImageSize, RayCount, RenderError, RenderSettings,
+    Rgba8Image, Scene, Schedule, ScheduleError, TraceError, Tracer, WorkerError, DEFAULT_BAND_ROWS,
+    MAX_THREADS, TONE_CURVE,
 };
 
 mod golden;
-use golden::GOLDEN_96X54_4SPP;
+use golden::{GOLDEN_96X54_4SPP, GOLDEN_FIXED_POINT_96X54_4SPP};
 
 fn settings(samples: u32, seed: u32) -> RenderSettings {
     RenderSettings::new(samples, seed).expect("valid settings")
@@ -66,29 +66,31 @@ fn raster_order(
 // ---------------------------------------------------------------------------------------------
 // The image does not depend on the schedule.
 
-/// The golden 96 by 54 image at every thread count and at band heights of one row, heights
-/// that divide the image (2, 6, 27), that leave a partial last band (4, 5, 7, 16), the whole
-/// image and more than the image.
+/// The golden 96 by 54 images of both built-in scenes at every thread count and at band heights
+/// of one row, heights that divide the image (2, 6, 27), that leave a partial last band (4, 5, 7,
+/// 16), the whole image and more than the image.
 #[test]
-fn the_golden_hash_holds_at_every_thread_count_and_band_height() {
-    let scene = reference_scene().expect("builds");
-    let (want_image, want_rays) = raster_order(&scene, size(96, 54), settings(4, 0));
-    assert_eq!(want_image.hash(), GOLDEN_96X54_4SPP);
-    for threads in THREAD_COUNTS {
-        for rows in [1, 2, 4, 5, 6, 7, 16, 27, 54, 200] {
-            let render = render_scheduled(
-                &scene,
-                size(96, 54),
-                settings(4, 0),
-                schedule(threads, band(rows)),
-            )
-            .expect("renders");
-            assert_eq!(
-                render.image.hash(),
-                GOLDEN_96X54_4SPP,
-                "{threads} threads, bands of {rows}"
-            );
-            assert_eq!(render.rays, want_rays, "{threads} threads, bands of {rows}");
+fn the_golden_hashes_hold_at_every_thread_count_and_band_height() {
+    for (scene_kind, golden) in [
+        (BuiltinScene::Reference, GOLDEN_96X54_4SPP),
+        (BuiltinScene::FixedPoint, GOLDEN_FIXED_POINT_96X54_4SPP),
+    ] {
+        let scene = scene_kind.build().expect("builds");
+        let (want_image, want_rays) = raster_order(&scene, size(96, 54), settings(4, 0));
+        assert_eq!(want_image.hash(), golden, "{scene_kind:?}");
+        for threads in THREAD_COUNTS {
+            for rows in [1, 2, 4, 5, 6, 7, 16, 27, 54, 200] {
+                let render = render_scheduled(
+                    &scene,
+                    size(96, 54),
+                    settings(4, 0),
+                    schedule(threads, band(rows)),
+                )
+                .expect("renders");
+                let label = format!("{scene_kind:?}, {threads} threads, bands of {rows}");
+                assert_eq!(render.image.hash(), golden, "{label}");
+                assert_eq!(render.rays, want_rays, "{label}");
+            }
         }
     }
 }

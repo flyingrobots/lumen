@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use lumen::{ScheduleError, SettingsError};
+use lumen::{ParseSceneError, ScheduleError, SettingsError};
 
 /// Why a command line was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,6 +35,8 @@ pub(crate) enum UsageError {
     Samples(SettingsError),
     /// The thread count or the band height was refused.
     Schedule(ScheduleError),
+    /// The scene name is not a built-in scene.
+    Scene(ParseSceneError),
 }
 
 impl fmt::Display for UsageError {
@@ -54,6 +56,7 @@ impl fmt::Display for UsageError {
             Self::Samples(error) => write!(f, "--samples: {error}"),
             Self::Schedule(error @ ScheduleError::EmptyBand) => write!(f, "--band-rows: {error}"),
             Self::Schedule(error) => write!(f, "--threads: {error}"),
+            Self::Scene(error) => write!(f, "--scene: {error}"),
         }
     }
 }

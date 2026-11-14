@@ -1,7 +1,7 @@
 //! Lumen: a deterministic ray tracer built on Bunny's integer math.
 //!
-//! Lumen renders a built-in reference scene ([`reference_scene`]), or the Fixed Point showpiece
-//! ([`fixed_point_scene`]), in bands of rows on all cores
+//! Lumen renders a built-in scene ([`BuiltinScene`]: the reference scene, [`reference_scene`], or
+//! the Fixed Point showpiece, [`fixed_point_scene`]), in bands of rows on all cores
 //! ([`render_scheduled`], [`Schedule`], [`render_pixels`]) with a power-of-two number of samples
 //! per pixel, each one diffuse path with a shadow-casting directional light, a uniform sky and one
 //! bounce ([`trace_path`], `lumen-diffuse-path/1`), and encodes it as a PNG ([`write_png`]). Every
@@ -39,6 +39,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+mod builtin_scene;
 mod image;
 pub mod mesh;
 mod png;
@@ -57,6 +58,7 @@ mod workers;
 /// editing this constant, next to the golden image hash it may change.
 pub const BUNNY_REV: &str = "dcd6bd37613738de93f7084e7c8aa0283de964ea";
 
+pub use builtin_scene::{BuiltinScene, BuiltinSceneError, ParseSceneError};
 pub use image::{ImageSize, Rgba8Image, SizeError, MAX_DIMENSION, MAX_PIXELS};
 pub use png::{png_len, write_png};
 pub use provenance::{ProvenanceValue, RenderProvenance, PROVENANCE_FIELDS};
