@@ -29,6 +29,12 @@ pub const BAND_ROWS: [u32; PLANET_BANDS as usize] = [8, 6, 10, 6, 12, 6, 8, 8];
 const TILT_RAW: u64 = 1 << 59;
 
 /// `a * b` for two Q32.32 raw values, floored.
+///
+/// Every call has one factor at most `2^34` in magnitude (a sine or cosine, at most `2^32`, a
+/// sum of two products of them, at most `2^33`, or [`PLANET_RADIUS`], below `2^21`) and the
+/// other at most `2^34` too, so the product is below `2^68` and the result below `2^36`: the
+/// conversion always succeeds and the fallback is never taken. A test checks the result exact up
+/// to factors far past those.
 fn mul(a: i64, b: i64) -> i64 {
     i64::try_from((i128::from(a) * i128::from(b)) >> 32).unwrap_or(0)
 }
@@ -80,5 +86,22 @@ pub fn push_planet(content: &mut CanyonContent) {
         }
         content.push(PartKind::Band(band), &triangles);
         row += rows;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Oracle: exact products worked by hand, at and past the largest factors [`mul`]'s callers
+    /// pass (`2^34`): one times one, a negative product floored, `2^34 * 2^34`, and `i64::MAX`
+    /// times one, the largest result that fits.
+    #[test]
+    fn the_planets_product_is_exact_past_every_factor_it_is_given() {
+        let one = 1_i64 << 32;
+        assert_eq!(mul(one, one), one);
+        assert_eq!(mul(-1, 1), -1);
+        assert_eq!(mul(1 << 34, 1 << 34), 1 << 36);
+        assert_eq!(mul(i64::MAX, one), i64::MAX);
     }
 }

@@ -811,9 +811,10 @@ reimplemented, is:
 6. **Shelves**: each `Shelf` cuts the rock in its rectangle down to its height, leaving a level
    ledge whose edges stay rough where the rock was already lower.
 
-`HeightfieldSpec::bounds` states the range every height lies in; `generate` refuses a spec
-outside its stated ranges (`HeightfieldError`, naming the parameter) before computing anything,
-and those ranges keep every product inside `i64`. Any change to the steps, their constants or
+`HeightfieldSpec::bounds` states the range every height lies in and `HeightfieldSpec::centre_256`
+the centre line of a row; `generate` refuses a spec outside its stated ranges
+(`HeightfieldError`, naming the parameter) before computing anything, and so do `bounds` and
+`centre_256`, with the same error. Those ranges keep every product inside `i64`. Any change to the steps, their constants or
 their order is a new version of the generator.
 
 Tests (`crates/lumen/tests/canyon/heightfield.rs`): exact values on tiny grids, from SplitMix64's
@@ -821,9 +822,15 @@ published first output and from an independent Python model of the documented al
 3 grid, a hand-worked profile, and the sum, weighted sum, extremes and two vertices of a 64 by 96
 canyon with every step in use); determinism; every height within the stated bounds; the channel
 (the floor at the centre line below every plateau vertex of its row by a stated margin); a wall
-smooth to within its slope where the centre line bends; the shelf's rule; and each refusal.
-Seeded mutations of the noise blend, the carve's floor width, the centre line's fraction and the
-shelf's rule each fail at least one of them.
+smooth to within its slope where the centre line bends; the shelf's rule; the bounds worked by
+hand where the plateau's weight is the largest and where the spread is not a whole step; no
+height past the grid's edge. `crates/lumen/tests/canyon/limits.rs`: each refusal, every
+`HeightfieldError` variant but `OutOfMemory` (which needs the allocator to fail), reached by a
+constructed spec and given alike by `generate`, `bounds` and `centre_256`; a spec exactly at
+each limit accepted; and the bounds worked by hand at the largest spec the ranges allow. Seeded
+mutations of the noise blend, the carve's floor width, the centre line's fraction, the shelf's
+rule, the bounds' weight and floor, the grid's column check and the helpers' range check each
+fail at least one of them.
 
 ## The integrator
 
