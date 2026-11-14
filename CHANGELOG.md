@@ -21,6 +21,15 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- The compiler layer's own check (part of flyingrobots/lumen#115 and flyingrobots/lumen#119):
+  `cargo run -p xtask -- clippy-bans`, `make clippy-bans`, and a `Clippy bans` step in the
+  `fmt, clippy` job. It runs Clippy on `xtask/clippy-fixture` (a workspace member that compiles
+  only under `--cfg lumen_clippy_fixture`) and fails on a misspelt or unresolved ban (Clippy
+  only warns, so `Path::exits` had passed with exit 0), on a ban that never fires, on a seeded
+  form not reported under its rule, on a reported look-alike, on a second `clippy.toml` or a
+  `.clippy.toml` anywhere (a crate's own replaces the root one) or `CLIPPY_CONF_DIR`, and on a
+  toolchain that moves a ban lint to another lint group. All 53 bans fire on main.
+
 - Smooth shading (part of flyingrobots/lumen#39; ADR 0007): `trace_path` shades a hit on a
   triangle with at least one vertex normal with Bunny's `bunny-smooth-shading/1`
   (`SmoothHit::new` at the hit's exact barycentric numerators, its light sample and its bounce,

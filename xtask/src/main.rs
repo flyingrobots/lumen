@@ -11,13 +11,20 @@
 //!
 //! Both fail on a form that makes the compiler read a file they do not: `include!`, or a
 //! `#[path]` to anything but a `.rs` file under the roots ([`layout::Layout::failures`]).
+//!
+//! `cargo run --locked -p xtask -- clippy-bans` checks the compiler layer itself
+//! ([`clippy_bans`]): every `clippy.toml` ban resolves and fires on a seeded fixture, there is one
+//! `clippy.toml`, and the lint groups holding a ban lint are the ones the scan refuses.
 
 #![expect(
     clippy::disallowed_methods,
     clippy::disallowed_macros,
-    reason = "std-env, std-fs: repository tooling reads its arguments and the source tree"
+    clippy::disallowed_types,
+    reason = "std-env, std-fs, std-process: repository tooling reads its arguments and the source \
+              tree, and runs cargo"
 )]
 
+mod clippy_bans;
 mod file_length;
 mod layout;
 mod nondeterminism;
@@ -41,8 +48,20 @@ fn main() -> ExitCode {
     let gate = match args.as_slice() {
         [command] if command == "file-length" => file_length_gate as fn(&_, &_) -> bool,
         [command] if command == "nondeterminism" => nondeterminism_gate,
+        [command] if command == "clippy-bans" => {
+            return match clippy_bans::run::gate(&root) {
+                Ok(true) => ExitCode::SUCCESS,
+                Ok(false) => ExitCode::FAILURE,
+                Err(error) => {
+                    eprintln!("xtask: {error}");
+                    ExitCode::from(2)
+                }
+            };
+        }
         _ => {
-            eprintln!("usage: cargo run --locked -p xtask -- file-length|nondeterminism");
+            eprintln!(
+                "usage: cargo run --locked -p xtask -- file-length|nondeterminism|clippy-bans"
+            );
             return ExitCode::from(2);
         }
     };
