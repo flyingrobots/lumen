@@ -2,7 +2,8 @@
 
 This is a record of one session. It describes what was measured on the date above, at the commit
 below. It is not a statement about any later commit. To repeat it, see
-[Reproduce](../../README.md#reproduce) in the README.
+[Reproduce](../how-to/measure-performance.md#reproduce) in the performance guide (the section
+moved there from the README on 2026-11-14).
 
 It answers flyingrobots/lumen#5: does Lumen render the 4K reference scene at 16 samples per pixel
 in under 60 seconds, with the same image hash on two runs?

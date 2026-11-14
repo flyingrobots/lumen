@@ -29,9 +29,57 @@ All notable changes to lumen are recorded here. The format follows
   threads and two band heights, and hand-derived pixels on a constructed triangle (front, back,
   miss, an interpolated normal and the fallback). `make views` renders them.
 
-- ADR 0008 and the README say what `render --stats` costs now: about a tenth longer than a plain
+- ADR 0008 and the command reference (`docs/reference/cli.md`) say what `render --stats` costs now: about a tenth longer than a plain
   render (+10 to 11 %, against +2.5 % recorded before traversal counting); a plain render is
   within noise.
+
+- `docs/reference/cli.md`, the `lumen` command's reference (part of flyingrobots/lumen#25): the
+  synopsis (the `--help` text, quoted whole), each command, a table of every option with its
+  value, default and refusal, the report line by line, the output file's publication, exit
+  statuses, and every statistics key. Moved from the README, which links to it. Three tests keep
+  it in step with the program: the page quotes the usage text exactly
+  (`the_command_reference_holds_the_usage_text`), has a row for every option the parser knows
+  (`the_command_reference_has_a_row_for_every_option`), and documents every key the statistics
+  blocks print (`every_printed_key_is_in_the_command_reference`). `lumen --help` now points at
+  that page instead of the README's Statistics section.
+- `docs/reference/library.md` and `docs/reference/scenes.md` (part of flyingrobots/lumen#25),
+  moved from the README: the library's public surface, family by family, with its rules
+  (provenance, content identity, statistics, the command's edge) and its errors, pointing at the
+  rustdoc as the generated API reference; and the two built-in scenes object by object with
+  their tests. `the_library_reference_names_every_item_of_the_crate_root` fails if a name
+  `lib.rs` makes public is missing from the library page. The scene page's commands are plain
+  `cargo run` invocations.
+- `docs/explanation.md` (part of flyingrobots/lumen#25), moved from the README: what a render is,
+  the integrator, smooth shading, traversal, threads and row bands, the image hash and the PNG,
+  determinism and the nondeterminism bans, ending in a requirement-to-evidence map: sixteen
+  requirements with stable IDs (`R-DET-1` to `R-NDET-1`), each with the narrowest test or CI job
+  that checks it, its fixture, its exact oracle and its status, with what no check covers marked
+  not verified. The WebAssembly job's test list there now includes `tests/generated.rs` and
+  `tests/smooth.rs`, which it runs.
+- ADR 0009, the image hash: a record, from the code and tests, of the decision taken in
+  flyingrobots/lumen#2 (the raw RGBA8 bytes, SHA-256, `sha256:` and lowercase hex, no size).
+- `docs/how-to/measure-performance.md`, the README's performance section as a how-to, and
+  `docs/measurements/2026-11-13-readme-readings.md`, the timings the README held (tree builders
+  and layouts, scene versions per ray, thread scaling and tile sizes under the tile scheduler),
+  moved unchanged with the commits that added them. Timings that repeated ADR 0003 and ADR 0008
+  are links now; every timing lives in one dated place.
+- `docs/tutorial.md`, `CONTRIBUTING.md` and `docs/README.md` (closes flyingrobots/lumen#25 with
+  the pages above). The tutorial takes a newcomer with only a Rust toolchain from `git clone` to
+  a rendered PNG with plain `cargo run --release -p lumen -- render`, checked from a clean clone
+  with an empty Cargo home; `tests/tutorial.rs` (medium) runs its three `lumen render` commands
+  and fails if a line it shows is not what the command prints. `CONTRIBUTING.md` is the
+  contributor guide: where each concern lives, the promises a change can break (by evidence-map
+  ID), the full gate, edit paths for scenes, golden values, the Bunny pin, the command, tests,
+  ADRs and measurements, the CI jobs, and the branch rules of `main`. `docs/README.md` indexes
+  every page, ADR and measurement record, with a coverage matrix. The README is a short router:
+  what Lumen is, the quickest first render and links. The duplicated "Generated tests" section
+  is gone, and the WebAssembly test command includes `--test smooth`, as CI runs it.
+- `cargo run -p xtask -- doc-links`, `make doc-links` and the `Gates / doc links` job: every
+  relative link of the repository's Markdown names a file or directory that exists, and every
+  `#anchor` a heading of its page, with GitHub's anchors. Offline; links with a scheme are not
+  followed.
+
+### Added
 
 - `lumen render --stats` prints the traversal work of each kind of ray (closes
   flyingrobots/lumen#29, ADR 0008): after the ray lines and before the run lines, for camera,
@@ -74,6 +122,16 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The scan follows aliases across files (flyingrobots/lumen#157): an `extern crate std as host`
+  at the crate root, or a `pub use std as x` reached as `crate::m::x` from another file, is
+  resolved in every core file of every deterministic crate. A glob import of a std module and a
+  std path built from a macro metavariable (`std::$m::var_os`, `$root::fs`) are refused as the
+  new rule `hidden-path`. Before, these passed both layers under a `cfg` the Linux Clippy run
+  does not build.
+- A float type under another name is refused (flyingrobots/lumen#156): `clippy.toml` bans
+  `c_double` and `c_float` of `core::ffi` (which `std::ffi` re-exports) and of `std::os::raw`, and the
+  scan names `c_double`, `c_float`, `f16` and `f128` (and names with the word `f16` or `f128`).
+  Before, `<core::ffi::c_double as From<u32>>::from(x).sin()` passed both layers in the core.
 - Bunny is pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (was
   `d4fe51d38fa10f8d6496bd110955314edac30bbf`), Bunny's main with the counted compact traversals
   (`compact_closest_hit_counted`, `compact_any_hit_counted` and `TraversalCounts`,
