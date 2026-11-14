@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+use crate::schedule::widen;
+
 /// The index of a triangle in its scene: its zero-based position in [`SceneSpec::triangles`],
 /// in the order the caller gave them.
 ///
@@ -39,11 +41,12 @@ impl PrimitiveIndex {
         self.0
     }
 
-    /// The position as a `usize`, for indexing a slice in primitive order; `None` only on a
-    /// target whose `usize` is narrower than 32 bits and cannot hold it.
+    /// The position as a `usize`, for indexing a slice in primitive order. Lossless: lumen
+    /// builds only for targets whose `usize` has at least 32 bits, which a compile-time assertion
+    /// checks.
     #[must_use]
-    pub fn to_usize(self) -> Option<usize> {
-        usize::try_from(self.0).ok()
+    pub const fn to_usize(self) -> usize {
+        widen(self.0)
     }
 }
 

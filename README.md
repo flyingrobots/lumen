@@ -188,6 +188,13 @@ through the public API and checks its values and its chain.
   allocator's `TryReserveError`, or `Spawn(SpawnError)` with the number of the worker the
   operating system refused (from 1) and its `io::Error` as the source. `render_pixels` reports
   the same through `WorkerError`.
+- **A ray query** (`Tracer`) fails with a `TraceError`: `Traversal` with Bunny's
+  `TraversalError`, named in lumen's text since Bunny's has none; `UnknownPrimitive` (the index
+  and the triangle count) and `HitNotRepeatable` (the triangle and the distance) for a traversal
+  that contradicts its tree. The scene's own tracer reaches only `Traversal`: `Scene::new`
+  checks once that its tree names only its own triangles (`SceneError::TreeNamesUnknownPrimitive`
+  otherwise, which no input reaches), so its traversal callbacks never meet a missing triangle,
+  and a generated test over random scenes counts that neither of the other two occurs.
 - **A size** is refused with a `SizeError` carrying the width and height (or the pixel count)
   asked for and the limit; a buffer of the wrong length for `Rgba8Image::from_bytes` with a
   `LengthError` carrying both lengths. `ImageSize::byte_len` cannot fail: `ImageSize::new`

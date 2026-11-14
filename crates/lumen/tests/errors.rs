@@ -7,6 +7,7 @@
 use std::error::Error;
 use std::io;
 
+use bunny_broadphase::TraversalError;
 use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
 use bunny_optics::{point_at, PinholeCamera, PixelError, SecondaryRayError};
@@ -228,4 +229,38 @@ fn memory_and_spawn_failures_name_what_they_were_doing_and_chain_to_the_cause() 
     assert_eq!(spawn.to_string(), "worker thread 3 could not be started: no threads left");
     let os = spawn.source().and_then(Error::source).map(ToString::to_string);
     assert_eq!(os.as_deref(), Some("no threads left"));
+}
+
+/// Oracle: the text written out by hand. Bunny's `TraversalError` has no `Display`, so lumen
+/// names each kind; no error prints a `Debug` form. The scene's own tracer reaches none of these
+/// (`tests/generated.rs` counts that); a custom `Tracer` may return any of them.
+#[test]
+fn trace_errors_state_what_the_traversal_did() {
+    let primitive = PrimitiveIndex::new(9);
+    let cases = [
+        (TraceError::Traversal(TraversalError::StackOverflow), "its stack of 64 nodes overflowed"),
+        (
+            TraceError::Traversal(TraversalError::InvalidNodeIndex),
+            "a node names a child outside the tree",
+        ),
+        (
+            TraceError::Traversal(TraversalError::InvalidPrimitiveRange),
+            "a leaf names primitives outside the primitive-index list",
+        ),
+    ];
+    for (error, why) in cases {
+        assert_eq!(error.to_string(), format!("traversal failed: {why}"));
+    }
+    let unknown = TraceError::UnknownPrimitive { primitive, triangles: 4 };
+    assert_eq!(
+        unknown.to_string(),
+        "the traversal named triangle 9, but the scene has 4 triangles"
+    );
+    let distance = FixedQ32_32::from_raw(3 << 31);
+    let again = TraceError::HitNotRepeatable { primitive, distance };
+    let text = "the traversal's hit on triangle 9 at distance raw 6442450944 could not be repeated";
+    assert_eq!(again.to_string(), text);
+    let tree = lumen::SceneError::TreeNamesUnknownPrimitive { index: 12, triangles: 5 };
+    let text = "the bounding volume hierarchy names triangle 12, but the scene has 5 triangles";
+    assert_eq!(tree.to_string(), text);
 }

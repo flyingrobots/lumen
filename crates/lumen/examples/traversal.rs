@@ -74,9 +74,12 @@ fn closest_from(
 ) -> Result<Option<Hit>, TraceError> {
     let Some(found) = found.map_err(TraceError::Traversal)? else { return Ok(None) };
     let triangle = &triangles[found.primitive as usize];
-    let hit = ray.hit_triangle(triangle, found.distance, found.distance);
-    let primitive = PrimitiveIndex::new(found.primitive);
-    Ok(Some(Hit { primitive, hit: hit.ok_or(TraceError::InconsistentHit)? }))
+    let (primitive, distance) = (PrimitiveIndex::new(found.primitive), found.distance);
+    let hit = ray.hit_triangle(triangle, distance, distance);
+    Ok(Some(Hit {
+        primitive,
+        hit: hit.ok_or(TraceError::HitNotRepeatable { primitive, distance })?,
+    }))
 }
 
 impl Tracer for Plain<'_> {
