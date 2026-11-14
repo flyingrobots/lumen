@@ -3,11 +3,13 @@
 # Builds and renders run in the shared container through `devrun`, never on the host.
 # Images land in ./out (ignored by git).
 #
-#   make demo            both built-in scenes at 1280x720, then open them
+#   make demo            the three built-in scenes at 1280x720, then open them
 #   make reference       the reference scene
 #   make fixed-point     the Fixed Point scene
+#   make canyon          the canyon scene
 #   make 4k              the reference scene at 3840x2160, 16 samples
 #   make 4k-fixed-point  the Fixed Point scene at 3840x2160, 64 samples
+#   make 4k-canyon       the canyon scene at 3840x2160, 16 samples
 #   make test            the test suite, debug and release
 #   make nondeterminism  the nondeterminism scan (ADR 0006)
 #   make clippy-bans     the check that every clippy.toml ban resolves and fires (ADR 0006)
@@ -29,7 +31,7 @@ OPEN    ?= 1
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 RUN   = python3 $(DEVRUN) lumen $(ROOT) --worktree --fetch --cpus $(CPUS) --memory $(MEMORY)
 
-.PHONY: help demo reference fixed-point 4k 4k-fixed-point test nondeterminism clippy-bans check-devrun
+.PHONY: help demo reference fixed-point canyon 4k 4k-fixed-point 4k-canyon test nondeterminism clippy-bans check-devrun
 
 help:
 	@sed -n '1,/^$$/p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
@@ -55,13 +57,19 @@ reference: check-devrun
 fixed-point: check-devrun
 	$(call render,fixed-point,fixed-point-$(WIDTH)x$(HEIGHT)-$(SAMPLES)spp,$(WIDTH),$(HEIGHT),$(SAMPLES))
 
-demo: reference fixed-point
+canyon: check-devrun
+	$(call render,canyon,canyon-$(WIDTH)x$(HEIGHT)-$(SAMPLES)spp,$(WIDTH),$(HEIGHT),$(SAMPLES))
+
+demo: reference fixed-point canyon
 
 4k: check-devrun
 	$(call render,reference,reference-3840x2160-16spp,3840,2160,16)
 
 4k-fixed-point: check-devrun
 	$(call render,fixed-point,fixed-point-3840x2160-64spp,3840,2160,64)
+
+4k-canyon: check-devrun
+	$(call render,canyon,canyon-3840x2160-16spp,3840,2160,16)
 
 test: check-devrun
 	$(RUN) -- bash -c 'cargo test --locked --workspace && cargo test --locked --workspace --release'

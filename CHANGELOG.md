@@ -29,13 +29,16 @@ All notable changes to lumen are recorded here. The format follows
   `bunny-optics` with new tests, added `parse_ascii_ply_with_limits`, made `TraceRay::from_ray`
   accept a unit direction with a component of `2^32 + 1` raw (a `None` becomes a `Some`; neither
   lumen nor the Bunny functions it calls use `from_ray`) and tightened its own gate; no
-  function lumen calls changed its output. Lumen calls none of the new APIs yet. Both golden
-  image hashes and both golden content digests are unchanged, as is the render time (three
+  function lumen calls changed its output. Lumen calls none of the new APIs yet. The three
+  scenes' golden image hashes and golden content digests (reference, Fixed Point, canyon) are
+  unchanged, as is the render time (three
   alternated runs each at 1280 by 720, 16 samples, 18 threads; the pull request records them).
   Re-reading Bunny's public API at the new pin for float-typed items (ADR 0006) found nothing
   new, and one function missed before: `bunny_num::is_finite`, which takes an `f32` and whose
   name has no float word. It is now a Clippy ban (144, up from 143, each firing on the fixture)
-  and a token-scan path.
+  and a token-scan path. The golden tests of the three scenes check `BUNNY_REV` against one
+  constant, `GOLDEN_BUNNY_REV` in `tests/golden/mod.rs`, the commit the golden values were last
+  checked at, instead of each its own literal, so a pin move is acknowledged in one place.
 
 ### Fixed
 
@@ -64,6 +67,55 @@ All notable changes to lumen are recorded here. The format follows
   unchanged (1).
 
 ### Added
+
+- A measurement record of the canyon scene (`docs/measurements/2026-11-14-canyon.md`, closes
+  flyingrobots/lumen#40): `lumen stats` (566 005 triangles, 575 687 tree nodes, leaf depth mean
+  19.13 and at most 27, 258 640 800 bytes), three exclusive 4K renders at 16 samples and 18 CPUs
+  (render 14.242 to 14.691 seconds, image hash `sha256:cbd02...9eab`, checked outside lumen with
+  Python's `zlib` and `hashlib`), the ray counts, the same hash at 1 and 18 threads at 960 by
+  540, and 40.7 ns per ray against 15.0 for the reference scene and 18.0 for Fixed Point in the
+  same session. `make canyon` and `make 4k-canyon`, and the canyon in `make demo`.
+
+- `lumen render --scene canyon` and `lumen stats --scene canyon` (part of flyingrobots/lumen#40):
+  `BuiltinScene::Canyon` registers `lumen-canyon-scene/1`, with a golden image hash (96 by 54, 4
+  samples, `sha256:019fcddd...66c5`) and content identity (`sha256:a809761e...f88d`) in
+  `tests/golden/mod.rs`, checked by the library, command and thread tests (the same hash at every
+  thread count and band height). The canyon's tests add what the camera sees (bunny, each craft
+  and the planet by pixel count) and every ray of a 48 by 27 image against a test of all 566 005
+  triangles, which runs in the release profile only. The other scenes' hashes and identities are
+  unchanged. README, "The canyon scene", with the picture's known limits.
+
+- The canyon scene, `lumen-canyon-scene/1` (part of flyingrobots/lumen#40), assembled:
+  `lumen::canyon_scene()` and `scenes::canyon::canyon_content()` build 566 005 triangles (the
+  terrain, the three craft, the full-resolution Stanford bunny smooth on its ledge, the planet)
+  with 16 materials, a low sun behind the camera, a near-black sky and a camera low in the
+  canyon (`scenes::canyon::look`); `CanyonError` for the refusals no input reaches. Tests: the
+  parts in order, the trace domain, no degenerate triangle, only the bunny smooth, and the bunny
+  resting on its ledge to the grid step. `--scene canyon` and its golden hash follow.
+
+- The canyon scene's craft and planet (part of flyingrobots/lumen#40): three craft of lumen's own
+  design (`scenes::canyon::craft`: the skiff, the tug and the kite, 170 triangles of convex
+  solids posed by rational rotations, each a painted hull and dark engines) and a banded planet
+  (`scenes::canyon::planet`: 16 128 triangles from Bunny's `FixedAngle::sin_cos`, eight latitude
+  bands, each its own material), appended by `push_craft` and `push_planet` to a
+  `CanyonContent`, the scene's triangle list with each triangle's part, material and normals.
+  `fixed_point::solids` is now visible to the crate (no change to Fixed Point).
+
+- The canyon scene's terrain (part of flyingrobots/lumen#40): `scenes::canyon::terrain` places
+  `CANYON_HEIGHTFIELD` (seed 2009, a 513 by 470 vertex grid an eighth of a unit apart across the
+  canyon and three eighths along it, a floor 14 units across, four-tier walls, a ragged plateau
+  about 12 units up, a bend, and a ledge cut into the left wall) and `terrain_triangles` meshes
+  it: 480 256 triangles, two per cell, each cell coloured by its rock stratum (three materials in
+  bands 1.5 units thick). README, "The canyon scene".
+
+- The canyon terrain generator, `lumen-canyon-heightfield/1` (part of flyingrobots/lumen#40):
+  `lumen::scenes::canyon::heightfield::generate` computes a canyon's heights from a
+  `HeightfieldSpec` in integers only: layered value noise from a SplitMix64 lattice hash, a
+  meandering centre line carried in 256ths of a column, a floor, terraced walls and a plateau,
+  and level shelves cut into the rock. The algorithm is specified in the module documentation and
+  the README ("Canyon terrain"); `HeightfieldSpec::bounds` states the range of every height and
+  `HeightfieldError` names a refused parameter. Tests check exact values against SplitMix64's
+  published output and an independent Python model.
 
 - The compiler layer's own check (part of flyingrobots/lumen#115 and flyingrobots/lumen#119):
   `cargo run -p xtask -- clippy-bans`, `make clippy-bans`, and a `Clippy bans` step in the
