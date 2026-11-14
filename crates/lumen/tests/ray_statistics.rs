@@ -71,7 +71,9 @@ impl Tracer for Observing<'_> {
 /// Renders `scene` through the observing tracer at 1, 2, 4 and 18 threads and band heights 1 and
 /// 3, and checks at each: the image is the scene's own; every outcome equals the answers
 /// observed; the rejected bounces are the camera hits that traced no bounce; the statistics pass
-/// their own checks and are the same at every schedule. Returns them.
+/// their own checks and are the same at every schedule. Returns them. A schedule uses at most
+/// one worker per band, so on these small images 18 threads are as many workers as the image has
+/// bands of that height (9 at most), not 18.
 fn observed_render(scene: &Scene, (width, height): (u32, u32), samples: u32) -> RayStatistics {
     let (image, settings) = (size(width, height), settings(samples));
     let own = render(scene, image, settings).expect("renders");

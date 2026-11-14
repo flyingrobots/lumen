@@ -89,7 +89,10 @@ are installed, from the repository root:
 rustup target add wasm32-wasip1
 CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/scripts/wasi-run.mjs" \
   cargo test --locked -p lumen --target wasm32-wasip1 --lib --test render --test library \
-    --test fixed_point --test generated --test smooth
+    --test fixed_point --test generated --test smooth --test statistics
+CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/scripts/wasi-run.mjs" \
+  cargo test --locked -p lumen --target wasm32-wasip1 --test canyon -- \
+    --exact rendering::the_canyon_image_has_its_golden_hash
 ```
 
 Lint posture mirrors Bunny: `unsafe` is forbidden, clippy `all` is denied and

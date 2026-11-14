@@ -357,8 +357,8 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
 ) -> Result<Render, RenderError> {
     let camera = scene.camera().camera(size.width(), size.height())?;
     let frame = Frame { scene, probe: Plain(tracer), camera: &camera, settings };
-    // `render_pixels` counts nothing per worker and `Plain` no traversal: the render pays nothing
-    // for run or traversal statistics.
+    // `render_pixels` counts nothing per worker and `Plain` no traversal: no counting work for
+    // run or traversal statistics (ADR 0008).
     let (image, statistics) = render_pixels(size, schedule, RayStatistics::NONE, |x, y| {
         frame.rgba(x, y).map(|(rgba, rays, Unmeasured)| (rgba, rays))
     })
