@@ -28,6 +28,9 @@
 
 #[cfg(test)]
 mod crate_alias_tests;
+mod host;
+#[cfg(test)]
+mod host_tests;
 mod paths;
 mod rules;
 #[cfg(test)]
@@ -106,8 +109,21 @@ pub(crate) fn core_findings(text: &str, aliases: &CrateAliases) -> Vec<Finding> 
             add(line, "hidden-path", &format!("{}: a std path a macro builds", path.join("::")));
         }
     }
+    for (line, rule, what) in host::host_findings(&toks) {
+        add(line, rule, &what);
+    }
     for (line, path) in paths(&toks) {
-        let readings = resolve(&path, &imports, aliases);
+        // `core` and `alloc` are std's own modules under another root (`core::thread` does not
+        // exist, `core::any::TypeId` is `std::any::TypeId`), so each is read as `std`.
+        let readings: Vec<Vec<String>> = resolve(&path, &imports, aliases)
+            .into_iter()
+            .map(|mut p| {
+                if p.first().is_some_and(|r| r == "core" || r == "alloc") {
+                    "std".clone_into(&mut p[0]);
+                }
+                p
+            })
+            .collect();
         if path.last().is_some_and(|s| s == "*") && readings.iter().any(std_root) {
             add(line, "hidden-path", &format!("{}: a glob of a std module", path.join("::")));
         }

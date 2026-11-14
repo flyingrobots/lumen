@@ -8,6 +8,16 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Changed
 
+- The scan refuses std values that depend on the host, the schedule or addresses
+  (flyingrobots/lumen#155), as ten new rules: `thread::current` and `ThreadId`
+  (`thread-identity`), `thread_local!` and every `static` item (`shared-state`), pointer
+  addresses (`addr`, `expose_provenance`, `align_offset`, `is_aligned`, pointer-to-integer
+  casts, `{:p}`, `std::backtrace`; `address`), `io::stdin`/`stdout`/`stderr`, `IsTerminal` and
+  the print macros (`host-io`), all of `std::os` (`std-os`), `is_*_feature_detected!` and
+  `std::arch` (`host-cpu`), `cfg!`, `#[cfg]` and `cfg_attr` on anything but `test`, `feature`,
+  `doc` and `doctest` (`platform-branch`), `file!` and `panic::Location` (`source-path`),
+  `DefaultHasher`, `SipHasher` and `collections::hash_map` (`std-hasher`), and `TypeId` and
+  `type_name` (`type-identity`). The rule tables moved to `xtask/src/nondeterminism/rules.rs`.
 - The scan follows aliases across files (flyingrobots/lumen#157): an `extern crate std as host`
   at the crate root, or a `pub use std as x` reached as `crate::m::x` from another file, is
   resolved in every core file of every deterministic crate. A glob import of a std module and a

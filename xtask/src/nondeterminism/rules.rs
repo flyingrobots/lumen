@@ -1,7 +1,7 @@
 //! This module owns the scan's vocabulary: its rule IDs, and the names and paths each bans.
 
 /// Every rule ID: Echo's `ban-nondeterminism` vocabulary, then Lumen's own.
-pub(crate) const RULES: [&str; 21] = [
+pub(crate) const RULES: [&str; 31] = [
     "time-system",
     "time-instant",
     "thread-sleep",
@@ -23,6 +23,16 @@ pub(crate) const RULES: [&str; 21] = [
     "float-literal",
     "float-cast",
     "hidden-path",
+    "thread-identity",
+    "address",
+    "host-io",
+    "std-os",
+    "host-cpu",
+    "platform-branch",
+    "source-path",
+    "shared-state",
+    "std-hasher",
+    "type-identity",
 ];
 
 /// The std modules that hold a banned item: a path a macro builds from a metavariable root
@@ -56,7 +66,7 @@ pub(super) const FLOAT_TYPES: [&str; 4] = ["f16", "f32", "f64", "f128"];
 /// Names banned wherever they are spelled, and their rules. `c_double` and `c_float` are std's
 /// aliases of `f64` and `f32` (`core::ffi`, `std::ffi`, `std::os::raw`): a float type with no
 /// float token.
-pub(super) const NAMES: [(&str, &str); 11] = [
+pub(super) const NAMES: [(&str, &str); 14] = [
     ("Instant", "time-instant"),
     ("SystemTime", "time-system"),
     ("UNIX_EPOCH", "time-system"),
@@ -68,13 +78,16 @@ pub(super) const NAMES: [(&str, &str); 11] = [
     ("FxHashSet", "unordered-container"),
     ("c_double", "float-type"),
     ("c_float", "float-type"),
+    ("DefaultHasher", "std-hasher"),
+    ("SipHasher", "std-hasher"),
+    ("ThreadId", "thread-identity"),
 ];
 
 /// Banned path prefixes and their rules. Each is compared segment by segment after the path is
-/// resolved through the file's imports ([`resolve`]); the `sleep` family is listed by name
+/// resolved through the file's imports ([`resolve`](super::paths::resolve)); the `sleep` family is listed by name
 /// because `sleep_ms` is not under `sleep`. The Bunny types are its float bridge, whose values
 /// carry floats with no float token (`PlyVertex.x`).
-pub(super) const PATHS: [(&[&str], &str); 20] = [
+pub(super) const PATHS: [(&[&str], &str); 46] = [
     (&["std", "env"], "std-env"),
     (&["std", "fs"], "std-fs"),
     (&["std", "process"], "std-process"),
@@ -84,6 +97,32 @@ pub(super) const PATHS: [(&[&str], &str); 20] = [
     (&["std", "thread", "sleep_until"], "thread-sleep"),
     (&["std", "thread", "park_timeout"], "thread-sleep"),
     (&["std", "thread", "park_timeout_ms"], "thread-sleep"),
+    (&["std", "thread", "current"], "thread-identity"),
+    (&["std", "thread", "Thread"], "thread-identity"),
+    (&["std", "thread", "ThreadId"], "thread-identity"),
+    (&["std", "thread", "LocalKey"], "shared-state"),
+    (&["std", "io", "stdin"], "host-io"),
+    (&["std", "io", "Stdin"], "host-io"),
+    (&["std", "io", "StdinLock"], "host-io"),
+    (&["std", "io", "stdout"], "host-io"),
+    (&["std", "io", "Stdout"], "host-io"),
+    (&["std", "io", "StdoutLock"], "host-io"),
+    (&["std", "io", "stderr"], "host-io"),
+    (&["std", "io", "Stderr"], "host-io"),
+    (&["std", "io", "StderrLock"], "host-io"),
+    (&["std", "io", "IsTerminal"], "host-io"),
+    (&["std", "io", "pipe"], "host-io"),
+    (&["std", "os"], "std-os"),
+    (&["std", "arch"], "host-cpu"),
+    (&["std", "panic", "Location"], "source-path"),
+    (&["std", "hash", "DefaultHasher"], "std-hasher"),
+    (&["std", "collections", "hash_map"], "std-hasher"),
+    (&["std", "any", "TypeId"], "type-identity"),
+    (&["std", "any", "type_name"], "type-identity"),
+    (&["std", "any", "type_name_of_val"], "type-identity"),
+    (&["std", "backtrace"], "address"),
+    (&["std", "fmt", "Pointer"], "address"),
+    (&["std", "ptr", "hash"], "address"),
     (&["bunny_num", "Scalar"], "float-type"),
     (&["bunny_linalg", "Vec2"], "float-type"),
     (&["bunny_linalg", "Vec3"], "float-type"),

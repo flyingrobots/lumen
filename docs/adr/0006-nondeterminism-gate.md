@@ -350,3 +350,37 @@ Clippy caught the forms it compiled; the scan resolved aliases only within one f
   compiles the same core code the Linux run lints; the scan covers the rest. The cost would be
   a Clippy step on four more legs, and the fixture's seeded forms would need a per-target
   variant. Not done.
+
+## Amendment, 2026-11-14: values that depend on the host, the schedule or addresses
+
+flyingrobots/lumen#155 found std items outside the banned modules that hand the core a value
+depending on the host, the schedule or the address-space layout, passing both layers with no
+waiver. The scheduler's guarantee (ADR 0003) holds only if the pixel function is a pure function
+of `(x, y)`; each of these breaks that. Decided, each a Lumen rule of the scan (in
+`xtask/src/nondeterminism/rules.rs` and `host.rs`); `core::` and `alloc::` paths are read as
+`std::`, since std re-exports them:
+
+| Rule | Refused in the core | Why |
+|---|---|---|
+| `thread-identity` | `std::thread::current`, `Thread`, `ThreadId` | which worker ran the pixel (`lumen-worker-N`) |
+| `shared-state` | `thread_local!`, `LocalKey`, every `static` item (`static mut` included, in a function body too) | state outside the pixel's inputs, shared across workers or calls; `const` holds data. The scheduler's shared state is a struct field (`Shared::end`), not a `static`, so it needs no waiver |
+| `address` | the methods `addr`, `expose_provenance`, `expose_addr`, `align_offset`, `is_aligned`, `is_aligned_to`; `as *const T as usize` and `x.as_ptr() as u64` (after `as_ptr`, `as_mut_ptr`, `from_ref`, `from_mut`, `addr_of`, `cast`); a `{:p}` format in any string; `fmt::Pointer`, `ptr::hash`; `std::backtrace` | the address-space layout (ASLR); a backtrace also reads `RUST_BACKTRACE` |
+| `host-io` | `io::stdin`, `stdout`, `stderr` and their types and locks, `IsTerminal` and `.is_terminal()`, `io::pipe`; `print!`, `println!`, `eprint!`, `eprintln!`, `dbg!` | the process's streams; the library prints nothing. The rest of `std::io` (`Write`, `Result`) stays allowed: the encoder writes to a caller's writer |
+| `std-os` | all of `std::os` | every platform module: processes, sockets, files and descriptors outside `std::process`, `net` and `fs` |
+| `host-cpu` | `is_*_feature_detected!`, `std::arch` / `core::arch` | the CPU's features and its intrinsics |
+| `platform-branch` | `cfg!(...)`, `#[cfg(...)]`, `#![cfg(...)]` and a `cfg_attr` predicate naming anything but `all`, `any`, `not`, `test`, `feature`, `doc` or `doctest` | a branch on the target, the host or the profile (`target_os`, `unix`, `target_pointer_width`, `debug_assertions`) or a custom `cfg` set from outside; `cfg(feature)` is the caller's manifest |
+| `source-path` | `file!`, `panic::Location` | `file!()` is the path the compiler was given, absolute when lumen is a git or registry dependency, so it differs by machine; `line!`, `column!` and `module_path!` are functions of the source text alone and stay allowed |
+| `std-hasher` | `DefaultHasher`, `SipHasher`, `std::collections::hash_map` | `DefaultHasher`'s keys are fixed but its algorithm is unspecified and may change between releases, so a hash written into output could change with the toolchain; `RandomState` is already `unordered-container`. Bunny allows `DefaultHasher` (it pins its toolchain too); lumen refuses it, the stricter |
+| `type-identity` | `any::TypeId`, `type_name`, `type_name_of_val` | values std leaves unspecified, which may differ by build |
+
+`thread::panicking`, `park`, `yield_now`, `Scope` and `ScopedJoinHandle` stay allowed: the
+scheduler needs them and none produces a value from the host. Nothing on main is refused by
+these rules.
+
+What the lexical rules cannot see: a pointer compared or ordered (`a.as_ptr() < b.as_ptr()`),
+hashed through a hasher of the core's own, or cast to an integer through a binding
+(`let p = x.as_ptr(); p as usize`), since the scan knows no types; `addr` and the other
+method names are refused whatever the receiver, so a method of the core's own with one of those
+names is a finding (waive it by its rule); a `{:p}` built at run time; and a single-segment call
+through an import (`use std::any::type_name; type_name::<T>()`) is a finding at the `use`,
+not at the call.
