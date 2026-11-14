@@ -65,6 +65,9 @@ only; it is never edited to describe a later one.
   (flyingrobots/lumen#39).
 - [The canyon scene at 4K and 16 samples per pixel, 2026-11-14](../measurements/2026-11-14-canyon.md)
   (flyingrobots/lumen#40).
+- [Traversal work per ray in the three built-in scenes, 2026-11-14](../measurements/2026-11-14-traversal-cost.md):
+  from `render --stats`, the mean box tests and primitive tests per camera, bounce and shadow
+  ray beside each scene's triangles and tree depth.
 - [The readings the README held, 2026-11-13](../measurements/2026-11-13-readme-readings.md):
   tree builders and layouts, scene versions per ray, thread scaling and tile sizes.
 
