@@ -503,9 +503,11 @@ Geordi's integrator identity is meant to pin this same composition.
 ### Smooth shading: `lumen-smooth-diffuse-path/1`
 
 A scene whose `SceneSpec::normals` gives at least one triangle a vertex normal is rendered by
-`lumen-smooth-diffuse-path/1` (`SMOOTH_INTEGRATOR_ID`), and its provenance's `integrator` field
-says so (`Integrator::for_scene`); any other scene, the two built-in ones included, keeps
-`lumen-diffuse-path/1` and its bytes. The smooth integrator is the same composition with one
+`lumen-smooth-diffuse-path/1` (`SMOOTH_INTEGRATOR_ID`), and its provenance says so: the
+`integrator` field is that name (`Integrator::for_scene`) and the `shading` field is
+`bunny-diffuse-shading/1+bunny-smooth-shading/1+bunny-smooth-normal/1` (`SMOOTH_SHADING_IDS`, the
+Bunny contracts its paths use, in the order they apply). Any other scene, the two built-in ones
+included, keeps `lumen-diffuse-path/1`, `bunny-diffuse-shading/1` and its bytes. The smooth integrator is the same composition with one
 change, made per triangle: at a hit on a triangle with a vertex normal, steps 3 to 5 use Bunny's
 `bunny-smooth-shading/1`:
 

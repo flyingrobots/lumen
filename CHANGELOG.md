@@ -14,8 +14,11 @@ All notable changes to lumen are recorded here. The format follows
   which Bunny may reject as below the surface: then no bounce ray is traced and it adds zero).
   Other triangles are shaded flat as before. A scene with any vertex normal is rendered by
   `lumen-smooth-diffuse-path/1` (`SMOOTH_INTEGRATOR_ID`), which its provenance's `integrator`
-  field names (`Integrator::for_scene`, `Scene::smooth_triangles`); every other scene keeps
-  `lumen-diffuse-path/1`, and both built-in scenes keep their image hashes. The shading of a hit
+  field names (`Integrator::for_scene`, `Scene::smooth_triangles`); its `shading` field is then
+  `bunny-diffuse-shading/1+bunny-smooth-shading/1+bunny-smooth-normal/1` (`SMOOTH_SHADING_IDS`,
+  `Integrator::shading_id`). Every other scene keeps `lumen-diffuse-path/1` and
+  `bunny-diffuse-shading/1`, and both built-in scenes keep their image hashes and their printed
+  provenance. The shading of a hit
   moved to `render/shade.rs` first, unchanged. `tests/smooth.rs` (also on the WebAssembly leg)
   checks the integrator's choice, the reference scene with its face normals at every vertex
   rendering its flat bytes, a hand-derived smooth value, the rejected bounce, and every sample of a

@@ -13,6 +13,7 @@ use core::ops::Add;
 use bunny_num::FixedQ32_32;
 use bunny_optics::{
     write_rgba8, PinholeCamera, PixelAccumulator, PixelSampler, ToneCurve, MAX_SAMPLES_PER_PIXEL,
+    SHADING_ID,
 };
 
 use crate::image::{ImageSize, Rgba8Image};
@@ -55,8 +56,20 @@ pub const INTEGRATOR_ID: &str = "lumen-diffuse-path/1";
 /// vertex normal is shaded exactly as by it. It adds no arithmetic of its own.
 pub const SMOOTH_INTEGRATOR_ID: &str = "lumen-smooth-diffuse-path/1";
 
+/// The provenance's `shading` field for a scene shaded by [`SMOOTH_INTEGRATOR_ID`]: the Bunny
+/// shading contracts its paths use, joined by `+` in the order they apply at a smooth hit.
+/// `bunny-diffuse-shading/1` (the surface hit, start point, shadow ray and reflection, and every
+/// flat hit), then `bunny-smooth-shading/1` (`SmoothHit`), then `bunny-smooth-normal/1` (the
+/// interpolation `SmoothHit::new` calls). Each part is Bunny's constant (`SHADING_ID`,
+/// `SMOOTH_SHADING_ID`, `SMOOTH_NORMAL_ID`), and a test holds the string to them.
+///
+/// `bunny-vertex-normals/1` is not part of it: vertex normals are an input the scene supplies,
+/// however it computed them, and the content digest covers their values (ADR 0007).
+pub const SMOOTH_SHADING_IDS: &str =
+    "bunny-diffuse-shading/1+bunny-smooth-shading/1+bunny-smooth-normal/1";
+
 /// Which composition [`trace_path`] is for a scene, and its stable name: the provenance's
-/// `integrator` field (ADR 0007).
+/// `integrator` field, and the Bunny shading contracts it uses: the `shading` field (ADR 0007).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Integrator {
     /// [`INTEGRATOR_ID`]: no triangle of the scene has a vertex normal.
@@ -83,6 +96,17 @@ impl Integrator {
         match self {
             Self::DiffusePath => INTEGRATOR_ID,
             Self::SmoothDiffusePath => SMOOTH_INTEGRATOR_ID,
+        }
+    }
+
+    /// The Bunny shading contracts the integrator uses, the provenance's `shading` field:
+    /// Bunny's `SHADING_ID` (`bunny-diffuse-shading/1`) alone for [`Integrator::DiffusePath`],
+    /// [`SMOOTH_SHADING_IDS`] for [`Integrator::SmoothDiffusePath`].
+    #[must_use]
+    pub const fn shading_id(self) -> &'static str {
+        match self {
+            Self::DiffusePath => SHADING_ID,
+            Self::SmoothDiffusePath => SMOOTH_SHADING_IDS,
         }
     }
 }

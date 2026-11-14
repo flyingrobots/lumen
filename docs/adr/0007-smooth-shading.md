@@ -1,6 +1,7 @@
 # ADR 0007: Smooth shading: the integrator's identity and the vertex normals
 
-Status: accepted (flyingrobots/lumen#39)
+Status: accepted (flyingrobots/lumen#39); the `shading` field's rule amended before it landed
+(see [The `shading` field follows the scene too](#the-shading-field-follows-the-scene-too)).
 
 ## Context
 
@@ -53,11 +54,30 @@ scene (`Integrator::for_scene`, from `Scene::smooth_triangles`):
 The reference scene and Fixed Point version 1 therefore keep `lumen-diffuse-path/1`, their
 golden image hashes and their provenance (but for the content digest, ADR 0005 version 2).
 
-The `shading` field stays `bunny-diffuse-shading/1` for every scene: a smooth hit is built on
-`SurfaceHit::new`, its start point, its shadow ray and `Albedo::reflect`, all of that contract.
-The smooth steps are named by the integrator identity, which states that it uses
-`bunny-smooth-shading/1`, just as `lumen-diffuse-path/1` states the sampler it uses; the `bunny`
-field pins the commit that defines all of them.
+### The `shading` field follows the scene too
+
+The `shading` field names the Bunny shading contracts the scene's paths actually use
+(`Integrator::shading_id`), so that it is never false:
+
+- a flat scene: `bunny-diffuse-shading/1`, exactly as before, so a flat scene's provenance,
+  and the command's printed report of it, does not change by a byte;
+- a scene with any smooth triangle: `SMOOTH_SHADING_IDS`,
+  `bunny-diffuse-shading/1+bunny-smooth-shading/1+bunny-smooth-normal/1`.
+
+**Form.** Bunny's identities, each exactly as Bunny's constant spells it (`SHADING_ID`,
+`SMOOTH_SHADING_ID`, `SMOOTH_NORMAL_ID`), joined by `+` with no spaces, in the order they apply
+at a smooth hit: the diffuse contract first (every hit's `SurfaceHit`, start point, shadow ray
+and reflection, and every flat hit), then the smooth shading that wraps it, then the normal
+interpolation `SmoothHit::new` calls. `+` appears in no Bunny identity, so the value splits back
+into its parts. A test holds the string to Bunny's three constants, so a Bunny pin that versions
+one of them fails until the value is updated, and the field stays one `Identity`: thirteen
+fields, in their order, with nothing appended.
+
+**`bunny-vertex-normals/1` is not in it.** Vertex normals are an input the scene supplies, like
+its triangles: a scene may compute them with Bunny's `VertexNormals`, another rule or by hand,
+and the render cannot tell. What decides pixels is their values, which the content digest
+covers (ADR 0005, version 2). How a scene made them is part of the scene's own definition (its
+versioned name), not of the render's shading.
 
 ## Consequences
 
@@ -79,6 +99,8 @@ field pins the commit that defines all of them.
 - **One identity for every scene** (`lumen-diffuse-path/2`, or the smooth name for all): it
   changes the reference scene's provenance while its bytes do not change, and it would name a
   smooth composition for a scene that has nothing smooth in it.
+- **The `shading` field fixed at `bunny-diffuse-shading/1`** (this ADR's first form): every
+  smooth scene's provenance would then omit the contracts that shade its smooth hits.
 - **A provenance field for the smooth contract** (`smooth-shading`): it needs a value meaning
   "not used" for every flat scene and a fourteenth field in every report, to say what the
   integrator's identity already says.

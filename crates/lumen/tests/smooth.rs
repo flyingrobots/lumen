@@ -98,13 +98,16 @@ fn a_scene_gets_the_smooth_integrator_only_when_a_triangle_has_a_vertex_normal()
     let triangles = pyramid();
     let size = ImageSize::new(4, 4).expect("size");
     let settings = RenderSettings::new(1, 0).expect("settings");
-    for (normals, smooth, integrator) in [
-        (Vec::new(), 0, "lumen-diffuse-path/1"),
-        (vec![[None; 3]; 4], 0, "lumen-diffuse-path/1"),
+    let flat = "bunny-diffuse-shading/1";
+    let smooth_shading = "bunny-diffuse-shading/1+bunny-smooth-shading/1+bunny-smooth-normal/1";
+    for (normals, smooth, integrator, shading) in [
+        (Vec::new(), 0, "lumen-diffuse-path/1", flat),
+        (vec![[None; 3]; 4], 0, "lumen-diffuse-path/1", flat),
         (
             vec![[None, Some(FixedUnitVec3::UNIT_Y), None], [None; 3], [None; 3], [None; 3]],
             1,
             "lumen-smooth-diffuse-path/1",
+            smooth_shading,
         ),
     ] {
         let scene = build(&triangles, &normals, noon());
@@ -112,10 +115,25 @@ fn a_scene_gets_the_smooth_integrator_only_when_a_triangle_has_a_vertex_normal()
         assert_eq!(Integrator::for_scene(&scene).id(), integrator);
         let fields = RenderProvenance::new(&scene, size, settings).fields();
         assert_eq!(fields[1], ("integrator", lumen::ProvenanceValue::Identity(integrator)));
+        assert_eq!(fields[2], ("shading", lumen::ProvenanceValue::Identity(shading)));
+        assert_eq!(Integrator::for_scene(&scene).shading_id(), shading);
     }
     assert_eq!(lumen::SMOOTH_INTEGRATOR_ID, "lumen-smooth-diffuse-path/1");
     assert_eq!(bunny_optics::SMOOTH_SHADING_ID, "bunny-smooth-shading/1");
     assert_eq!(bunny_optics::SMOOTH_NORMAL_ID, "bunny-smooth-normal/1");
+}
+
+/// Oracle: Bunny's own identity constants. The smooth `shading` value is exactly Bunny's
+/// diffuse, smooth-shading and smooth-normal identities joined by `+` in that order, so a Bunny
+/// pin that versions any of them fails here until the string is updated.
+#[test]
+fn the_smooth_shading_value_is_bunnys_three_identities_joined() {
+    let joined =
+        [bunny_optics::SHADING_ID, bunny_optics::SMOOTH_SHADING_ID, bunny_optics::SMOOTH_NORMAL_ID]
+            .join("+");
+    assert_eq!(lumen::SMOOTH_SHADING_IDS, joined);
+    assert_eq!(Integrator::DiffusePath.shading_id(), bunny_optics::SHADING_ID);
+    assert!(!joined.contains(bunny_optics::VERTEX_NORMALS_ID));
 }
 
 /// The reference scene (31 511 triangles), given each triangle's own unit face normal at all

@@ -5,7 +5,7 @@
 //! computed on this run (the thread count, the band height, the wall-clock times) is not provenance:
 //! it never changes a pixel, so a front end reports it separately.
 
-use bunny_optics::{RGBA8_OPAQUE_IDENTITY, SAMPLER_ID, SHADING_ID};
+use bunny_optics::{RGBA8_OPAQUE_IDENTITY, SAMPLER_ID};
 
 use crate::image::ImageSize;
 use crate::render::{Integrator, RenderSettings, MAX_BOUNCES, TONE_CURVE};
@@ -128,8 +128,9 @@ impl RenderProvenance {
     ///    [`INTEGRATOR_ID`](crate::INTEGRATOR_ID), or
     ///    [`SMOOTH_INTEGRATOR_ID`](crate::SMOOTH_INTEGRATOR_ID) for a scene with vertex normals,
     ///    which also uses Bunny's `bunny-smooth-shading/1` (ADR 0007);
-    /// 3. `shading`: Bunny's shading contract, `bunny_optics::SHADING_ID`, whose surface hit,
-    ///    start point, shadow ray and reflection every path uses, smooth or not;
+    /// 3. `shading`: the Bunny shading contracts that integrator uses
+    ///    ([`Integrator::shading_id`]): `bunny_optics::SHADING_ID` for a flat scene,
+    ///    [`SMOOTH_SHADING_IDS`](crate::SMOOTH_SHADING_IDS) for a smooth one;
     /// 4. `sampler`: Bunny's sampler, `bunny_optics::SAMPLER_ID`;
     /// 5. `tone`: the tone curve of [`TONE_CURVE`](crate::TONE_CURVE);
     /// 6. `encoding`: the pixel encoding, `bunny_optics::RGBA8_OPAQUE_IDENTITY`;
@@ -148,7 +149,7 @@ impl RenderProvenance {
         [
             ("scene", self.name.map_or(Unnamed, Identity)),
             ("integrator", Identity(self.integrator.id())),
-            ("shading", Identity(SHADING_ID)),
+            ("shading", Identity(self.integrator.shading_id())),
             ("sampler", Identity(SAMPLER_ID)),
             ("tone", Identity(TONE_CURVE.identity())),
             ("encoding", Identity(RGBA8_OPAQUE_IDENTITY)),
