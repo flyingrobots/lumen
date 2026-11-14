@@ -15,7 +15,7 @@ fn reported(source: &str) -> Vec<(usize, &'static str)> {
     core_findings(source).iter().map(|f| (f.line, f.rule)).collect()
 }
 
-const REJECTED: [Form; 67] = [
+const REJECTED: [Form; 79] = [
     ("instant: qualified call", "pub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 1),
     ("instant: use then bare call", "use std::time::Instant;\npub fn f() { let _ = Instant::now(); }", "time-instant", 1),
     ("instant: use group", "use std::time::{Duration, Instant};\npub fn f() -> Duration { Instant::now().elapsed() }", "time-instant", 1),
@@ -83,9 +83,21 @@ const REJECTED: [Form; 67] = [
     ("float: Bunny's into_float", "pub fn f(r: bunny_geom::FixedRay3) -> bool { r.into_float() == r.into_float() }", "float-type", 1),
     ("float: a Bunny float vector by import", "use bunny_linalg::Vec3;\npub fn f(v: Vec3) -> Vec3 { v }", "float-type", 1),
     ("float: a codec vertex's field", "pub fn f(v: bunny_codec::PlyVertex) -> bool { v.x == v.y }", "float-type", 1),
+    ("float: c_double by trait-call syntax (flyingrobots/lumen#156)", "pub fn f(x: u32) -> bool { <core::ffi::c_double as From<u32>>::from(x).sin().is_sign_positive() }", "float-type", 1),
+    ("float: std::os::raw::c_double", "pub fn f(x: u32) -> bool { std::os::raw::c_double::from(x).cos().is_sign_positive() }", "float-type", 1),
+    ("float: std::ffi::c_double", "pub fn f(x: u32) -> bool { std::ffi::c_double::from(x).tan().is_sign_positive() }", "float-type", 1),
+    ("float: c_double renamed", "use core::ffi::c_double as Real;\npub fn f(x: u32) -> bool { Real::from(x).exp().is_sign_positive() }", "float-type", 1),
+    ("float: c_double through a glob", "use core::ffi::*;\npub fn f(x: u32) -> bool {\n    c_double::from(x).ln().is_sign_positive()\n}", "float-type", 3),
+    ("float: an alias of c_double", "pub type Real = core::ffi::c_double;", "float-type", 1),
+    ("float: c_double as a qualified type", "pub fn f(x: u32) -> bool { <core::ffi::c_double>::from(x).sin().is_sign_positive() }", "float-type", 1),
+    ("float: c_double in parse's turbofish", "pub fn f() -> bool { \"1\".parse::<core::ffi::c_double>().is_ok() }", "float-type", 1),
+    ("float: f16", "pub fn f(x: f16) -> u16 { x.to_bits() }", "float-type", 1),
+    ("float: core::primitive::f128", "pub fn f(x: core::primitive::f128) -> u128 { x.to_bits() }", "float-type", 1),
+    ("float: a cast to f128", "pub fn f(x: u32) -> u32 { (x as f128).to_bits() as u32 }", "float-cast", 1),
+    ("float: a name with the word f16", "pub fn f(x: u16) -> u32 { from_f16_bits(x) }", "float-type", 1),
 ];
 
-const ACCEPTED: [(&str, &str); 18] = [
+const ACCEPTED: [(&str, &str); 20] = [
     ("sin and sqrt methods on a fixed-point type", "pub struct Fx(pub i64);\nimpl Fx { pub fn sin(self) -> Self { self } pub fn sqrt(self) -> Self { self } }\npub fn f() -> Fx { Fx(1).sin().sqrt() }"),
     ("HashMap in a comment and a doc comment", "// a HashMap would iterate in a random order\n/// not a std::collections::HashMap\npub fn f() {}"),
     ("HashMap and f64 in strings", "pub fn f() -> (&'static str, &'static str) { (\"std::collections::HashMap\", r#\"f64::NAN 0.5\"#) }"),
@@ -103,6 +115,8 @@ const ACCEPTED: [(&str, &str); 18] = [
     ("core renamed by extern crate", "extern crate core as c;\npub fn f() -> c::time::Duration { c::time::Duration::ZERO }"),
     ("f64 inside a longer word", "pub fn buff64() -> u32 { 0 }\npub fn of32x() -> u32 { buff64() }"),
     ("the float_arithmetic lint denied", "#![deny(clippy::float_arithmetic)]\npub fn f() {}"),
+    ("core::ffi's integer aliases", "pub fn f(x: core::ffi::c_int) -> core::ffi::c_uint { x.unsigned_abs() }"),
+    ("f16 and f128 inside longer words", "pub fn half16() -> u32 { 0 }\npub fn of128x() -> u32 { half16() }"),
     ("Bunny's fixed-point vector and an error named Float", "pub fn f(v: bunny_linalg::FixedVec3) -> Result<bunny_linalg::FixedVec3, bunny_num::FloatConversionError> { Ok(v) }"),
 ];
 
