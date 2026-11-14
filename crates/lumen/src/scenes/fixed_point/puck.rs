@@ -1,4 +1,5 @@
-//! The ON puck: a white disc with a black rim lying in the 8 box, with "ON" in block letters.
+//! The ON puck: a white disc with a thin black rim lying in the 8 box, with "ON" in black block
+//! letters. Its side is white too, so that from the camera's low view it reads as a white disc.
 
 use super::content::{FixedPointContent, PartKind};
 use super::solids::{fan, flat_rect, quad, ring, walls, StepTriangle, Steps, UNIT};
@@ -7,21 +8,23 @@ use super::table::{FELT_Y, PAINT_Y};
 /// The puck's centre on the felt, in grid steps: in the far half of the 8 box, behind its
 /// numeral.
 pub const PUCK_CENTRE: Steps = [UNIT * 7 / 8, FELT_Y, -UNIT * 15 / 4];
-/// The puck's radius (0.5 units), the radius of its white face (0.4) and its height
-/// (`3/16`).
+/// The puck's radius (0.5 units).
 pub const PUCK_RADIUS: i64 = UNIT / 2;
-/// The radius of the white face inside the black rim.
-pub const PUCK_FACE_RADIUS: i64 = UNIT * 2 / 5;
-/// The puck's height.
-pub const PUCK_HEIGHT: i64 = UNIT * 3 / 16;
+/// The radius of the white face inside the black rim: 0.46875 units, so the rim is a ring
+/// `1/32` unit wide, a line around the face.
+pub const PUCK_FACE_RADIUS: i64 = UNIT * 15 / 32;
+/// The puck's height: `1/8` unit, a quarter of its radius, as a casino puck's.
+pub const PUCK_HEIGHT: i64 = UNIT / 8;
 
-/// The letters' height (along Z), width, stroke and the gap between them.
-const LETTER_DEPTH: i64 = UNIT * 3 / 8;
-const LETTER_WIDTH: i64 = UNIT * 7 / 32;
-const LETTER_STROKE: i64 = UNIT / 16;
+/// The letters' height (along Z), width, stroke and the gap between them: bold enough to read
+/// from the camera's low view. The pair spans `0.5625` by `0.4375` units, inside the face (its
+/// corners are about `0.36` units from the centre, the face's radius `0.47`).
+const LETTER_DEPTH: i64 = UNIT * 7 / 16;
+const LETTER_WIDTH: i64 = UNIT / 4;
+const LETTER_STROKE: i64 = UNIT * 3 / 32;
 const LETTER_GAP: i64 = UNIT / 16;
 
-/// Appends the puck's white face, its black rim (the ring around the face and the side) and
+/// Appends the puck's white face, its black rim (the ring around the face), its white side and
 /// its letters.
 pub(crate) fn push_puck(content: &mut FixedPointContent) {
     let [cx, cy, cz] = PUCK_CENTRE;
@@ -40,8 +43,10 @@ pub(crate) fn push_puck(content: &mut FixedPointContent) {
             quad(&mut rim, [i0, o0, o1, i1], [0, 1, 0]);
         }
     }
-    walls(&mut rim, &around(PUCK_RADIUS, cy), [0, PUCK_HEIGHT, 0], [cx, cy, cz]);
     content.push_steps(PartKind::PuckRim, &rim);
+    let mut side = Vec::new();
+    walls(&mut side, &around(PUCK_RADIUS, cy), [0, PUCK_HEIGHT, 0], [cx, cy, cz]);
+    content.push_steps(PartKind::PuckSide, &side);
     content.push_steps(PartKind::PuckLetters, &letters(top + PAINT_Y));
 }
 
