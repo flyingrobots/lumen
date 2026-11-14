@@ -20,8 +20,15 @@ All notable changes to lumen are recorded here. The format follows
 - `tests/library.rs`: the golden image rendered on one worker through the library alone (runs on
   every platform, WebAssembly included), and on WebAssembly a two-worker render must be
   `RenderError::Spawn`.
-- `docs/adr/0003-webassembly-determinism-leg.md`: WebAssembly is tested on `wasm32-wasip1` under
+- `docs/adr/0004-webassembly-determinism-leg.md`: WebAssembly is tested on `wasm32-wasip1` under
   Node's WASI with the standard test harness and no added dependency, on one worker.
+- `docs/adr/0003-row-bands.md` (flyingrobots/lumen#28): the row-band scheduler, the proof that
+  the reported error is the raster-first failure and that work past it stops, the measurements
+  that located the 6a816ef slowdown in code generation, and what was rejected. It supersedes
+  ADR 0001. A dated record, `docs/measurements/2026-11-13-4k-row-bands.md`: the 4K reference
+  scene at `c731bb4`, three runs at 18 threads (total 5.983 to 6.582 s) and one at 1 thread
+  (66.156 s), with the same image hash as before, and an interleaved Fixed Point 4K comparison
+  at 64 samples (median 20.734 s with row bands, 23.075 s with tiles, the same hash).
 - `lumen render --scene reference|fixed-point` (flyingrobots/lumen#15): the command renders the
   Fixed Point scene. The default is `reference`, whose output and golden hash are unchanged. An
   unknown name is a usage error (exit code 2) listing the valid names, and `--help` lists them.
@@ -52,7 +59,7 @@ All notable changes to lumen are recorded here. The format follows
   scene's identity, the image size and the settings. `fields()` lists `scene`, `integrator`,
   `shading`, `sampler`, `tone`, `encoding`, `bunny`, `size`, `pixels`, `samples`, `seed` and
   `bounces` in that stable order as `ProvenanceValue`s. `lumen render` prints its first twelve
-  lines from it. Threads, tile, file and times are facts of the run and stay in the command's
+  lines from it. Threads, band height, file and times are facts of the run and stay in the command's
   report.
 - Compiling doc examples for building a scene, rendering, hashing and provenance, and writing a
   PNG into memory; `crates/lumen/tests/library.rs`, a render through the library API alone
@@ -163,6 +170,27 @@ All notable changes to lumen are recorded here. The format follows
   jobs (flyingrobots/lumen#23). The README's and the crate documentation's platform claim is
   narrowed to the five platforms those jobs check, with a table of which job proves which.
 
+- Threads take bands of whole rows instead of tiles (flyingrobots/lumen#28; ADR 0003 supersedes
+  ADR 0001). `chunks_mut` cuts the image into disjoint row bands, and a worker writes its band's
+  pixels straight into the image: the per-worker tile buffer, the copy and the image mutex are
+  gone. One small mutex around the band iterator keeps hand-out dynamic. Each worker returns its
+  ray count and earliest failure through `join`, and the caller sums the counts and keeps the
+  smallest `(y, x)`: the record mutex is gone. The only shared value a worker writes is one
+  atomic, the first row no longer wanted. After a failure in row `y`, no row from `y` down is
+  begun (tiles stopped at the end of the failing row of tiles). The image, the ray count and the
+  reported error are unchanged at every schedule; the golden and 4K hashes hold.
+- `lumen render --tile N | WxH` is replaced by `--band-rows R` (default 1, chosen by
+  measurement), and the report's `tile WxH` line by `band-rows R`. lumen is unreleased, so
+  `--tile` is removed rather than kept with another meaning; it is now refused as an unknown
+  option. In the library, `BandRows` and `DEFAULT_BAND_ROWS` replace `TileSize` and
+  `DEFAULT_TILE`, `Schedule::band` and `Schedule::with_band` replace `Schedule::tile` and
+  `Schedule::with_tile`, and `ScheduleError::EmptyBand` replaces `ScheduleError::EmptyTile`.
+- Release builds use `lto = "fat"` and `codegen-units = 1`: renders are 6 to 18 % faster at 1, 4
+  and 18 threads (1280 by 720, 16 samples, interleaved exclusive runs; the 4K render at one
+  thread went from 72.5 s to 66.2 s, at 18 threads it is unchanged within noise). This also accounts for
+  the 8 % multi-thread slowdown that appeared when the scheduler was split out (0fc51d7 to
+  6a816ef). With whole-program optimization both commits are equally fast, so the slowdown came
+  from inlining across the Bunny crate boundary, not from the shared state. No pixel changes.
 - The command line moves out of the library (flyingrobots/lumen#19): `lumen::cli` is gone, and
   argument parsing, the usage text, the default thread count, the clock, the file and the
   terminal live in the `lumen` binary (`crates/lumen/src/bin/lumen/`). The command's output and
@@ -197,6 +225,9 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Removed
 
+- `TileSize`, `DEFAULT_TILE`, `RenderError::TileGeometry`, `WorkerError::TileGeometry` and the
+  command's `UsageError::InvalidTile` (flyingrobots/lumen#28): there are no tiles and no tile
+  geometry left to fail.
 - `lumen-reference-scene/2` is retired.
 - `lumen-reference-scene/1` and the normal-colour debugging view `lumen-normal-shading/1` are
   retired; the view is not kept behind a flag.

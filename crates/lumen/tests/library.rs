@@ -4,8 +4,8 @@
 //! the library (flyingrobots/lumen#19).
 
 use lumen::{
-    png_len, reference_scene, render, render_scheduled, write_png, BuiltinScene, ImageSize,
-    ProvenanceValue, RenderProvenance, RenderSettings, Schedule, TileSize, BUNNY_REV,
+    png_len, reference_scene, render, render_scheduled, write_png, BandRows, BuiltinScene,
+    ImageSize, ProvenanceValue, RenderProvenance, RenderSettings, Schedule, BUNNY_REV,
     REFERENCE_SCENE_ID,
 };
 
@@ -40,7 +40,7 @@ fn the_reference_image_renders_through_the_library_alone() {
     let scene = reference_scene().expect("the reference scene builds");
     let size = ImageSize::new(96, 54).expect("valid size");
     let settings = RenderSettings::new(4, 0).expect("valid settings");
-    let schedule = Schedule::new(3, TileSize::new(8, 8).expect("valid tile")).expect("valid");
+    let schedule = Schedule::new(3, BandRows::new(8).expect("valid band")).expect("valid");
     let render = render_scheduled(&scene, size, settings, schedule).expect("renders");
     assert_eq!(render.image.hash(), GOLDEN_96X54_4SPP);
 }
@@ -65,7 +65,7 @@ fn on_webassembly_a_second_worker_is_a_spawn_error() {
     let scene = reference_scene().expect("the reference scene builds");
     let size = ImageSize::new(96, 54).expect("valid size");
     let settings = RenderSettings::new(4, 0).expect("valid settings");
-    let schedule = Schedule::new(2, TileSize::new(8, 8).expect("valid tile")).expect("valid");
+    let schedule = Schedule::new(2, BandRows::new(8).expect("valid band")).expect("valid");
     let refused = render_scheduled(&scene, size, settings, schedule).map(|render| render.rays);
     assert_eq!(refused, Err(lumen::RenderError::Spawn));
 }
@@ -117,7 +117,7 @@ fn every_builtin_scene_builds_renders_and_has_its_own_identity() {
     let mut hashes = std::collections::BTreeSet::new();
     for scene in BuiltinScene::ALL {
         let built = scene.build().expect("the scene builds");
-        let schedule = Schedule::new(1, TileSize::new(8, 4).expect("valid tile")).expect("valid");
+        let schedule = Schedule::new(1, BandRows::new(4).expect("valid band")).expect("valid");
         let rendered = render_scheduled(&built, size, settings, schedule).expect("renders");
         assert_eq!(scene.name().parse(), Ok(scene), "the name round-trips");
         assert_eq!(RenderProvenance::new(scene.id(), size, settings).scene(), scene.id());

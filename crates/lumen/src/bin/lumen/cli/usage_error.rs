@@ -33,12 +33,10 @@ pub(crate) enum UsageError {
     },
     /// The sample count was refused.
     Samples(SettingsError),
-    /// The thread count or the tile size was refused.
+    /// The thread count or the band height was refused.
     Schedule(ScheduleError),
     /// The scene name is not a built-in scene.
     Scene(ParseSceneError),
-    /// A tile is not `N` or `WxH` with decimal `u32`s.
-    InvalidTile(String),
 }
 
 impl fmt::Display for UsageError {
@@ -56,12 +54,9 @@ impl fmt::Display for UsageError {
                 write!(f, "{option} needs a whole number, not {value:?}")
             }
             Self::Samples(error) => write!(f, "--samples: {error}"),
-            Self::Schedule(error @ ScheduleError::EmptyTile) => write!(f, "--tile: {error}"),
+            Self::Schedule(error @ ScheduleError::EmptyBand) => write!(f, "--band-rows: {error}"),
             Self::Schedule(error) => write!(f, "--threads: {error}"),
             Self::Scene(error) => write!(f, "--scene: {error}"),
-            Self::InvalidTile(value) => {
-                write!(f, "--tile needs N or WxH with whole numbers, not {value:?}")
-            }
         }
     }
 }

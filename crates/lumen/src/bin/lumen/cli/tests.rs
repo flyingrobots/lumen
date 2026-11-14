@@ -22,7 +22,7 @@ fn render_with_defaults_and_options() {
             height: 180,
             settings: settings(4, 0),
             threads: None,
-            tile: DEFAULT_TILE,
+            band: DEFAULT_BAND_ROWS,
             out: Some("a.png".into())
         })
     );
@@ -34,7 +34,7 @@ fn render_with_defaults_and_options() {
             height: 9,
             settings: settings(16, 7),
             threads: None,
-            tile: DEFAULT_TILE,
+            band: DEFAULT_BAND_ROWS,
             out: Some("b.png".into())
         })
     );
@@ -46,31 +46,31 @@ fn render_with_defaults_and_options() {
             height: 180,
             settings: settings(1024, u32::MAX),
             threads: None,
-            tile: DEFAULT_TILE,
+            band: DEFAULT_BAND_ROWS,
             out: Some("c".into())
         })
     );
     assert_eq!(
-        parse_str("render --threads 7 --tile 16x8"),
+        parse_str("render --threads 7 --band-rows 8"),
         Ok(Command::Render {
             scene: BuiltinScene::Reference,
             width: 320,
             height: 180,
             settings: settings(4, 0),
             threads: Some(7),
-            tile: TileSize::new(16, 8).expect("valid"),
+            band: BandRows::new(8).expect("valid"),
             out: None
         })
     );
     assert_eq!(
-        parse_str("render --tile 64 --threads 256"),
+        parse_str("render --band-rows 64 --threads 256"),
         Ok(Command::Render {
             scene: BuiltinScene::Reference,
             width: 320,
             height: 180,
             settings: settings(4, 0),
             threads: Some(256),
-            tile: TileSize::new(64, 64).expect("valid"),
+            band: BandRows::new(64).expect("valid"),
             out: None
         })
     );
@@ -132,7 +132,7 @@ fn bad_command_lines_are_refused() {
         Err(UsageError::Repeated("--width"))
     );
     assert_eq!(parse_str("render --seed 2 --seed 2 --out a"), Err(UsageError::Repeated("--seed")));
-    for option in ["--width", "--height", "--samples", "--seed", "--threads"] {
+    for option in ["--width", "--height", "--samples", "--seed", "--threads", "--band-rows"] {
         for value in ["-1", "+5", "1.5", "abc", "4294967296", "0x10", ""] {
             let args = ["render", option, value, "--out", "a"];
             assert_eq!(
@@ -145,7 +145,7 @@ fn bad_command_lines_are_refused() {
 }
 
 #[test]
-fn threads_and_tiles_are_checked() {
+fn threads_and_bands_are_checked() {
     assert_eq!(
         parse_str("render --threads 0"),
         Err(UsageError::Schedule(ScheduleError::NoThreads))
@@ -155,15 +155,16 @@ fn threads_and_tiles_are_checked() {
         Err(UsageError::Schedule(ScheduleError::TooManyThreads(257)))
     );
     assert_eq!(parse_str("render --threads 2 --threads 3"), Err(UsageError::Repeated("--threads")));
-    for zero in ["0", "0x4", "4x0"] {
-        let line = format!("render --tile {zero}");
-        assert_eq!(parse_str(&line), Err(UsageError::Schedule(ScheduleError::EmptyTile)));
-    }
-    for bad in ["x", "4x", "x4", "4x4x4", "4X4", "-4", "4.5", "4 ", "4294967296", "4x+4"] {
-        let args = ["render", "--tile", bad];
-        assert_eq!(parse(args), Err(UsageError::InvalidTile(bad.into())), "{bad:?}");
-    }
-    assert_eq!(parse_str("render --tile 4 --tile 4"), Err(UsageError::Repeated("--tile")));
+    assert_eq!(
+        parse_str("render --band-rows 0"),
+        Err(UsageError::Schedule(ScheduleError::EmptyBand))
+    );
+    assert_eq!(
+        parse_str("render --band-rows 4 --band-rows 4"),
+        Err(UsageError::Repeated("--band-rows"))
+    );
+    // The tile option is gone, not quietly reinterpreted.
+    assert_eq!(parse_str("render --tile 32"), Err(UsageError::UnknownOption("--tile".into())));
 }
 
 #[test]
@@ -200,7 +201,7 @@ fn non_unicode_arguments_never_panic() {
     let Ok(Command::Render { out: Some(out), .. }) = parsed else { panic!("{parsed:?}") };
     assert_eq!(out.as_os_str().as_bytes(), bytes.as_bytes());
     // A non-Unicode number is a typed error.
-    for option in ["--width", "--height", "--samples", "--seed", "--threads"] {
+    for option in ["--width", "--height", "--samples", "--seed", "--threads", "--band-rows"] {
         let parsed = args(&[OsStr::new(option), bytes, OsStr::new("--out"), OsStr::new("a")]);
         assert_eq!(
             parsed,
@@ -209,11 +210,6 @@ fn non_unicode_arguments_never_panic() {
     }
     // A non-Unicode scene name is an unknown scene.
     assert!(matches!(args(&[OsStr::new("--scene"), bytes]), Err(UsageError::Scene(_))));
-    // A non-Unicode tile is a typed error.
-    assert_eq!(
-        args(&[OsStr::new("--tile"), bytes]),
-        Err(UsageError::InvalidTile("out-\u{fffd}\u{fffd}.png".into()))
-    );
     // A non-Unicode option or command is unknown.
     assert_eq!(args(&[bytes]), Err(UsageError::UnknownOption("out-\u{fffd}\u{fffd}.png".into())));
     assert_eq!(parse([bytes]), Err(UsageError::UnknownCommand("out-\u{fffd}\u{fffd}.png".into())));

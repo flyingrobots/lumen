@@ -1,4 +1,4 @@
-# ADR 0003: How WebAssembly is tested
+# ADR 0004: How WebAssembly is tested
 
 Status: accepted (flyingrobots/lumen#23)
 

@@ -1,6 +1,8 @@
 # ADR 0001: Tile scheduling on worker threads
 
-Status: accepted (flyingrobots/lumen#4)
+Status: superseded by [ADR 0003](0003-row-bands.md) (flyingrobots/lumen#28). Accepted in
+flyingrobots/lumen#4. The text below is the decision as it was taken; the code no longer has
+tiles, the tile buffer, the image mutex or the record mutex.
 
 ## Context
 
