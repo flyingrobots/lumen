@@ -243,6 +243,8 @@ guard halting on every drop, not only while unwinding.
 
 ## Image hash and PNG
 
+[ADR 0009](adr/0009-image-hash.md) records what is hashed and why.
+
 The image hash is `sha256:` followed by the lowercase hex SHA-256 of the raw RGBA8 bytes
 (row-major, row 0 at the top, alpha 255), as Geordi's ray-traced scene profile specifies. Width
 and height are not part of it. The PNG file is only a container for those bytes; its own hash is

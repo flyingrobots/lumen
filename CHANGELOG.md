@@ -24,6 +24,20 @@ All notable changes to lumen are recorded here. The format follows
   their tests. `the_library_reference_names_every_item_of_the_crate_root` fails if a name
   `lib.rs` makes public is missing from the library page. The scene page's commands are plain
   `cargo run` invocations.
+- `docs/explanation.md` (part of flyingrobots/lumen#25), moved from the README: what a render is,
+  the integrator, smooth shading, traversal, threads and row bands, the image hash and the PNG,
+  determinism and the nondeterminism bans, ending in a requirement-to-evidence map: sixteen
+  requirements with stable IDs (`R-DET-1` to `R-NDET-1`), each with the narrowest test or CI job
+  that checks it, its fixture, its exact oracle and its status, with what no check covers marked
+  not verified. The WebAssembly job's test list there now includes `tests/generated.rs` and
+  `tests/smooth.rs`, which it runs.
+- ADR 0009, the image hash: a record, from the code and tests, of the decision taken in
+  flyingrobots/lumen#2 (the raw RGBA8 bytes, SHA-256, `sha256:` and lowercase hex, no size).
+- `docs/how-to/measure-performance.md`, the README's performance section as a how-to, and
+  `docs/measurements/2026-11-13-readme-readings.md`, the timings the README held (tree builders
+  and layouts, scene versions per ray, thread scaling and tile sizes under the tile scheduler),
+  moved unchanged with the commits that added them. Timings that repeated ADR 0003 and ADR 0008
+  are links now; every timing lives in one dated place.
 - `cargo run -p xtask -- doc-links`, `make doc-links` and the `Gates / doc links` job: every
   relative link of the repository's Markdown names a file or directory that exists, and every
   `#anchor` a heading of its page, with GitHub's anchors. Offline; links with a scheme are not

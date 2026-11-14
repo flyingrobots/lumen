@@ -1,6 +1,18 @@
-# Measure performance
+# Measure render time
 
-## Performance
+Use this procedure to time a render in a way that can be compared with a recorded reading or a
+target such as flyingrobots/lumen#5's 60 seconds at 4K. A timing is information about one run on
+one machine; it never enters an image, a hash or a test.
+
+## Prerequisites
+
+- The container runner, `devrun` (`~/git/devcontainers/bin/devrun`), as for every build in this
+  repository ([contributing](../../README.md#build-and-test)). Timings taken outside it are not
+  comparable with the records.
+- No other run on the machine: pass `--exclusive`, which waits until no other `devrun` run is
+  active and keeps the others out. A timing taken without it is not evidence.
+
+## How the machine shapes a timing
 
 Timings are information, never part of an image, and never taken from a run that shared the
 machine: every timing below ran in the `rust-dev:1.96.0` container through `devrun` with
@@ -9,7 +21,7 @@ host has 6 "super" and 12 "performance" cores); `devrun` limits a run to 4 CPUs 
 otherwise, so a threaded timing must raise the limit. `--cpus` is a CPU-time quota over all 18 VM
 CPUs, not a choice of cores: a run cannot be pinned to the fast cores.
 
-### Reproduce
+## Reproduce
 
 ```sh
 D=~/git/devcontainers/bin/devrun
@@ -30,27 +42,35 @@ PNG; the report shows each part. `rays-per-second` and `ns-per-ray` divide the r
 by the rays traced on all threads, so they are not CPU time per ray; the single-thread figure is a
 run with `--threads 1`.
 
-### Records
+## Verify the run
 
-Dated measurement records are kept under [`docs/measurements/`](docs/measurements/). The record for
-flyingrobots/lumen#5 is [the 4K reference scene at 16 samples per pixel, 2026-11-13](docs/measurements/2026-11-13-4k-reference.md),
-taken with the tile scheduler. [The 4K reference scene with row bands and whole-program release
-builds](docs/measurements/2026-11-13-4k-row-bands.md) repeats it for flyingrobots/lumen#28.
-[Fixed Point version 2 at 4K and 64 samples per pixel, 2026-11-14](docs/measurements/2026-11-14-4k-fixed-point-v2.md)
-records the showpiece for flyingrobots/lumen#39: the same image hash,
-`sha256:d276602407edb72109ebfbc8cec9121230171cf156144f139fb2bc3ca1c13bef`, on every run, a mean
-of 21.2 seconds with 18 CPUs, about 10 % more than version 1 (19.2 seconds).
-Each states its commit and conditions and applies to that commit only.
+- Every run of the same command at the same commit prints the same `image` line; a different hash
+  means a determinism bug, not noise ([how Lumen renders](../explanation.md#determinism)).
+- Compare `render-seconds` or `total-seconds` only with readings taken on the same machine, in
+  the same container image, with the same `--cpus`. Interleave the revisions you compare and
+  take several runs each; one run is a reading, not a result.
 
-### Readings
+## Record it
 
-Every timing lives in one dated place, with its conditions; none is repeated here:
+A result worth keeping becomes a dated record under [`docs/measurements/`](../measurements/):
+the commit, the machine, the container, the limits, the command, every run's figures and the
+image hash, as the existing records do. A record states its conditions and applies to its commit
+only; it is never edited to describe a later one.
+
+- [The 4K reference scene at 16 samples per pixel, 2026-11-13](../measurements/2026-11-13-4k-reference.md)
+  (flyingrobots/lumen#5), taken with the tile scheduler.
+- [The 4K reference scene with row bands and whole-program release builds, 2026-11-13](../measurements/2026-11-13-4k-row-bands.md)
+  (flyingrobots/lumen#28).
+- [Fixed Point version 2 at 4K and 64 samples per pixel, 2026-11-14](../measurements/2026-11-14-4k-fixed-point-v2.md)
+  (flyingrobots/lumen#39).
+- [The readings the README held, 2026-11-13](../measurements/2026-11-13-readme-readings.md):
+  tree builders and layouts, scene versions per ray, thread scaling and tile sizes.
+
+## Other readings
+
+Every other timing lives in one dated place, with its conditions; none is repeated here:
 
 - the cost of ray and run statistics: [ADR 0008](../adr/0008-statistics.md), "Ray statistics"
   and "Run statistics";
 - row bands against tiles, fat LTO, the band-height sweep and the Fixed Point 4K comparison at
-  64 samples: [ADR 0003](../adr/0003-row-bands.md), "Measurements";
-- the four tree and layout combinations, the reference scene's versions 2 and 3 per ray, thread
-  scaling with the tile scheduler and the tile-size sweep, which the README used to hold:
-  [the README readings record](../measurements/2026-11-13-readme-readings.md);
-- the 4K renders: the records under [`docs/measurements/`](../measurements/), above.
+  64 samples: [ADR 0003](../adr/0003-row-bands.md), "Measurements".
