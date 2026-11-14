@@ -574,6 +574,15 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- The gates decide which files are test files, and which are the deterministic core, by the
+  module tree, not by file names (closes flyingrobots/lumen#120, part of flyingrobots/lumen#119):
+  `xtask/src/layout.rs` follows each crate's `mod` declarations as `rustc` resolves them. A
+  module named `tests.rs` or under `src/tests/` without `#[cfg(test)]` is now held to the
+  300-line source limit and scanned; a library module loaded by `#[path]` from `tests/` is core.
+  Both gates fail on `include!` and on a `#[path]` to anything but a `.rs` file they read (a
+  `.inc` file was neither counted nor scanned) and on a `path` inside `cfg_attr`. On main, only
+  `src/png/generated.rs` changes role: it is declared only under `#[cfg(test)]`, so it is a
+  test file and no longer scanned.
 - The file-length gate and the nondeterminism scan read a file as `rustc` lexes it
   (flyingrobots/lumen#120, part of flyingrobots/lumen#119): a leading shebang line is skipped,
   not lexed, so `#!/bin/x /*` no longer hides the rest of a file from both gates (a 603-line file

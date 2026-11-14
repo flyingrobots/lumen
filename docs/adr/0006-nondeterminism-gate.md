@@ -87,9 +87,31 @@ unit tests (`xtask/src/nondeterminism/tests.rs`).
 
 ## Scope
 
-The deterministic core is every module of the `lumen` library except its tests: `src/` without
-`src/bin/`. It decides the image bytes, the image hash, the scene content digest and the
-provenance. Outside it, each for a reason:
+The deterministic core is every module of the `lumen` library except its tests. It decides the
+image bytes, the image hash, the scene content digest and the provenance. `xtask/src/layout.rs`
+finds it by following the library's module tree from `src/lib.rs` the way `rustc` resolves `mod`
+declarations (`foo.rs` or `foo/mod.rs`, `#[path]` relative to the declaring file, inline
+modules), not by file names: every file the library compiles outside `#[cfg(test)]` is core,
+wherever it is (a `#[path]` into `tests/` included), and so is any file under `src/` outside
+`src/bin/` that the module tree does not reach, or reaches only through the command. A file is a
+test file only when every declaration that reaches it is under `#[cfg(test)]` (on the `mod`
+item, an enclosing inline module, or the file's own `#![cfg(test)]`), or when no crate root
+reaches it and it is under the crate's `tests/`; a module named `tests.rs`, or under
+`src/tests/`, without `cfg(test)` is core. The file-length gate takes its 300/500 and 750
+limits from the same roles. Only `cfg(test)` written exactly so counts: `cfg(all(test, x))` is
+read as source, which can only over-report.
+
+Both gates read only `.rs` files under `crates/` and `xtask/`, so they fail on what would make
+the compiler read anything else: `include!` in any file (it is not needed: a module does the
+same and is read), a `#[path]` naming a file that is not such a `.rs` file (a `.inc` file, a
+missing file, or a path leaving the repository), and a `path` inside `cfg_attr` (which file it
+loads depends on the `cfg`). `#[path]` takes only a string literal (`rustc` refuses
+`#[path = concat!(..)]`), so no macro can build the path, and the rule holds at every level of
+indirection because each loaded file is itself walked. `include_str!` and `include_bytes!` read
+data, not code, and stay allowed (the library embeds its PLY meshes with them). Not covered:
+code a build script generates (there is none; one would have to be `include!`d, which fails) and
+`mod` declarations that a macro builds from its arguments (`mod $name;`), which are resolved
+relative to the macro's file, not the caller's. Outside the core, each for a reason:
 
 - `src/bin/lumen/`: the command reads arguments and files, writes the PNG, times its phases
   (the only clock) and asks the host for the default thread count (the only
@@ -97,8 +119,8 @@ provenance. Outside it, each for a reason:
 - The scheduler (`src/workers.rs`) starts threads under a waiver: each pixel is written at the
   place its coordinates fix and the sums are integer, so the hand-out order cannot reach the
   image or the ray count (ADR 0003).
-- Tests (`tests/`, `tests.rs`) and examples use files, processes and clocks to drive the
-  library; a unit test that uses a banned item carries its own waiver.
+- Tests (integration tests and modules under `#[cfg(test)]`) and examples use files, processes
+  and clocks to drive the library; a unit test that uses a banned item carries its own waiver.
 - `xtask` is repository tooling.
 
 ## Consequences

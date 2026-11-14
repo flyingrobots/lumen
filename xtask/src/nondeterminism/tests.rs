@@ -182,18 +182,3 @@ fn a_ban_lint_waiver_must_be_an_expect_whose_reason_starts_with_rule_ids() {
     );
     assert_eq!(forms("#[allow(dead_code)]\n#[expect(clippy::cast_possible_truncation)]"), []);
 }
-
-#[test]
-fn the_core_is_the_library_without_the_command_and_the_tests() {
-    assert!(crate::is_core("crates/lumen/src/render.rs"));
-    assert!(crate::is_core("crates/lumen/src/png/generated.rs"));
-    for outside in [
-        "crates/lumen/src/bin/lumen/main.rs",
-        "crates/lumen/src/scene/tests.rs",
-        "crates/lumen/tests/render.rs",
-        "crates/lumen/examples/traversal.rs",
-        "xtask/src/main.rs",
-    ] {
-        assert!(!crate::is_core(outside), "{outside}");
-    }
-}
