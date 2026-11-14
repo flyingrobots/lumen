@@ -93,3 +93,28 @@ fn raising_levels_and_other_lints_pass() {
         assert_eq!(reported(text), [], "{text}");
     }
 }
+
+#[test]
+fn a_lint_level_built_by_a_macro_fails_in_every_file() {
+    let level = "macro_rules! level {\n    ($kind:ident) => {\n        #[$kind(clippy::disallowed_types)]\n        pub fn f() {}\n    };\n}\nlevel!(allow);";
+    assert_eq!(forms(level), [3]);
+    let forwarded =
+        "macro_rules! with {\n    ($m:meta) => {\n        #[$m]\n        pub fn f() {}\n    };\n}";
+    assert_eq!(
+        forms(forwarded),
+        Vec::<usize>::new(),
+        "forwarding a whole attribute is the core's rule"
+    );
+}
+
+#[test]
+fn functions_and_methods_named_like_levels_are_not_lint_lists() {
+    for text in [
+        "pub fn warn(warnings: usize) -> usize { warnings }",
+        "pub fn allow(all: u8) -> u8 { all }",
+        "pub fn f(o: Option<u8>, warnings: &str) -> u8 { o.expect(warnings) }",
+    ] {
+        assert_eq!(forms(text), Vec::<usize>::new(), "{text}");
+    }
+    assert_eq!(forms("quiet!(allow(clippy::all));"), [1], "a lint list passed to a macro");
+}
