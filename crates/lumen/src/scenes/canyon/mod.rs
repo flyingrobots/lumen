@@ -20,7 +20,7 @@ pub mod terrain;
 mod convex;
 
 pub use content::{CanyonContent, Craft, Part, PartKind, PLANET_BANDS};
-pub use convex::{Pose, Rational};
+pub use convex::{Pose, PoseError, Rational};
 pub use error::CanyonError;
 pub use look::{canyon_camera, canyon_lighting, canyon_materials};
 
@@ -36,14 +36,14 @@ pub const CANYON_SCENE_ID: &str = "lumen-canyon-scene/1";
 ///
 /// # Errors
 ///
-/// A [`CanyonError`] if the heightfield is refused or the embedded bunny does not place; a test
-/// shows neither happens.
+/// A [`CanyonError`] if the heightfield is refused, a craft does not pose or the embedded bunny
+/// does not place; a test shows none of these happens.
 pub fn canyon_content() -> Result<CanyonContent, CanyonError> {
     let mut content = CanyonContent::default();
     let heights = terrain::canyon_heights().map_err(CanyonError::Heightfield)?;
     let (ground, strata) = terrain::terrain_triangles(&heights);
     content.push_materials(PartKind::Terrain, &ground, &strata);
-    craft::push_craft(&mut content);
+    craft::push_craft(&mut content)?;
     let bunny = bunny::ledge_bunny()?;
     content.push_smooth(PartKind::Bunny, &bunny.triangles, &bunny.normals);
     planet::push_planet(&mut content);
