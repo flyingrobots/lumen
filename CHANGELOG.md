@@ -34,6 +34,12 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Run statistics (part of flyingrobots/lumen#29; ADR 0008): `render_traced_with_run` returns
+  the render with a `RunStatistics` (the band height, the band count and, per worker, a
+  `WorkerStatistics` of bands, rows, pixels and rays), from `render_pixels_by_worker` (`Rendered`,
+  `WorkerRun`), whose bands and rows ride in each worker's outcome returned at `join`.
+  `render --stats` ends with the `run.` lines; each per-worker line is labelled
+  `(information only: differs from run to run)`. Counts only: no per-worker clock.
 - Ray statistics and `lumen render --stats` (part of flyingrobots/lumen#29; ADR 0008):
   `trace_path` records what each ray found in `PathSample::outcomes` (a `RayOutcomes`: camera hits
   and misses, bounce hits, misses and rejections, shadow rays occluded and unoccluded), and

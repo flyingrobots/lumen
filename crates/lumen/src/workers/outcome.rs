@@ -23,21 +23,53 @@ fn earlier<E>(a: Failure<E>, b: Failure<E>) -> Failure<E> {
 }
 
 /// What one worker found, or what several found together: the sum of the values of the pixels
-/// rendered and the earliest failing pixel among them.
+/// rendered, the earliest failing pixel among them, and the bands and rows taken.
 pub(super) struct Outcome<T, E> {
     pub(super) total: T,
     pub(super) first: Option<Failure<E>>,
+    /// Bands taken and rows rendered whole. At most the image's rows each, so neither saturates.
+    pub(super) bands: u32,
+    pub(super) rows: u32,
+}
+
+/// What one worker did in a render that succeeded: a fact about the run, not the image, since
+/// which worker takes which band depends on timing (ADR 0008).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct WorkerRun<T> {
+    /// The bands it took.
+    pub bands: u32,
+    /// The rows it rendered.
+    pub rows: u32,
+    /// The sum of its pixels' values.
+    pub total: T,
+}
+
+/// An image, the sum of its pixels' values, and what each worker did, worker 0 (the calling
+/// thread) first: the result of [`render_pixels_by_worker`](super::render_pixels_by_worker).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Rendered<T> {
+    /// The image.
+    pub image: crate::image::Rgba8Image,
+    /// The sum of every pixel's value: the same at every schedule.
+    pub total: T,
+    /// Each worker's bands, rows and sum, in worker order; they add up to the image's bands,
+    /// rows and `total`.
+    pub workers: Vec<WorkerRun<T>>,
 }
 
 impl<T: Copy + Add<Output = T>, E> Outcome<T, E> {
     pub(super) const fn new(zero: T) -> Self {
-        Self { total: zero, first: None }
+        Self { total: zero, first: None, bands: 0, rows: 0 }
     }
 
     /// Adds another worker's outcome: the sums add, and the earlier failure is kept. Integer
     /// addition and a minimum do not depend on the order outcomes arrive in.
     pub(super) fn merge(&mut self, other: Self) {
         self.total = self.total + other.total;
+        self.bands = self.bands.saturating_add(other.bands);
+        self.rows = self.rows.saturating_add(other.rows);
         self.record(other.first);
     }
 

@@ -311,16 +311,16 @@ fn after_a_failure_no_pixel_from_its_row_down_is_rendered() {
     assert!(witnesses.get() > 0);
 }
 
-/// Oracle: hand arithmetic. Outcomes merge by summing and by keeping the raster-earlier failure,
-/// in either order.
+/// Oracle: hand arithmetic. Outcomes merge by summing (values, bands and rows) and by keeping the
+/// raster-earlier failure, in either order.
 #[test]
 fn outcomes_merge_to_the_sum_and_the_raster_earlier_failure() {
     let at = |x, y| Some(Failure { y, x, error: (x, y) });
     for (a, b, want) in [(at(9, 0), at(2, 5), (9, 0)), (at(3, 4), at(4, 4), (3, 4))] {
         for (first, second) in [(a, b), (b, a)] {
-            let mut merged = Outcome { total: 2_u64, first };
-            merged.merge(Outcome { total: 5, first: second });
-            assert_eq!(merged.total, 7);
+            let mut merged = Outcome { total: 2_u64, first, bands: 1, rows: 2 };
+            merged.merge(Outcome { total: 5, first: second, bands: 3, rows: 4 });
+            assert_eq!((merged.total, merged.bands, merged.rows), (7, 4, 6));
             assert_eq!(
                 merged.into_result(),
                 Err(WorkerError::Pixel { x: want.0, y: want.1, error: want })
@@ -408,7 +408,8 @@ fn a_refused_worker_is_reported_with_its_number_and_its_error() {
             let n = asked.fetch_add(1, Ordering::SeqCst);
             assert!(n < 64 * 48, "asked for more pixels than the image has");
             pixel(&[])(x, y)
-        });
+        })
+        .map(|rendered| (rendered.image, rendered.total));
         let label = format!("{threads} threads, worker {refuse} refused");
         let want = SpawnError::new(refuse, io::Error::other("refused by the test"));
         assert_eq!(got, Err(WorkerError::Spawn(want)), "{label}");

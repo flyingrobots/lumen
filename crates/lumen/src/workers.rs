@@ -26,6 +26,7 @@ mod outcome;
 
 pub use error::{Reservation, SpawnError, WorkerError};
 use outcome::{combine, Failure, Outcome};
+pub use outcome::{Rendered, WorkerRun};
 
 /// How [`render_pixels`] starts its helper threads: the seam a test drives to refuse a spawn.
 pub(crate) trait Spawner {
@@ -228,14 +229,17 @@ where
         match self.band.as_mut() {
             None => {
                 self.band = self.shared.take();
-                self.band.is_some()
+                let took = self.band.is_some();
+                self.outcome.bands = self.outcome.bands.saturating_add(u32::from(took));
+                took
             }
             Some((_, rows)) => {
                 match rows.next() {
                     None => self.band = None,
                     Some((y, row)) => {
-                        if self.shared.render_row(y, row, pixel, &mut self.outcome) == Row::Leave {
-                            self.band = None;
+                        match self.shared.render_row(y, row, pixel, &mut self.outcome) {
+                            Row::Done => self.outcome.rows = self.outcome.rows.saturating_add(1),
+                            Row::Leave => self.band = None,
                         }
                     }
                 }
@@ -324,6 +328,27 @@ where
     E: Send,
     F: Fn(u32, u32) -> Result<(Rgba, T), E> + Sync,
 {
+    let rendered = render_pixels_on(&OsThreads, size, schedule, zero, pixel)?;
+    Ok((rendered.image, rendered.total))
+}
+
+/// [`render_pixels`], with what each worker did: its bands, rows and sum ([`Rendered`]). Which
+/// worker took which band differs from run to run; the image and the total do not.
+///
+/// # Errors
+///
+/// Those of [`render_pixels`].
+pub fn render_pixels_by_worker<T, E, F>(
+    size: ImageSize,
+    schedule: Schedule,
+    zero: T,
+    pixel: F,
+) -> Result<Rendered<T>, WorkerError<E>>
+where
+    T: Copy + Add<Output = T> + Send,
+    E: Send,
+    F: Fn(u32, u32) -> Result<(Rgba, T), E> + Sync,
+{
     render_pixels_on(&OsThreads, size, schedule, zero, pixel)
 }
 
@@ -340,7 +365,7 @@ pub(crate) fn render_pixels_on<S, T, E, F>(
     schedule: Schedule,
     zero: T,
     pixel: F,
-) -> Result<(Rgba8Image, T), WorkerError<E>>
+) -> Result<Rendered<T>, WorkerError<E>>
 where
     S: Spawner,
     T: Copy + Add<Output = T> + Send,
@@ -349,6 +374,12 @@ where
 {
     let mut image = blank(size)?;
     let workers = schedule.workers(size);
+    // One record per worker, reserved before any thread starts.
+    let mut runs = Vec::new();
+    runs.try_reserve_exact(widen(workers)).map_err(|error| WorkerError::OutOfMemory {
+        reserving: Reservation::Workers { handles: widen(workers) },
+        error,
+    })?;
     let outcome = {
         let (pixels, _) = image.bytes_mut().as_chunks_mut::<4>();
         let shared = &Shared::new(size, schedule, pixels);
@@ -362,11 +393,14 @@ where
             let theirs = handles.into_iter().map(|handle| {
                 handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))
             });
-            Ok(combine(zero, core::iter::once(mine).chain(theirs)))
+            let all = core::iter::once(mine).chain(theirs).inspect(|one| {
+                runs.push(WorkerRun { bands: one.bands, rows: one.rows, total: one.total });
+            });
+            Ok(combine(zero, all))
         })?
     };
     let total = outcome.into_result()?;
-    Ok((image, total))
+    Ok(Rendered { image, total, workers: runs })
 }
 
 /// A zeroed image of `size`, reserved without aborting on failure.

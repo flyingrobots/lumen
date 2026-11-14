@@ -26,7 +26,7 @@ use std::time::Instant;
 use cli::{Command, Detail, USAGE};
 use failure::Failure;
 use lumen::{
-    render_scheduled, BuiltinScene, ImageSize, RenderProvenance, RenderSettings, Schedule,
+    render_traced_with_run, BuiltinScene, ImageSize, RenderProvenance, RenderSettings, Schedule,
     BUNNY_REV, MAX_THREADS,
 };
 use publish::Disk;
@@ -97,8 +97,9 @@ fn run(
             .map_err(|error| Failure::Output { path: path.to_path_buf(), error })?;
     }
     let built = started.elapsed();
-    let render =
-        render_scheduled(&built_scene, size, settings, schedule).map_err(Failure::Render)?;
+    let (render, run) =
+        render_traced_with_run(&built_scene, &built_scene, size, settings, schedule)
+            .map_err(Failure::Render)?;
     let rendered = started.elapsed();
     let image = &render.image;
     let hash = image.hash();
@@ -140,6 +141,7 @@ fn run(
     if let Some(scene_statistics) = statistics {
         stats::write_scene_block(&mut stdout, &built_scene, &scene_statistics)
             .and_then(|()| stats::write_rays(&mut stdout, &render.statistics, settings))
+            .and_then(|()| stats::write_run(&mut stdout, &run))
             .map_err(Failure::Stdout)?;
     }
     Ok(())

@@ -19,13 +19,15 @@ use bunny_optics::{
 use crate::image::{ImageSize, Rgba8Image};
 use crate::scene::{Scene, Tracer};
 use crate::schedule::Schedule;
-use crate::workers::{render_pixels, WorkerError};
+use crate::workers::{render_pixels_by_worker, WorkerError};
 
 mod error;
+mod run;
 mod shade;
 mod statistics;
 
 pub use error::{PathError, RenderError};
+pub use run::{RunStatistics, WorkerStatistics};
 use shade::{direct, Shade};
 pub use statistics::{RayCheckError, RayOutcomes, RayStatistics};
 
@@ -413,10 +415,35 @@ pub fn render_traced<T: Tracer + Sync + ?Sized>(
     settings: RenderSettings,
     schedule: Schedule,
 ) -> Result<Render, RenderError> {
+    render_traced_with_run(scene, tracer, size, settings, schedule).map(|(render, _)| render)
+}
+
+/// [`render_traced`], with what each worker did ([`RunStatistics`]): information about the run,
+/// which differs from run to run; the [`Render`] does not.
+///
+/// # Errors
+///
+/// Any error of [`render_traced`].
+pub fn render_traced_with_run<T: Tracer + Sync + ?Sized>(
+    scene: &Scene,
+    tracer: &T,
+    size: ImageSize,
+    settings: RenderSettings,
+    schedule: Schedule,
+) -> Result<(Render, RunStatistics), RenderError> {
     let camera = scene.camera().camera(size.width(), size.height())?;
     let frame = Frame { scene, tracer, camera: &camera, settings };
-    match render_pixels(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y)) {
-        Ok((image, statistics)) => Ok(Render { image, rays: statistics.count(), statistics }),
+    match render_pixels_by_worker(size, schedule, RayStatistics::NONE, |x, y| frame.rgba(x, y)) {
+        Ok(done) => {
+            let statistics = done.total;
+            let render = Render { image: done.image, rays: statistics.count(), statistics };
+            let run = RunStatistics {
+                band_rows: schedule.band().get(),
+                bands: schedule.band().count(size),
+                workers: done.workers.iter().map(WorkerStatistics::from).collect(),
+            };
+            Ok((render, run))
+        }
         Err(WorkerError::Pixel { x, y, error }) => Err(RenderError::Pixel { x, y, error }),
         Err(WorkerError::OutOfMemory { reserving, error }) => {
             Err(RenderError::OutOfMemory { reserving, error })

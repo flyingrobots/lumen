@@ -1,8 +1,8 @@
 # ADR 0008: Statistics: what is counted, where, and why it cannot change the image
 
-Status: accepted (flyingrobots/lumen#29). The scene statistics, the ray statistics, `lumen stats`
-and `render --stats` are built. The run and traversal statistics are decided here and not yet
-built; each section says which.
+Status: accepted (flyingrobots/lumen#29). The scene, ray and run statistics, `lumen stats` and
+`render --stats` are built. The traversal statistics are decided here and wait for
+flyingrobots/bunny#335.
 
 ## Context
 
@@ -138,13 +138,17 @@ differ by as much as head and `main` (0.4 % at one thread, 0.7 % at 18): the dif
 the noise of these runs. So there is no counter type parameter and no second path; the uncounted
 render is gone, and `--stats` costs only the scene walk and the formatting after the clock stops.
 
-### Run statistics (decided, not yet built)
+### Run statistics (built)
 
 Per worker: bands and rows taken, pixels and rays. In all: the band count and the band height.
 The split between workers differs from run to run, so every per-worker line is
 `(information only)`; the totals do not, and the tests check that the per-worker figures sum to
-them at 1, 2, 4 and 18 workers. Each worker's tally rides in the `Outcome` it already returns
-at `join` (`workers/outcome.rs`).
+them at 1, 2, 4 and 18 workers. Each worker's bands and rows ride in the `Outcome` it already
+returns at `join` (`workers/outcome.rs`); `render_pixels_by_worker` returns them with each
+worker's sum (`Rendered`, `WorkerRun`), in a list reserved before any thread starts, and
+`render_traced_with_run` turns them into `RunStatistics` (`WorkerStatistics` per worker: bands,
+rows, pixels, rays). `Render` does not hold them, so two renders of the same scene at different
+schedules still compare equal. `render --stats` prints them last, as `run.` lines.
 
 There is no per-worker busy time. The library reads no clock (ADR 0006), and the honest simple
 measure is the one the command already takes: the wall time of the whole render. An injected
@@ -183,7 +187,7 @@ and a copy drifts when Bunny's search changes.
   request records it), and in `tests/cli.rs` the plain report is exactly the start of the
   `--stats` output.
 - **Format: `key value` lines.** A key has no spaces and is dotted by group (`scene.`, `light.`,
-  `camera.`, `tree.`, `memory.`, `rays.`; later `run.`); the value is one token or a vector of
+  `camera.`, `tree.`, `memory.`, `rays.`, `run.`); the value is one token or a vector of
   tokens separated by single spaces; an information-only line ends in ` (information only)`, as
   the timing lines already do. Keys are stable; new keys are added, never renamed. Fixed-point
   values print in decimal with six places from their exact raw integers (rounded to nearest, ties
@@ -216,5 +220,7 @@ and a copy drifts when Bunny's search changes.
   either by its fields; the crate root gains `RayOutcomes`, `RayStatistics` and `RayCheckError`.
   The command gains `render --stats` and `Failure::RayCheck` (exit code 1), which no render
   reaches.
+- The crate root gains `render_traced_with_run`, `RunStatistics`, `WorkerStatistics`,
+  `render_pixels_by_worker`, `Rendered` and `WorkerRun`; `render_pixels` is unchanged.
 - Memory byte counts can differ between targets with different type sizes; nothing else in the
   scene statistics can.

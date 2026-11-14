@@ -11,7 +11,8 @@ use std::io::{self, Write};
 use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
 use lumen::{
-    Integrator, RayStatistics, RenderSettings, Scene, SceneStatistics, TREE_BUILDER, TREE_LAYOUT,
+    Integrator, RayStatistics, RenderSettings, RunStatistics, Scene, SceneStatistics, TREE_BUILDER,
+    TREE_LAYOUT,
 };
 
 /// Writes `lumen stats`: the scene's name, content identity and integrator, then its block.
@@ -147,6 +148,26 @@ pub(crate) fn write_rays(
     }
     let mean = Ratio(u128::from(rays.count().total()), u128::from(rays.pixels));
     writeln!(out, "rays.per-pixel-mean {mean}")
+}
+
+/// The label of every per-worker line: which worker took which band depends on timing.
+pub(crate) const RUN_NOTE: &str = "(information only: differs from run to run)";
+
+/// How the work was spread (`render --stats`), after the ray lines: the band height, the band
+/// count and the worker count, which follow from the size and the schedule, then each worker's
+/// bands, rows, pixels and rays, which do not.
+pub(crate) fn write_run(out: &mut impl Write, run: &RunStatistics) -> io::Result<()> {
+    writeln!(out, "run.band-rows {}", run.band_rows)?;
+    writeln!(out, "run.bands {}", run.bands)?;
+    writeln!(out, "run.workers {}", run.workers.len())?;
+    for (n, worker) in run.workers.iter().enumerate() {
+        let rays = worker.rays.total();
+        writeln!(out, "run.worker.{n}.bands {} {RUN_NOTE}", worker.bands)?;
+        writeln!(out, "run.worker.{n}.rows {} {RUN_NOTE}", worker.rows)?;
+        writeln!(out, "run.worker.{n}.pixels {} {RUN_NOTE}", worker.pixels)?;
+        writeln!(out, "run.worker.{n}.rays {rays} {RUN_NOTE}")?;
+    }
+    Ok(())
 }
 
 /// A count, widened for arithmetic: lossless, as no target's `usize` is wider than 128 bits.
