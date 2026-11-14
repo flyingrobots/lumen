@@ -174,7 +174,8 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   `Lighting`, `reference_scene`, `fixed_point_scene`, and `BuiltinScene`, the registry of
   named scenes with their identities that the command's `--scene` reads), rendering (`render`, `render_scheduled`, `render_traced`,
   `Schedule`, `BandRows`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
-  its `hash`), its provenance (`RenderProvenance`), PNG encoding into any writer (`write_png`,
+  its `hash`), its provenance (`RenderProvenance`), a scene's statistics (`Scene::statistics`,
+  `SceneStatistics`, below), PNG encoding into any writer (`write_png`,
   `png_len`), and the integrator's parts for custom tracers (`trace_path`, `pixel_radiance`,
   `Tracer`, `Hit`, `PrimitiveIndex`, `TraceError`, `PathError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
   content, as `reference` is) and `lumen::mesh` (the mesh types they use) are public modules. The SHA-256 and PNG checksum code
@@ -206,6 +207,20 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   describe a different scene under the same name. The built-in scenes' digests are golden
   values in `crates/lumen/tests/golden/mod.rs`, beside their image hashes, and one more, for a
   one-triangle scene, was computed outside lumen with Python's `hashlib`.
+- **A scene can be counted.** `Scene::statistics()` returns a `SceneStatistics`, computed on
+  request from the built scene and never while a ray is traced: the triangles in all, by
+  material (`triangles_by_material`, one entry per albedo, summing to the total), with a vertex
+  normal and of zero area; the bounds (the tree's root box); the tree's shape (`TreeStatistics`,
+  in the terms of Bunny's uncompacted tree: nodes, interior nodes, leaves, the deepest leaf and
+  the sum of leaf depths with the root at depth 0, the triangles per leaf, fewest, most and how
+  many leaves hold 1, 2, 3, 4 or more, `LEAF_SIZE_BUCKETS`); and the bytes of each buffer
+  (`SceneMemory`: its length times this build's element size; not the `Scene` value, spare
+  capacity, the allocator's overhead or the build's dropped buffers). `TREE_BUILDER` and
+  `TREE_LAYOUT` name Bunny's builder and layout; `Scene::materials()` gives the albedos. The
+  tree's shape is read by a walk of Bunny's public compact nodes, with no Bunny arithmetic. Every
+  value is an integer and a function of the scene, except that the byte counts also depend on the
+  type sizes of the build. [ADR 0008](docs/adr/0008-statistics.md) records the design, including
+  the ray, run and traversal statistics that are not yet built.
 - **The command owns everything at the edge**: argument parsing and the usage text (`cli.rs`,
   `cli/usage_error.rs`, with its tests in `cli/tests.rs`), the default thread count from
   `available_parallelism`, the clock, the output file and the terminal (`main.rs`, `report.rs`).
@@ -1066,7 +1081,7 @@ digest, and review accepts or refuses it there.
   allowed because they are the code under test. *Medium*: spawns the `lumen` process, writes
   files, or runs real threads at fixed counts. Run one class by file: `cargo test --test cli
   --test threads --test counts` is the medium set; `cargo test --lib --test render --test library --test
-  fixed_point` the small set. There is no large class yet.
+  fixed_point --test statistics` the small set. There is no large class yet.
 - **Hermetic files** (rule 8). A test that writes files makes a `Scratch` directory (see
   `crates/lumen/tests/cli.rs`) named for the test and the process id under `CARGO_TARGET_TMPDIR`,
   runs the command with it as the working directory, passes absolute paths and removes it when

@@ -21,11 +21,12 @@ use super::{
 pub(super) struct Tree {
     root: Option<CompactRoot>,
     pub(super) nodes: Vec<CompactNode>,
-    prim_indices: Vec<u32>,
+    pub(super) prim_indices: Vec<u32>,
 }
 
 impl Scene {
-    fn view(&self) -> CompactView<'_> {
+    /// The tree as Bunny's compact traversals and the statistics walk read it.
+    pub(super) fn view(&self) -> CompactView<'_> {
         CompactView {
             root: self.tree.root,
             nodes: &self.tree.nodes,

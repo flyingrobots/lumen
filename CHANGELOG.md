@@ -21,6 +21,19 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Scene statistics (part of flyingrobots/lumen#29; [ADR 0008](docs/adr/0008-statistics.md)):
+  `Scene::statistics()` returns a `SceneStatistics`, computed on request from the built scene and
+  never on a ray's path: triangles in all, by material, smooth and of zero area; the bounds; the
+  tree's shape (`TreeStatistics`: nodes, interior nodes, leaves, the deepest leaf and the sum of
+  leaf depths, triangles per leaf, fewest, most and a histogram over `LEAF_SIZE_BUCKETS`), read by
+  a walk of Bunny's public compact nodes; and the bytes of each buffer (`SceneMemory`). The tree's
+  builder and layout are named by `TREE_BUILDER` and `TREE_LAYOUT`; `Scene::materials()` gives
+  the albedo table. `crates/lumen/tests/statistics.rs` (small) checks the tree's shape against a
+  recursive walk of a tree rebuilt with Bunny's builder from the same boxes and against Bunny's
+  documented bounds, the per-material counts against the reference scene's material indices, and
+  smooth, zero-area and unused-material counts on a scene built to hold them. ADR 0008 also
+  decides the command's output and the ray, run and traversal statistics, which are not yet
+  built; the traversal counters wait for flyingrobots/bunny#335.
 - Independent oracles for what a render reports (flyingrobots/lumen#55), in
   `crates/lumen/tests/counts.rs` (medium: real threads at 1, 2 and 4): a pixel at 64 and 1024
   samples equals that many direct `trace_path` calls in one `PixelAccumulator`; `Render::rays` and

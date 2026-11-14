@@ -83,7 +83,8 @@ pub use render::{
 };
 pub use scene::{
     CameraPlacement, Hit, Lighting, PrimitiveIndex, Scene, SceneBuffer, SceneContentId, SceneError,
-    SceneSpec, TraceError, Tracer, FAR, SCENE_CONTENT_ENCODING,
+    SceneMemory, SceneSpec, SceneStatistics, StatisticsError, TraceError, Tracer, TreeStatistics,
+    FAR, LEAF_SIZE_BUCKETS, SCENE_CONTENT_ENCODING, TREE_BUILDER, TREE_LAYOUT,
 };
 pub use scenes::fixed_point::{fixed_point_scene, FIXED_POINT_SCENE_ID};
 pub use schedule::{BandRows, Schedule, ScheduleError, DEFAULT_BAND_ROWS, MAX_THREADS};
