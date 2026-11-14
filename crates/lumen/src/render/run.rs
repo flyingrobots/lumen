@@ -33,8 +33,15 @@ pub struct WorkerStatistics {
     pub rays: RayCount,
 }
 
-impl From<&WorkerRun<RayStatistics>> for WorkerStatistics {
-    fn from(run: &WorkerRun<RayStatistics>) -> Self {
-        Self { bands: run.bands, rows: run.rows, pixels: run.total.pixels, rays: run.total.count() }
+impl WorkerStatistics {
+    /// One worker's record in an image `width` pixels wide. In a render that succeeded every
+    /// worker rendered whole rows, so its rows are its pixels over the width: counted per pixel
+    /// already, not again per row.
+    pub(super) fn of(run: &WorkerRun<RayStatistics>, width: u32) -> Self {
+        let pixels = run.total.pixels;
+        // At most the image's height, a `u32`; the width is at least 1.
+        let rows = pixels.checked_div(u64::from(width)).unwrap_or(0);
+        let rows = u32::try_from(rows).unwrap_or(u32::MAX);
+        Self { bands: run.bands, rows, pixels, rays: run.total.count() }
     }
 }

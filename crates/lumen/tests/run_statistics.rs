@@ -75,7 +75,7 @@ fn the_schedulers_per_worker_sums_add_up_to_its_total() {
         assert_eq!(done.total, 31 * 29, "{threads} threads");
         let total: u64 = done.workers.iter().map(|w| w.total).sum();
         assert_eq!(total, done.total, "{threads} threads");
-        let rows: u32 = done.workers.iter().map(|w| w.rows).sum();
-        assert_eq!(rows, 29, "{threads} threads");
+        let bands: u32 = done.workers.iter().map(|w| w.bands).sum();
+        assert_eq!(bands, 29_u32.div_ceil(3), "{threads} threads");
     }
 }

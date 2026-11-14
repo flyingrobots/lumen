@@ -23,13 +23,13 @@ fn earlier<E>(a: Failure<E>, b: Failure<E>) -> Failure<E> {
 }
 
 /// What one worker found, or what several found together: the sum of the values of the pixels
-/// rendered, the earliest failing pixel among them, and the bands and rows taken.
+/// rendered, the earliest failing pixel among them, and the bands taken.
 pub(super) struct Outcome<T, E> {
     pub(super) total: T,
     pub(super) first: Option<Failure<E>>,
-    /// Bands taken and rows rendered whole. At most the image's rows each, so neither saturates.
+    /// Bands taken: at most the image's rows, so it never saturates. Counted once per band, not
+    /// per row (ADR 0008).
     pub(super) bands: u32,
-    pub(super) rows: u32,
 }
 
 /// What one worker did in a render that succeeded: a fact about the run, not the image, since
@@ -39,8 +39,6 @@ pub(super) struct Outcome<T, E> {
 pub struct WorkerRun<T> {
     /// The bands it took.
     pub bands: u32,
-    /// The rows it rendered.
-    pub rows: u32,
     /// The sum of its pixels' values.
     pub total: T,
 }
@@ -54,14 +52,14 @@ pub struct Rendered<T> {
     pub image: crate::image::Rgba8Image,
     /// The sum of every pixel's value: the same at every schedule.
     pub total: T,
-    /// Each worker's bands, rows and sum, in worker order; they add up to the image's bands,
-    /// rows and `total`.
+    /// Each worker's bands and sum, in worker order; they add up to the image's bands and
+    /// `total`.
     pub workers: Vec<WorkerRun<T>>,
 }
 
 impl<T: Copy + Add<Output = T>, E> Outcome<T, E> {
     pub(super) const fn new(zero: T) -> Self {
-        Self { total: zero, first: None, bands: 0, rows: 0 }
+        Self { total: zero, first: None, bands: 0 }
     }
 
     /// Adds another worker's outcome: the sums add, and the earlier failure is kept. Integer
@@ -69,7 +67,6 @@ impl<T: Copy + Add<Output = T>, E> Outcome<T, E> {
     pub(super) fn merge(&mut self, other: Self) {
         self.total = self.total + other.total;
         self.bands = self.bands.saturating_add(other.bands);
-        self.rows = self.rows.saturating_add(other.rows);
         self.record(other.first);
     }
 

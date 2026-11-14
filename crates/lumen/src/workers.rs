@@ -237,9 +237,8 @@ where
                 match rows.next() {
                     None => self.band = None,
                     Some((y, row)) => {
-                        match self.shared.render_row(y, row, pixel, &mut self.outcome) {
-                            Row::Done => self.outcome.rows = self.outcome.rows.saturating_add(1),
-                            Row::Leave => self.band = None,
+                        if self.shared.render_row(y, row, pixel, &mut self.outcome) == Row::Leave {
+                            self.band = None;
                         }
                     }
                 }
@@ -332,7 +331,7 @@ where
     Ok((rendered.image, rendered.total))
 }
 
-/// [`render_pixels`], with what each worker did: its bands, rows and sum ([`Rendered`]). Which
+/// [`render_pixels`], with what each worker did: its bands and sum ([`Rendered`]). Which
 /// worker took which band differs from run to run; the image and the total do not.
 ///
 /// # Errors
@@ -394,7 +393,7 @@ where
                 handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))
             });
             let all = core::iter::once(mine).chain(theirs).inspect(|one| {
-                runs.push(WorkerRun { bands: one.bands, rows: one.rows, total: one.total });
+                runs.push(WorkerRun { bands: one.bands, total: one.total });
             });
             Ok(combine(zero, all))
         })?

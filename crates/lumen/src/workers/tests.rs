@@ -311,16 +311,16 @@ fn after_a_failure_no_pixel_from_its_row_down_is_rendered() {
     assert!(witnesses.get() > 0);
 }
 
-/// Oracle: hand arithmetic. Outcomes merge by summing (values, bands and rows) and by keeping the
+/// Oracle: hand arithmetic. Outcomes merge by summing (values and bands) and by keeping the
 /// raster-earlier failure, in either order.
 #[test]
 fn outcomes_merge_to_the_sum_and_the_raster_earlier_failure() {
     let at = |x, y| Some(Failure { y, x, error: (x, y) });
     for (a, b, want) in [(at(9, 0), at(2, 5), (9, 0)), (at(3, 4), at(4, 4), (3, 4))] {
         for (first, second) in [(a, b), (b, a)] {
-            let mut merged = Outcome { total: 2_u64, first, bands: 1, rows: 2 };
-            merged.merge(Outcome { total: 5, first: second, bands: 3, rows: 4 });
-            assert_eq!((merged.total, merged.bands, merged.rows), (7, 4, 6));
+            let mut merged = Outcome { total: 2_u64, first, bands: 1 };
+            merged.merge(Outcome { total: 5, first: second, bands: 3 });
+            assert_eq!((merged.total, merged.bands), (7, 4));
             assert_eq!(
                 merged.into_result(),
                 Err(WorkerError::Pixel { x: want.0, y: want.1, error: want })
