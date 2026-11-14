@@ -336,3 +336,31 @@ fn a_traversal_failure_is_the_same_typed_error_at_every_schedule() {
         assert!(!seen.is_empty());
     }
 }
+
+/// The payload of the injected pixel function's panic.
+#[cfg(panic = "unwind")]
+#[derive(Debug)]
+struct PixelPanic;
+
+/// On real threads, a panic in the pixel function at `(0, 0)` reaches the caller with its own
+/// payload, and no image is returned, at 1, 2 and 4 threads. How many pixels the other workers
+/// compute before they stop is not bounded here: they stop at the first row they begin after
+/// seeing the halt the panicking worker calls as it unwinds, and when that is depends on the
+/// operating system's scheduling. The bound is checked, exactly and under every hand-out order
+/// tried, by the simulated workers in `src/workers/tests.rs`.
+#[cfg(panic = "unwind")]
+#[test]
+fn a_panic_in_the_pixel_function_reaches_the_caller_without_an_image() {
+    for threads in [1, 2, 4] {
+        let got = std::panic::catch_unwind(|| {
+            render_pixels(size(64, 512), schedule(threads, band(1)), RayCount::default(), |x, y| {
+                if (x, y) == (0, 0) {
+                    std::panic::panic_any(PixelPanic);
+                }
+                Ok::<_, PathError>(([0, 0, 0, 255], RayCount::default()))
+            })
+        });
+        let payload = got.expect_err("the panic reaches the caller, with no image");
+        assert!(payload.is::<PixelPanic>(), "{threads} threads: not the pixel function's panic");
+    }
+}

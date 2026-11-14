@@ -5,7 +5,8 @@
 //! material (a Bunny [`Albedo`]) for each, the [`Lighting`] and the placement of a pinhole camera.
 //! Building it prepares everything a ray needs, so tracing allocates nothing: Bunny's
 //! `TraceTriangle` and `TriangleSurface` per triangle, and the bounding volume hierarchy (see
-//! [`Scene::new`]), and the scene's content identity ([`SceneContentId`], ADR 0005). The built-in
+//! [`Scene::new`]), and the scene's content identity ([`SceneContentId`], ADR 0005). What a built
+//! scene holds can be counted on request ([`Scene::statistics`], ADR 0008). The built-in
 //! reference scene is in [`crate::reference`].
 
 use bunny_geom::FixedAabb3;
@@ -21,6 +22,7 @@ use crate::schedule::widen;
 mod content_id;
 mod error;
 mod primitive_index;
+mod statistics;
 mod tracer;
 mod tree;
 
@@ -30,6 +32,10 @@ mod tests;
 pub use content_id::{SceneContentId, SCENE_CONTENT_ENCODING};
 pub use error::{SceneBuffer, SceneError};
 pub use primitive_index::PrimitiveIndex;
+pub use statistics::{
+    SceneMemory, SceneStatistics, StatisticsError, TreeStatistics, LEAF_SIZE_BUCKETS, TREE_BUILDER,
+    TREE_LAYOUT,
+};
 pub use tracer::{Hit, TraceError, Tracer, FAR};
 use tree::{build_tree, Tree};
 
@@ -257,6 +263,13 @@ impl Scene {
     pub fn albedo(&self, primitive: PrimitiveIndex) -> Option<&Albedo> {
         let material = *self.material_of.get(primitive.to_usize())?;
         self.materials.get(widen(material))
+    }
+
+    /// The materials, in table order: the albedos [`SceneSpec::materials`] gave, including any no
+    /// triangle names.
+    #[must_use]
+    pub fn materials(&self) -> &[Albedo] {
+        &self.materials
     }
 
     /// The vertex normals of the triangle at `primitive`, in the order of its vertices, or

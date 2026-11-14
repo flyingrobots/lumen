@@ -17,6 +17,14 @@ pub(crate) enum UsageError {
     Repeated(&'static str),
     /// An option has no value after it.
     MissingValue(&'static str),
+    /// The value after an option reads as an option itself (`--out --width`); written
+    /// `--out=--width` it is a value.
+    OptionLikeValue {
+        /// The option.
+        option: &'static str,
+        /// The value given, shown lossily.
+        value: String,
+    },
     /// A numeric value is not valid Unicode.
     NotUnicode {
         /// The option.
@@ -47,6 +55,11 @@ impl fmt::Display for UsageError {
             Self::UnknownOption(option) => write!(f, "unknown option {option:?}"),
             Self::Repeated(option) => write!(f, "{option} given more than once"),
             Self::MissingValue(option) => write!(f, "{option} needs a value"),
+            Self::OptionLikeValue { option, value } => write!(
+                f,
+                "{option} needs a value, not the option {value:?} (to use it as the value, write \
+                 {option}={value})"
+            ),
             Self::NotUnicode { option, value } => {
                 write!(f, "{option} needs a whole number, not the non-Unicode {value:?}")
             }

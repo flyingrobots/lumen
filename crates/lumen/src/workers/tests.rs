@@ -1,11 +1,13 @@
 //! Hand-out orders explored on one thread, with no clock and no real threads: simulated workers
-//! advance one step at a time (take a band, render one row of it, return the outcome) through
-//! the same `take`, `render_row` and `combine` the threads run, in an order chosen by a
+//! advance one step at a time (take a band, render one row of it, leave the band) through the
+//! same `Worker::step` and `combine` the threads run, in an order chosen by a
 //! policy: a seeded generator, or a scripted worst case. Every failure message names the policy,
 //! so any order can be replayed. A step budget, not a timeout, ends a simulation that does not
 //! finish.
 
 use core::cell::Cell;
+use std::any::Any;
+use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 
 use super::*;
 use crate::schedule::BandRows;
@@ -33,13 +35,34 @@ enum Policy {
     /// Idle workers take first; then the worker holding the lowest band on the image moves, so
     /// bands finish in reverse order and the top band (and its failure) comes last.
     LowestBandFirst,
+    /// Worker 0 moves first (it takes the top band), then waits this many steps while the first
+    /// other worker still running moves, then moves whenever it is running.
+    Hold(usize),
 }
 
-/// A simulated worker: idle, or partway through a band (its first row and its rows left).
-struct Sim<'a> {
-    outcome: Outcome<u64, Coord>,
-    band: Option<(u32, Rows<'a>)>,
-    done: bool,
+/// A panic's payload: whatever the pixel function or a worker panicked with.
+type Payload = Box<dyn Any + Send>;
+
+/// A simulated worker: running (the production `Worker`, idle or partway through a band), done
+/// with its outcome, or ended by a panic in the pixel function.
+enum Sim<'s, 'a> {
+    Live(Worker<'s, 'a, u64, Coord>),
+    Done(Outcome<u64, Coord>),
+    Panicked,
+}
+
+impl Sim<'_, '_> {
+    const fn is_live(&self) -> bool {
+        matches!(self, Self::Live(_))
+    }
+
+    /// The first row of the band the worker is in, if it is in one.
+    fn band(&self) -> Option<u32> {
+        match self {
+            Self::Live(worker) => worker.band.as_ref().map(|(first, _)| *first),
+            _ => None,
+        }
+    }
 }
 
 /// The pixel function under test: a colour from the coordinates, the value 1 per pixel, and a
@@ -54,11 +77,15 @@ fn pixel(failing: &[Coord]) -> impl Fn(u32, u32) -> PixelResult + '_ {
 }
 
 /// The next worker to move under `policy`, or `None` when all are done.
-fn pick(sims: &[Sim<'_>], policy: Policy, rng: &mut u64) -> Option<usize> {
-    let live: Vec<usize> = (0..sims.len()).filter(|&n| !sims[n].done).collect();
+/// `step` is the number of steps taken so far.
+fn pick(sims: &[Sim<'_, '_>], policy: Policy, rng: &mut u64, step: usize) -> Option<usize> {
+    let live: Vec<usize> = (0..sims.len()).filter(|&n| sims[n].is_live()).collect();
     let first = *live.first()?;
     Some(match policy {
-        Policy::First => first,
+        Policy::Hold(steps) if first == 0 && (1..=steps).contains(&step) => {
+            live.get(1).copied().unwrap_or(first)
+        }
+        Policy::First | Policy::Hold(_) => first,
         Policy::Seeded(_) => {
             *rng ^= *rng << 13;
             *rng ^= *rng >> 7;
@@ -67,37 +94,56 @@ fn pick(sims: &[Sim<'_>], policy: Policy, rng: &mut u64) -> Option<usize> {
             live[usize::try_from(*rng % count).expect("below the count")]
         }
         Policy::LowestBandFirst => {
-            let idle = live.iter().copied().find(|&n| sims[n].band.is_none());
+            let idle = live.iter().copied().find(|&n| sims[n].band().is_none());
             idle.unwrap_or_else(|| {
-                let band = |n: usize| sims[n].band.as_ref().map_or(0, |(first, _)| *first);
-                live.iter().copied().max_by_key(|&n| band(n)).expect("live")
+                live.iter().copied().max_by_key(|&n| sims[n].band().unwrap_or(0)).expect("live")
             })
         }
     })
 }
 
-/// Moves worker `sim` one step: the steps of `work`, one at a time.
-fn step<'a>(shared: &Shared<'a>, sim: &mut Sim<'a>, pixel: &impl Fn(u32, u32) -> PixelResult) {
-    match sim.band.as_mut() {
-        None => {
-            sim.band = shared.take();
-            sim.done = sim.band.is_none();
-        }
-        Some((_, rows)) => match rows.next() {
-            None => sim.band = None,
-            Some((y, row)) => {
-                if shared.render_row(y, row, pixel, &mut sim.outcome) == Row::Leave {
-                    sim.band = None;
-                }
-            }
-        },
+/// Moves worker `sim` one step, `Worker::step` as `work` runs it, and returns the payload if
+/// the step panicked. The worker moves into the step, so a panic drops it as the panic unwinds
+/// out of the step, as it unwinds out of `work` on a thread; the worker is then `Panicked`.
+fn advance(sim: &mut Sim<'_, '_>, pixel: &impl Fn(u32, u32) -> PixelResult) -> Option<Payload> {
+    let Sim::Live(worker) = core::mem::replace(sim, Sim::Panicked) else { return None };
+    let stepped = catch_unwind(AssertUnwindSafe(move || {
+        let mut worker = worker;
+        let more = worker.step(pixel);
+        (more, worker)
+    }));
+    match stepped {
+        Ok((true, worker)) => *sim = Sim::Live(worker),
+        Ok((false, worker)) => *sim = Sim::Done(worker.finish()),
+        Err(payload) => return Some(payload),
     }
+    None
 }
 
-/// Runs `workers` simulated workers over the 13 by 9 image in bands of `rows` in the order
-/// `policy` chooses, with `pixel` as the pixel function, and returns what `render_pixels` would.
-/// With `halt` set to `(n, flag)`, the workers are halted before step `n`, as a failed spawn
-/// halts them, and `flag` is raised at that moment.
+/// The step budget of a simulation: each band taken once, each of its rows rendered once and
+/// one more step to see it end; each worker also makes one last take. More steps mean a
+/// scheduler that does not end.
+fn budget(size: ImageSize, rows: u32, workers: usize) -> usize {
+    let bands = widen(size.height().div_ceil(rows));
+    bands * (widen(rows.min(size.height())) + 2) + workers
+}
+
+/// The outcomes of the simulated workers that ended, combined, and the first panic's payload
+/// passed on with `resume_unwind`, as the threads' scope passes it on once every worker ended.
+fn ended(sims: Vec<Sim<'_, '_>>, panic: Option<Payload>) -> Outcome<u64, Coord> {
+    if let Some(payload) = panic {
+        resume_unwind(payload);
+    }
+    combine(
+        0,
+        sims.into_iter().map(|sim| match sim {
+            Sim::Done(outcome) => outcome,
+            Sim::Live(_) | Sim::Panicked => unreachable!("every worker ran to its end"),
+        }),
+    )
+}
+
+/// [`simulate_on`] the 13 by 9 image.
 fn simulate(
     rows: u32,
     workers: usize,
@@ -106,6 +152,22 @@ fn simulate(
     halt: Option<(usize, &Cell<bool>)>,
 ) -> Simulated {
     let size = ImageSize::new(WIDTH, HEIGHT).expect("size");
+    simulate_on(size, rows, workers, policy, pixel, halt)
+}
+
+/// Runs `workers` simulated workers over an image of `size` in bands of `rows` in the order
+/// `policy` chooses, with `pixel` as the pixel function, and returns what `render_pixels` would;
+/// a panic in `pixel` reaches the caller once every simulated worker has ended. With `halt` set
+/// to `(n, flag)`, the workers are halted before step `n`, as a failed spawn halts them, and
+/// `flag` is raised at that moment.
+fn simulate_on(
+    size: ImageSize,
+    rows: u32,
+    workers: usize,
+    policy: Policy,
+    pixel: &impl Fn(u32, u32) -> PixelResult,
+    halt: Option<(usize, &Cell<bool>)>,
+) -> Simulated {
     let schedule = Schedule::new(1, BandRows::new(rows).expect("rows")).expect("schedule");
     let mut image = blank(size)?;
     let mut rng = match policy {
@@ -114,24 +176,21 @@ fn simulate(
     };
     let outcome = {
         let shared = Shared::new(size, schedule, image.bytes_mut().as_chunks_mut::<4>().0);
-        let mut sims: Vec<Sim<'_>> = (0..workers)
-            .map(|_| Sim { outcome: Outcome::new(0), band: None, done: false })
-            .collect();
-        // At most 9 bands, each taken once, each of its at most 9 rows rendered once and one
-        // more step to see it end; each worker also makes one last take. More steps mean a
-        // scheduler that does not end.
-        let budget = 9 * (9 + 2) + workers;
-        let mut steps = 0;
-        while let Some(n) = pick(&sims, policy, &mut rng) {
+        let mut sims: Vec<Sim<'_, '_>> =
+            (0..workers).map(|_| Sim::Live(Worker::new(&shared, 0))).collect();
+        let budget = budget(size, rows, workers);
+        let (mut steps, mut panic) = (0, None);
+        while let Some(n) = pick(&sims, policy, &mut rng, steps) {
             assert!(steps < budget, "{policy:?}: no end within {budget} steps");
             if let Some((_, flag)) = halt.filter(|(at, _)| *at == steps) {
                 shared.halt();
                 flag.set(true);
             }
-            step(&shared, &mut sims[n], pixel);
+            let payload = advance(&mut sims[n], pixel);
+            panic = panic.or(payload);
             steps += 1;
         }
-        combine(0, sims.into_iter().map(|sim| sim.outcome))
+        ended(sims, panic)
     };
     let total = outcome.into_result()?;
     Ok((image.bytes().to_vec(), total))
@@ -363,4 +422,148 @@ fn a_refused_worker_is_reported_with_its_number_and_its_error() {
         assert_eq!(os.as_deref(), Some("refused by the test"), "{label}");
         assert_eq!(spawn.error().kind(), io::ErrorKind::Other, "{label}");
     }
+}
+
+/// The payload of the simulated pixel function's panic, raised with `resume_unwind`, which
+/// unwinds like a panic but prints no message.
+#[cfg(panic = "unwind")]
+#[derive(Debug, PartialEq, Eq)]
+struct PixelPanic(Coord);
+
+/// Oracle: the halt rule after a panic, counted exactly. On a 64 by 512 image with one-row
+/// bands the pixel function panics at `(0, 0)`. Under every order tried the panic reaches the
+/// caller with its own payload and no image, and no pixel is computed after it: the panicking
+/// worker halts the others, and each begins no row after that (a row is one step, so "after" is
+/// exact). So the pixels computed are the panicking one and the whole rows rendered before it,
+/// `1 + 64 * rows`, and for the scripted orders `rows` is known: worker 0 takes row 0 and
+/// renders it first (`Hold(0)`: no row), after the first other worker has rendered 100 rows in
+/// 300 steps of three (take, render, leave: `Hold(300)`), or last (`Hold(MAX)`: all 511 other
+/// rows). Without the halt, the other workers render every row left: 32 705 pixels at 2 and 4
+/// workers whatever the order.
+#[cfg(panic = "unwind")]
+#[test]
+fn a_panic_in_the_pixel_function_stops_every_worker_at_its_next_row() {
+    let size = ImageSize::new(64, 512).expect("size");
+    let whole = |rows: u32| u64::from(1 + 64 * rows);
+    let mut cases = vec![
+        (Policy::First, 1, 1),
+        (Policy::First, 2, 1),
+        (Policy::First, 4, 1),
+        (Policy::Hold(0), 4, 1),
+        (Policy::Hold(300), 1, 1),
+        (Policy::Hold(300), 2, whole(100)),
+        (Policy::Hold(300), 4, whole(100)),
+        (Policy::Hold(usize::MAX), 2, whole(511)),
+        (Policy::Hold(usize::MAX), 4, whole(511)),
+    ];
+    // Seeded orders: the count is not known in advance, only its form.
+    cases.extend((0..20).flat_map(|seed| [2, 4].map(|n| (Policy::Seeded(seed), n, 0))));
+    for (policy, workers, want) in cases {
+        let (asked, after, panicked) = (Cell::new(0_u64), Cell::new(0_u64), Cell::new(false));
+        let counting = |x, y| {
+            asked.set(asked.get() + 1);
+            if panicked.get() {
+                after.set(after.get() + 1);
+            }
+            if (x, y) == (0, 0) {
+                panicked.set(true);
+                resume_unwind(Box::new(PixelPanic((x, y))));
+            }
+            Ok(([9; 4], 1))
+        };
+        let got = catch_unwind(AssertUnwindSafe(|| {
+            simulate_on(size, 1, workers, policy, &counting, None)
+        }));
+        let label = format!("{policy:?}, {workers} workers: {} pixels", asked.get());
+        let payload = got.expect_err("the panic reaches the caller, with no image");
+        assert_eq!(payload.downcast_ref::<PixelPanic>(), Some(&PixelPanic((0, 0))), "{label}");
+        assert_eq!(after.get(), 0, "{label}, {} of them after the panic", after.get());
+        if want == 0 {
+            assert_eq!((asked.get() - 1) % 64, 0, "{label}: not whole rows and the panic");
+        } else {
+            assert_eq!(asked.get(), want, "{label}");
+        }
+    }
+}
+
+/// Simulated start-up: [`start_helpers`] with a start that refuses helper `refuse` (an `Other`
+/// error) and otherwise adds a simulated worker, after which the workers started so far move
+/// `gap` steps in the order `policy` picks, as threads already started run while the next is
+/// started. After the refusal the started workers run to their end, as the scope joins them; the
+/// calling worker never runs. Returns the start-up's result, the pixels computed after the
+/// refusal, and whether any started worker was still running at the refusal with rows left.
+fn simulate_refusal(
+    rows: u32,
+    workers: u32,
+    refuse: u32,
+    gap: usize,
+    policy: Policy,
+) -> (Result<usize, WorkerError<Coord>>, u64, bool) {
+    let size = ImageSize::new(WIDTH, HEIGHT).expect("size");
+    let schedule = Schedule::new(1, BandRows::new(rows).expect("rows")).expect("schedule");
+    let mut image = blank::<Coord>(size).expect("image");
+    let shared = Shared::new(size, schedule, image.bytes_mut().as_chunks_mut::<4>().0);
+    let (refused, after, pending) = (Cell::new(false), Cell::new(0_u64), Cell::new(false));
+    let counting = |x, y| {
+        if refused.get() {
+            after.set(after.get() + 1);
+        }
+        pixel(&[])(x, y)
+    };
+    let mut rng = match policy {
+        Policy::Seeded(seed) => seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1,
+        _ => 1,
+    };
+    let (mut sims, mut steps) = (Vec::new(), 0);
+    let started = start_helpers(&shared, workers, |worker| {
+        if worker == refuse {
+            let left = shared.wanted_end() > 0 && sims.iter().any(Sim::is_live);
+            pending.set(left && lock(&shared.bands).len() > 0);
+            refused.set(true);
+            return Err(io::Error::other("refused by the test"));
+        }
+        sims.push(Sim::Live(Worker::new(&shared, 0)));
+        for _ in 0..gap {
+            let Some(n) = pick(&sims, policy, &mut rng, steps) else { break };
+            assert!(advance(&mut sims[n], &counting).is_none(), "no panic here");
+            steps += 1;
+        }
+        Ok(())
+    });
+    let budget = budget(size, rows, widen(workers));
+    while let Some(n) = pick(&sims, policy, &mut rng, steps) {
+        assert!(steps < budget, "{policy:?}: no end within {budget} steps");
+        assert!(advance(&mut sims[n], &counting).is_none(), "no panic here");
+        steps += 1;
+    }
+    (started.map(|handles| handles.len()), after.get(), pending.get())
+}
+
+/// Oracle: the halt rule on a refused start, through the start-up the threads run. When helper
+/// `refuse` cannot be started after helpers 1 to `refuse - 1` have started and run for `gap`
+/// steps each, start-up returns `Spawn` for it, and no started worker computes a pixel after the
+/// refusal, under every order, gap, band height and refused worker tried. `Hold(4)` stops the
+/// first helper partway through its band, so it meets the halt between two rows of a band. Witness count: refusals
+/// that came while a started worker was running and bands were left, so a start-up that did not
+/// halt would have rendered more.
+#[test]
+fn after_a_refused_start_no_started_worker_begins_a_row() {
+    let mut witnesses = 0_usize;
+    for rows in [1, 2, 9] {
+        for (workers, refuse) in [(2, 1), (4, 2), (4, 3), (7, 6)] {
+            for gap in [0, 1, 3, 10] {
+                let scripted = [Policy::First, Policy::Hold(4)];
+                for policy in scripted.into_iter().chain((0..20).map(Policy::Seeded)) {
+                    let (got, after, pending) =
+                        simulate_refusal(rows, workers, refuse, gap, policy);
+                    let label = format!("{policy:?}, bands of {rows}, worker {refuse} of {workers} refused after {gap} steps");
+                    let want = SpawnError::new(refuse, io::Error::other("refused by the test"));
+                    assert_eq!(got, Err(WorkerError::Spawn(want)), "{label}");
+                    assert_eq!(after, 0, "{label}: {after} pixels after the refusal");
+                    witnesses += usize::from(pending);
+                }
+            }
+        }
+    }
+    assert!(witnesses > 0, "no refusal came while a started worker had rows left");
 }

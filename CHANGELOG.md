@@ -8,6 +8,19 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Fixed
 
+- A panic in the pixel function now halts the other workers (flyingrobots/lumen#56). Each worker
+  owns a guard that calls the halt when dropped while unwinding, so every other worker begins no
+  row after it has seen the halt; the panic still reaches the caller through `resume_unwind` once
+  every worker has stopped, with no image. Before, on a 64 by 512 image with one-row bands and a
+  panic at `(0, 0)`, 32 705 of 32 768 pixels were computed at 2 and 4 workers before the panic
+  reached the caller; now, in the simulation, none after the panic. The worker loop is
+  `Worker::step` and the spawn sequence `start_helpers`, which the unit tests' simulated workers
+  now run themselves: they model a panic (under `catch_unwind`) and a refused spawn after some
+  helpers have run, so removing the guard's halt or the halt on a refused spawn each fails a test
+  deterministically. `tests/threads.rs` checks on real threads that the panic reaches the caller,
+  at 1, 2 and 4 threads. The README no longer says the real-thread error tests bound the stop
+  rule: their limit is the whole image, and only the simulation checks the stop rule.
+
 - `lumen render --out` publishes the PNG atomically (flyingrobots/lumen#54): it writes a uniquely
   named temporary file next to the destination, syncs it, renames it into place and syncs the
   directory (Unix), and on any failure removes the temporary file and leaves the destination as it
@@ -21,6 +34,49 @@ All notable changes to lumen are recorded here. The format follows
 
 ### Added
 
+- Ray statistics and `lumen render --stats` (part of flyingrobots/lumen#29; ADR 0008):
+  `trace_path` records what each ray found in `PathSample::outcomes` (a `RayOutcomes`: camera hits
+  and misses, bounce hits, misses and rejections, shadow rays occluded and unoccluded), and
+  `Render::statistics` (a `RayStatistics`) adds the pixels, the samples and the fewest and most
+  rays of any pixel; `PathSample::rays` and `Render::rays` are unchanged and now derived from them.
+  `RayStatistics::check` states what every render satisfies (`RayCheckError` otherwise).
+  `render --stats` prints the unchanged report, the scene block of `lumen stats` and the `rays.`
+  lines (README, "Statistics"); without it the output is byte-identical. The outcomes are always
+  collected: measured, they cost nothing within the noise (README, "Performance"; ADR 0008).
+  `PathSample` and `Render` gain a field, which breaks a caller that builds one by its fields.
+- `lumen stats [--scene NAME]` (part of flyingrobots/lumen#29; ADR 0008) builds a scene and
+  prints its statistics without rendering: its name, content identity and integrator, then
+  `key value` lines for the triangles by material with each albedo, the bounds, the sun, the sky,
+  the camera placement, the tree's builder, layout and shape, and the bytes of each buffer
+  (README, "Statistics", documents every key). Fixed-point values print in decimal with six
+  places, rounded to nearest with ties away from zero, from their exact raw integers; the mean
+  leaf depth with two places, by integer division. A scene whose statistics cannot be read is a
+  new `Failure::Statistics` (exit code 1), which no built-in scene reaches.
+- Scene statistics (part of flyingrobots/lumen#29; [ADR 0008](docs/adr/0008-statistics.md)):
+  `Scene::statistics()` returns a `SceneStatistics`, computed on request from the built scene and
+  never on a ray's path: triangles in all, by material, smooth and of zero area; the bounds; the
+  tree's shape (`TreeStatistics`: nodes, interior nodes, leaves, the deepest leaf and the sum of
+  leaf depths, triangles per leaf, fewest, most and a histogram over `LEAF_SIZE_BUCKETS`), read by
+  a walk of Bunny's public compact nodes; and the bytes of each buffer (`SceneMemory`). The tree's
+  builder and layout are named by `TREE_BUILDER` and `TREE_LAYOUT`; `Scene::materials()` gives
+  the albedo table. `crates/lumen/tests/statistics.rs` (small) checks the tree's shape against a
+  recursive walk of a tree rebuilt with Bunny's builder from the same boxes and against Bunny's
+  documented bounds, the per-material counts against the reference scene's material indices, and
+  smooth, zero-area and unused-material counts on a scene built to hold them. ADR 0008 also
+  decides the command's output and the ray, run and traversal statistics, which are not yet
+  built; the traversal counters wait for flyingrobots/bunny#335.
+- Independent oracles for what a render reports (flyingrobots/lumen#55), in
+  `crates/lumen/tests/counts.rs` (medium: real threads at 1, 2 and 4): a pixel at 64 and 1024
+  samples equals that many direct `trace_path` calls in one `PixelAccumulator`; `Render::rays` and
+  every `PathSample::rays` equal the queries a counting tracer that wraps the scene observed, per
+  kind, for both built-in scenes, a camera that sees only sky (camera rays only) and a smooth
+  floor where Bunny rejects bounces (a rejected bounce traces and counts no ray); camera rays are
+  exactly `width * height * samples` and the total at most four times that; seeds differing only
+  in bit 31 or bit 0 give different images, each equal to a recomputation with Bunny's
+  `PixelSampler::new`. `png/tests.rs` reads the stored-block headers at exactly 65 535 filtered
+  bytes (one block) and the next sizes up (two); the strict decoder now reports each block's
+  length. The sample cap at 32, the doubled shadow count, the uncounted bounce, `MAX_STORED =
+  65_534`, `MAX_STORED_U64 = 65_534` and the dropped top and lowest seed bits each fail a test.
 - Smooth shading (part of flyingrobots/lumen#39; ADR 0007): `trace_path` shades a hit on a
   triangle with at least one vertex normal with Bunny's `bunny-smooth-shading/1`
   (`SmoothHit::new` at the hit's exact barycentric numerators, its light sample and its bounce,
@@ -89,6 +145,14 @@ All notable changes to lumen are recorded here. The format follows
   levels). Golden 96 by 54 hash
   `sha256:da6cb05db0d366a2088f19e6eefed2ab017dd0d27c6c5e364a85121054d6093e`, content
   `sha256:f80160bbd1ebb6e79f186bf5a86f2ce3419d4ef31168cc4cab0b6fd1f0f64e11`.
+- The command line, part of flyingrobots/lumen#57 (the documentation claims in that issue remain):
+  a separate option value that reads as an option (`--out --width`) is a usage error, exit 2,
+  instead of a file named `--width`; every option also takes `--option=value`, which allows such a
+  value. A refused image size exits 2, like a refused sample count, thread count or band height
+  (was 1); its message is unchanged. Leading zeros in numbers stay accepted for every numeric
+  option and are now documented and tested. The report's byte count is the number of bytes
+  written to the file (checked against the PNG's length), not the expectation itself.
+
 - The scene content encoding is `lumen-scene-content/2` (part of flyingrobots/lumen#39; ADR
   0005): after the camera, a `u64` count of vertex-normal entries (zero, or one per triangle),
   then per vertex a tag and, if present, the normal's three raw components. Every content digest

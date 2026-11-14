@@ -10,7 +10,7 @@ Work is tracked in GitHub Issues with `issue-dag/2` frontmatter.
 ## What lumen does today
 
 Lumen renders a built-in scene, prints its image hash and timing, and writes it to a PNG file
-if asked. `--scene reference` (the default) is the reference scene, which includes the Stanford
+if asked; `lumen stats` prints what a scene holds ([Statistics](#statistics)). `--scene reference` (the default) is the reference scene, which includes the Stanford
 bunny; `--scene fixed-point` is [Fixed Point](#the-fixed-point-scene), a showpiece. The
 reference render:
 
@@ -112,10 +112,11 @@ sampler states its stratification for aligned power-of-two blocks of samples, an
 accumulator takes at most 1024. The seed is `0..=4294967295`, the domain of Geordi's render
 settings. Arguments are read as OS strings, so an output path that is not valid Unicode is
 used as given; a non-Unicode number or option is refused like any other bad argument. Bad
-arguments exit with status 2 and the usage text; a refused size or an unwritable output path
-exits with status 1 and a message. The output file is published atomically (see below), so
-`--out` names either the complete new PNG or what it was before, whether the render or the write
-fails. `--threads` is `1..=256` (0 and anything larger are refused with
+arguments and every refused value (a size, samples, threads, band rows, a scene) exit with
+status 2 and a message, with the usage text for those the parser refuses; an unwritable output
+path or a failed render exits with status 1 and a message. The output file is published
+atomically (see below), so `--out` names either the complete new PNG or what it was before,
+whether the render or the write fails. `--threads` is `1..=256` (0 and anything larger are refused with
 status 2); `--band-rows` is the number of whole image rows a worker takes at a time, at least 1
 (0 is refused with status 2). There is no `--tile` option any more; it is refused as unknown.
 
@@ -146,6 +147,20 @@ named in the error.
   a sync, since replacing it would destroy the node.
 - The rename needs write permission on the directory, not on the old file.
 
+Option values. Each value is the next argument or, for any option, part of the same argument
+after an equals sign (`--out=FILE`, `--width=96`); only the first `=` splits, so `--out=a=b` names
+`a=b`. A separate value that starts with `-`, has more after it and is not a negative number is
+read as an option and refused with status 2 (`--out --width` is an error, not a file called
+`--width`), the rule of `clap` and `argparse`; to use such a value, write `--out=--width`. A lone
+`-` and a negative number such as `-3` are values (the latter is then refused as a number where a
+number is needed). `--` is not an option: lumen has no positional arguments for it to separate.
+The `=` form needs an argument that is valid Unicode; a non-Unicode path is passed as a separate
+argument. Numbers are decimal digits with no sign, space or underscore; leading zeros are
+accepted for every numeric option and change nothing (`--width 000096` is 96, never octal, and
+the report prints `96`), because a refusal would only reject a value whose meaning is clear.
+The report's `png` line gives the number of bytes written to the file, counted as the file
+accepted them; the command checks that it equals the PNG's length, and fails if it does not.
+
 The PNG is uncompressed (see below), so it is about four bytes per pixel: 922 266 bytes at
 640 by 360, and 33 188 430 bytes (about 33 MB) at 3840 by 2160.
 
@@ -159,7 +174,8 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   `Lighting`, `reference_scene`, `fixed_point_scene`, and `BuiltinScene`, the registry of
   named scenes with their identities that the command's `--scene` reads), rendering (`render`, `render_scheduled`, `render_traced`,
   `Schedule`, `BandRows`, `RenderSettings`, `ImageSize`), the result (`Render`, `Rgba8Image` and
-  its `hash`), its provenance (`RenderProvenance`), PNG encoding into any writer (`write_png`,
+  its `hash`), its provenance (`RenderProvenance`), a scene's statistics (`Scene::statistics`,
+  `SceneStatistics`, below), PNG encoding into any writer (`write_png`,
   `png_len`), and the integrator's parts for custom tracers (`trace_path`, `pixel_radiance`,
   `Tracer`, `Hit`, `PrimitiveIndex`, `TraceError`, `PathError`). Only `lumen::reference` and `lumen::scenes` (the scenes'
   content, as `reference` is) and `lumen::mesh` (the mesh types they use) are public modules. The SHA-256 and PNG checksum code
@@ -191,6 +207,20 @@ The crate has two targets. The library (`crates/lumen/src/lib.rs`) renders; the 
   describe a different scene under the same name. The built-in scenes' digests are golden
   values in `crates/lumen/tests/golden/mod.rs`, beside their image hashes, and one more, for a
   one-triangle scene, was computed outside lumen with Python's `hashlib`.
+- **A scene can be counted.** `Scene::statistics()` returns a `SceneStatistics`, computed on
+  request from the built scene and never while a ray is traced: the triangles in all, by
+  material (`triangles_by_material`, one entry per albedo, summing to the total), with a vertex
+  normal and of zero area; the bounds (the tree's root box); the tree's shape (`TreeStatistics`,
+  in the terms of Bunny's uncompacted tree: nodes, interior nodes, leaves, the deepest leaf and
+  the sum of leaf depths with the root at depth 0, the triangles per leaf, fewest, most and how
+  many leaves hold 1, 2, 3, 4 or more, `LEAF_SIZE_BUCKETS`); and the bytes of each buffer
+  (`SceneMemory`: its length times this build's element size; not the `Scene` value, spare
+  capacity, the allocator's overhead or the build's dropped buffers). `TREE_BUILDER` and
+  `TREE_LAYOUT` name Bunny's builder and layout; `Scene::materials()` gives the albedos. The
+  tree's shape is read by a walk of Bunny's public compact nodes, with no Bunny arithmetic. Every
+  value is an integer and a function of the scene, except that the byte counts also depend on the
+  type sizes of the build. [ADR 0008](docs/adr/0008-statistics.md) records the design, including
+  the ray, run and traversal statistics that are not yet built.
 - **The command owns everything at the edge**: argument parsing and the usage text (`cli.rs`,
   `cli/usage_error.rs`, with its tests in `cli/tests.rs`), the default thread count from
   `available_parallelism`, the clock, the output file and the terminal (`main.rs`, `report.rs`).
@@ -252,6 +282,91 @@ through the public API and checks its values and its chain.
 - `RenderError`, `PathError`, `WorkerError`, `Reservation`, `SizeError`, `SceneError`,
   `SceneBuffer`, `TraceError`, `PlaceError`, `FixedPointError`, `BuiltinSceneError` and
   `PngError` are `#[non_exhaustive]` ([ADR 0002](docs/adr/0002-library-api-surface.md)).
+
+## Statistics
+
+`lumen stats [--scene NAME]` builds a scene and prints what it holds, without rendering:
+
+```sh
+python3 $D lumen ~/git/lumen --worktree -- cargo run --locked -q -p lumen -- stats --scene reference
+```
+
+The library computes the counts (`Scene::statistics()`, a `SceneStatistics`) and the command
+formats them; nothing is counted while a ray is traced, and nothing in the scene changes.
+`Scene::statistics` is described under [Library and command](#library-and-command);
+[ADR 0008](docs/adr/0008-statistics.md) records what is counted and why it cannot change a pixel.
+Run and traversal statistics are decided there and not yet built.
+
+`lumen render ... --stats` prints the report unchanged, then the same scene block (every line of
+`lumen stats` after its first three, which the report already gives), then what the rays found.
+Without `--stats` the output is the report alone, byte for byte as before statistics existed.
+The command first checks the ray statistics against the size and settings (one record per pixel,
+`--samples` samples per pixel, exactly one camera ray per sample, at most four rays per sample)
+and fails with exit code 1 if they disagree, which no render the library produced does.
+
+Each line is a key with no spaces, one space and a value: one token, or a vector of tokens
+separated by single spaces. Keys are stable; new ones are added, never renamed. Fixed-point values
+are printed in decimal with six places from their exact raw integers, rounded to nearest with ties
+away from zero. Every value is a function of the scene alone, except the `memory.` byte counts,
+which also depend on this build's type sizes (the values below are those of 64-bit targets).
+
+| Key | Value |
+| --- | --- |
+| `scene`, `scene-content`, `integrator` | the scene's name, its content identity and its integrator, as in the render report |
+| `scene.triangles` | every triangle, zero-area ones included |
+| `scene.vertices` | three per triangle: lumen's triangles hold their own vertices and share none |
+| `scene.triangles-smooth` | triangles with at least one vertex normal, which `lumen-smooth-diffuse-path/1` shades smooth |
+| `scene.triangles-zero-area` | triangles of zero area: kept, never hit |
+| `scene.materials` | the albedos in the material table, used or not |
+| `scene.material.N.triangles` | the triangles naming material `N`; they sum to `scene.triangles` |
+| `scene.material.N.albedo` | material `N`'s red, green and blue reflectance |
+| `scene.bounds-min`, `scene.bounds-max` | the corners of the box around every triangle (the tree's root box) |
+| `light.sun` | `present` or `none`; when present, `light.sun-toward` (the direction to the sun) and `light.sun-irradiance` (per channel) follow |
+| `light.sky` | the sky's radiance per channel |
+| `camera.position`, `camera.look`, `camera.up`, `camera.tan-half-fov` | the camera placement as given |
+| `tree.builder`, `tree.layout` | `bunny_broadphase::build_bvh_sah` and `bunny_broadphase::compact_bvh`, at the Bunny commit of `lumen --version` |
+| `tree.nodes` | every node of Bunny's tree, interior and leaf: `2 * leaves - 1`, at most `2 * triangles - 1` |
+| `tree.interior-nodes`, `tree.leaves` | the two kinds; the compact layout stores one node per interior node and keeps leaves in their parent |
+| `tree.leaf-depth-max` | the deepest leaf, the root being at depth 0; at most 60 (Bunny's `SAH_MAX_DEPTH`) |
+| `tree.leaf-depth-total` | the sum of every leaf's depth |
+| `tree.leaf-depth-mean` | `leaf-depth-total / leaves`, with two places, rounded to nearest, ties up |
+| `tree.leaf-triangles` | the triangles of every leaf, summed: each triangle is in one leaf, so this is `scene.triangles` |
+| `tree.leaf-triangles-min`, `tree.leaf-triangles-max` | the fewest and most triangles in a leaf |
+| `tree.leaf-sizes` | five counts: leaves of 1, 2, 3 and 4 triangles, and of more (only at the depth cap) |
+| `memory.NAME-bytes` | information only, a fact about this build (the line ends in `(information only: this build's type sizes)`): each buffer's length times its element size, which depends on the target's pointer width: `triangles` (Bunny's `TraceTriangle`), `surfaces` (`Option<TriangleSurface>`), `vertex-normals`, `material-indices`, `materials`, `tree-nodes` (compact nodes), `tree-primitive-indices`, and their `total` |
+
+The ray lines (`render --stats`), each a function of the scene, the size and the settings, the
+same at every thread count and band height:
+
+| Key | Value |
+| --- | --- |
+| `rays.camera`, `rays.camera-hits`, `rays.camera-misses` | camera rays traced, and those that hit a triangle or left the scene: exactly one per sample |
+| `rays.bounce`, `rays.bounce-hits`, `rays.bounce-misses` | bounce rays traced, one at each camera hit unless rejected, and their hits and misses |
+| `rays.bounce-rejected` | bounces Bunny's smooth shading rejected as below the surface: no ray traced, so not in `rays.bounce` |
+| `rays.shadow`, `rays.shadow-occluded`, `rays.shadow-unoccluded` | shadow rays traced at camera and bounce hits, and those that met a triangle (the sun blocked) or nothing |
+| `rays.total` | every ray: the `rays` line's total |
+| `rays.pixels`, `rays.samples-per-pixel`, `rays.samples` | pixels rendered, samples asked for per pixel, and samples traced in all |
+| `rays.per-pixel-min`, `rays.per-pixel-max` | the fewest and most rays any one pixel traced |
+| `rays.per-pixel-mean` | `rays.total / rays.pixels`, with two places, rounded to nearest, ties up |
+
+Not counted in `memory.`: the `Scene` value and its vectors' headers, spare capacity, the
+allocator's overhead, the buffers dropped after the build (the boxes and the uncompacted tree of
+`2 * triangles` nodes) and what a render allocates. The output is machine-readable as it is
+(`awk '$1 == "tree.nodes" { print $2 }'`); there is no JSON form. For the reference scene:
+
+```text
+scene.triangles 31511
+scene.material.3.triangles 27648
+scene.material.4.triangles 3851
+scene.bounds-min -16.000000 -1.125000 -16.000000
+scene.bounds-max 16.000000 2.000000 16.000000
+tree.nodes 33095
+tree.leaves 16548
+tree.leaf-depth-max 20
+tree.leaf-depth-mean 16.36
+tree.leaf-sizes 2778 12708 931 131 0
+memory.total-bytes 11432728 (information only: this build's type sizes)
+```
 
 ## The reference scene
 
@@ -669,8 +784,11 @@ one mutex, one atomic); there is no `unsafe` and no thread-pool dependency.
   pixel in raster order, top row first: the error a
   one-pixel-at-a-time render in raster order meets, at every thread count and band height. When
   a pixel in row `y` fails, no worker begins a row from `y` down: every pixel before it is in an
-  earlier row, or earlier in row `y`, which only the failing worker renders. No worker panics or
-  waits on another; a panic in the pixel function reaches the caller after every worker stops.
+  earlier row, or earlier in row `y`, which only the failing worker renders. No worker waits on
+  another. A panic in the pixel function halts the other workers: each begins no row after it has
+  seen the halt (a row already begun finishes; when it sees the halt depends on the scheduler, so
+  this is not a time bound), and the panic reaches the caller once every worker has stopped, with
+  no image.
   A scene is checked whole before any of this: `Scene::new` refuses bad triangles, material
   indices and a camera placement Bunny's camera refuses (`SceneError::Camera`), so a render of a
   built scene can be refused only for its size.
@@ -696,7 +814,12 @@ in reverse order, so the top failing band is rendered last), on a 13 by 9 image 
 The image must equal a raster-order loop byte for byte, the pixel count must be exact, the error
 must be the raster-first failure (also where column-major order would choose another), and no
 pixel at or below the failing row may be computed after the failure; a step budget ends a
-simulation that does not finish. `crates/lumen/tests/threads.rs` then runs real threads at fixed
+simulation that does not finish. The simulated workers run the threads' own `Worker::step`, under
+`catch_unwind`, so a panic in the pixel function unwinds through the worker as on a thread: on a
+64 by 512 image with one-row bands and a panic at `(0, 0)`, no pixel is computed after the panic
+and the panic reaches the caller, under scripted and seeded orders; the pixels computed are
+exactly the panicking one plus 64 for each whole row rendered before it (1 when the panicking
+worker moves first, 6 401 after 100 rows of another, 32 705 when it moves last). `crates/lumen/tests/threads.rs` then runs real threads at fixed
 counts:
 
 - the golden 96 by 54 hash at 1, 2, 3, 4, 7 and 18 threads, each with bands of 1, 2, 4, 5, 6, 7,
@@ -705,8 +828,10 @@ counts:
 - a 320 by 180 image at 8 samples: one thread equals that raster-order loop byte for byte, and 18
   threads with one-row bands, 5 threads with bands of 7 and 16 threads with bands of 32 give the
   same image and ray count;
-- errors, each test bounded by a count of work taken (pixels asked for, traversal queries) that
-  fails it if exceeded, never by a timeout: an injected pixel function that fails at chosen
+- errors, each test counting the work taken (pixels asked for, traversal queries) and failing
+  past the whole image, never on a timeout. That limit catches a scheduler that repeats work or
+  does not end; it does not check the stop rule, which a scheduler that never stops early would
+  still pass. Only the simulation checks the stop rule. An injected pixel function that fails at chosen
   pixels returns the raster-first one at every thread count and band height, also when it is not
   the first in column-major order (`(40, 0)` before `(3, 5)`); on one thread a failure asks for
   exactly the pixels a raster-order loop asks for, up to and including the failing one, at every
@@ -717,14 +842,21 @@ counts:
 - a refused worker thread: helper threads are started through a spawner the unit tests can
   replace, and one that refuses worker `n` (after starting workers 1 to `n - 1` on real threads)
   makes the render return `Spawn` for worker `n` with the operating system's error, once the
-  started workers are joined. That workers begin no row after the halt a refusal calls is checked
-  in the simulator, under every hand-out order, band height and halt step.
+  started workers are joined. That the started workers begin no row after the refusal is checked
+  in the simulator, through the spawn sequence the threads run (`start_helpers`) with a simulated
+  start that refuses helper `n` after the others have run 0, 1, 3 or 10 steps each.
+- a panic: a pixel function that panics at `(0, 0)` of a 64 by 512 image reaches the caller with
+  its own payload, and no image, at 1, 2 and 4 threads. How much the other threads compute first
+  depends on the operating system's scheduling, so it is not bounded here; the simulation bounds
+  it.
 
 Each of these mutations makes tests fail in the release profile (checked by hand, each mutant's
 test run under a 120-second `timeout` as a guard, sources touched before every build so that no
 stale build is tested): numbering a band's rows from one past its first row (pixels
 written at the wrong row offset); dropping the last partial band; choosing the first failure by
-`(x, y)` instead of `(y, x)`; dropping the calling worker's ray count; and ignoring the stop row after a failure.
+`(x, y)` instead of `(y, x)`; dropping the calling worker's ray count; ignoring the stop row after a failure;
+removing the halt a panicking worker's guard calls; removing the halt on a refused spawn; and the
+guard halting on every drop, not only while unwinding.
 
 ## Performance
 
@@ -765,6 +897,12 @@ builds](docs/measurements/2026-11-13-4k-row-bands.md) repeats it for flyingrobot
 Each states its commit and conditions and applies to that commit only.
 
 ### Readings
+
+Ray statistics cost nothing measurable: the outcomes `render --stats` reports are always
+collected, and the render with them took 7.037 s at one thread and 0.547 s at 18 against 6.994 s
+and 0.544 s on `main` (1280 by 720, 16 samples, medians of three interleaved runs), the same gap
+as between two binaries running identical render code ([ADR 0008](docs/adr/0008-statistics.md)
+has the runs).
 
 Row bands with whole-program release builds (`lto = "fat"`, `codegen-units = 1`) against the
 tile scheduler on `main` before flyingrobots/lumen#28 (0de5fe7, default release profile), in one
@@ -822,7 +960,10 @@ not a contract value.
 
 **PNG encoder: hand-written, stored deflate blocks** (`crates/lumen/src/png.rs`). It writes
 8-bit RGBA with filter type 0 on every row and the zlib stream as uncompressed stored blocks of
-at most 65 535 bytes, one `IDAT` chunk each. Reasons:
+at most 65 535 bytes, one `IDAT` chunk each, every block but the last full. A unit test reads
+the block headers at exactly 65 535 filtered bytes (1 by 13 107, 64 by 255, 5 461 by 3: one full
+block) and at the next sizes up (a full block and the rest); no image has exactly 65 536, since
+`height * (1 + 4 * width)` has an odd factor above 1. Reasons:
 
 - the contract is the hash of the raw bytes, so compression buys only file size;
 - it needs no dependency and about 200 lines with its documentation, CRC-32 and Adler-32 included;
@@ -872,6 +1013,20 @@ How it is tested (`crates/lumen/tests/`):
 - **Order independence**: a pixel's samples accumulated forwards, backwards, shuffled and in
   merged partial accumulators give the same bits; an image whose pixels are computed in a
   scrambled order has the same hash.
+- **Counts, against something other than the code that counts** (`crates/lumen/tests/counts.rs`):
+  at 64 and 1024 samples a pixel equals a `PixelAccumulator` filled by that many direct
+  `trace_path` calls, with the sum of their ray counts (and the mean of the first 32 samples
+  differs, so a loop that stopped early would show); a tracer that wraps the scene and counts
+  the queries it is asked, by kind (a closest-hit query from the camera's eye point is a camera
+  ray), agrees with `Render::rays` for small renders of both built-in scenes at 1, 2 and 4
+  threads, up to 1024 samples, and with `PathSample::rays` for every path of a 16 by 9 image;
+  camera rays are exactly `width * height * samples` and the total lies between that and four
+  times that; a camera that sees only sky traces exactly its camera rays; on a smooth floor
+  Bunny rejects some bounces, a rejected bounce traces no ray and none is counted. Seeds that
+  differ only in the top bit, or only in the lowest, give different images, each equal to a
+  recomputation that builds every pixel's sampler with `PixelSampler::new` itself. Five
+  mutations each fail these tests: the sample loop capped at 32, a shadow ray counted twice, the
+  bounce ray not counted, bit 31 of the seed dropped and its lowest bit forced to 1.
 - **Convergence** (a regression guard, not a proof): for six reference pixels the mean of 1024
   samples is within `5 / 256` of the mean of 256 per channel.
 - **The bunny**: the asset's SHA-256; the converted mesh (counts, the first vertex's raw values and a
@@ -1061,8 +1216,8 @@ digest, and review accepts or refuses it there.
   *Small*: in one process, no file, no network, no clock. The renderer's own worker threads are
   allowed because they are the code under test. *Medium*: spawns the `lumen` process, writes
   files, or runs real threads at fixed counts. Run one class by file: `cargo test --test cli
-  --test threads` is the medium set; `cargo test --lib --test render --test library --test
-  fixed_point` the small set. There is no large class yet.
+  --test threads --test counts` is the medium set; `cargo test --lib --test render --test library --test
+  fixed_point --test statistics` the small set. There is no large class yet.
 - **Hermetic files** (rule 8). A test that writes files makes a `Scratch` directory (see
   `crates/lumen/tests/cli.rs`) named for the test and the process id under `CARGO_TARGET_TMPDIR`,
   runs the command with it as the working directory, passes absolute paths and removes it when
