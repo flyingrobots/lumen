@@ -150,6 +150,24 @@ worker's sum (`Rendered`, `WorkerRun`), in a list reserved before any thread sta
 rows, pixels, rays). `Render` does not hold them, so two renders of the same scene at different
 schedules still compare equal. `render --stats` prints them last, as `run.` lines.
 
+A worker counts bands, once per band taken, and nothing per row: its rows are its pixels (counted
+per pixel already, in its `RayStatistics`) over the width, exact because in a render that
+succeeded every worker renders whole rows. A first version counted rows in each worker's step and
+measured 2.3 % slower at 18 threads. Measured against the ray-statistics branch (ea89a9d), same
+machine and settings as above, base and head alternated, 14 runs each at 18 threads:
+
+| Version | Render seconds, 18 threads | Median |
+| --- | --- | ---: |
+| base (ea89a9d) | 0.546 to 0.582 | 0.554 |
+| rows counted per row | 0.554 to 0.595 | 0.567 (+2.3 %) |
+| base (ea89a9d), a second session | 0.539 to 0.574 | 0.561 |
+| bands only, rows derived (built) | 0.550 to 0.587 | 0.568 (+1.3 %) |
+
+At one thread the per-row version measured the same as base (medians 7.169 against 7.162 s,
+three runs each). What is left at 18 threads, about 7 ms in 0.56 s, is within the spread of
+either set of runs but leans one way; if it is to go, the next step is a zero-sized tally type for
+the scheduler when run statistics are not asked for, which this change does not make.
+
 There is no per-worker busy time. The library reads no clock (ADR 0006), and the honest simple
 measure is the one the command already takes: the wall time of the whole render. An injected
 tick source, a seam the command would provide and tests replace, was weighed and rejected: it
