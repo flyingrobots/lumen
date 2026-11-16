@@ -47,7 +47,7 @@ pub const PROVENANCE_FIELDS: usize = 13;
 /// let settings = RenderSettings::new(4, 7)?;
 /// let provenance = RenderProvenance::named(REFERENCE_SCENE_ID, &scene, size, settings);
 /// let fields = provenance.fields();
-/// assert_eq!(fields[0], ("scene", ProvenanceValue::Identity("lumen-reference-scene/3")));
+/// assert_eq!(fields[0], ("scene", ProvenanceValue::Identity("lumen-reference-scene/4")));
 /// assert_eq!(fields[7], ("size", ProvenanceValue::Size(size)));
 /// assert_eq!(fields[8], ("pixels", ProvenanceValue::Number(144)));
 /// assert_eq!(fields[10], ("seed", ProvenanceValue::Number(7)));
