@@ -5,7 +5,7 @@
 use super::tokens::{Located, Token};
 
 /// Macros, by name, and their rules. `dbg!` prints to standard error with the source path.
-const MACROS: [(&str, &str); 8] = [
+const MACROS: &[(&str, &str)] = &[
     ("thread_local", "shared-state"),
     ("file", "source-path"),
     ("dbg", "host-io"),
@@ -14,13 +14,14 @@ const MACROS: [(&str, &str); 8] = [
     ("eprint", "host-io"),
     ("eprintln", "host-io"),
     ("cfg", "platform-branch"),
+    ("cfg_select", "platform-branch"),
 ];
 
 /// Methods, by name, and their rules: a pointer's address (`addr`, `expose_provenance`) or a
 /// property of it (`is_aligned`, `align_offset`), and whether a stream is a terminal. The
 /// receiver's type is not known, so a method of the core's own with one of these names is a
 /// finding too.
-const METHODS: [(&str, &str); 7] = [
+const METHODS: &[(&str, &str)] = &[
     ("addr", "address"),
     ("expose_provenance", "address"),
     ("expose_addr", "address"),
@@ -33,29 +34,39 @@ const METHODS: [(&str, &str); 7] = [
 /// The `cfg` predicates that do not depend on the target, the host or the profile: `test`,
 /// `doc` and `doctest` are how the code is built for checking, and `feature` is the caller's
 /// choice, written in its manifest.
-const NEUTRAL_CFGS: [&str; 7] = ["all", "any", "not", "test", "feature", "doc", "doctest"];
+const NEUTRAL_CFGS: &[&str] = &["all", "any", "not", "test", "feature", "doc", "doctest"];
 
 /// The integer types a pointer can be cast to.
-const INTEGERS: [&str; 12] =
-    ["usize", "isize", "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128"];
+const INTEGERS: &[&str] =
+    &["usize", "isize", "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128"];
 
 /// The pointer-making functions whose result cast to an integer is an address.
-const POINTER_CALLS: [&str; 6] =
-    ["as_ptr", "as_mut_ptr", "from_ref", "from_mut", "addr_of", "cast"];
+const POINTER_CALLS: &[&str] = &["as_ptr", "as_mut_ptr", "from_ref", "from_mut", "addr_of", "cast"];
+
+/// The rule under which the scan refuses the macro `name` (`file`, `cfg`, `is_x86_feature_detected`,
+/// `env`), if it does.
+pub(super) fn macro_rule(name: &str) -> Option<&'static str> {
+    if let Some((_, rule)) = MACROS.iter().find(|(m, _)| *m == name) {
+        Some(rule)
+    } else if name.starts_with("is_") && name.ends_with("_feature_detected") {
+        Some("host-cpu")
+    } else {
+        (name == "env" || name == "option_env").then_some("std-env")
+    }
+}
 
 /// Each host finding of `toks`: its line, rule and what was found.
 pub(super) fn host_findings(toks: &[Located]) -> Vec<(usize, &'static str, String)> {
     let mut out = Vec::new();
     let at = |i: usize| toks.get(i).map(|(_, t)| t);
+    let in_macro = macro_arguments(toks);
     for (i, (line, token)) in toks.iter().enumerate() {
         match token {
             Token::Ident(name) if at(i + 1) == Some(&Token::Punct('!')) && opens(at(i + 2)) => {
-                if let Some((_, rule)) = MACROS.iter().find(|(m, _)| m == name) {
-                    if *rule != "platform-branch" || !neutral(&toks[i + 2..]) {
-                        out.push((*line, *rule, format!("{name}!")));
-                    }
-                } else if name.starts_with("is_") && name.ends_with("_feature_detected") {
-                    out.push((*line, "host-cpu", format!("{name}!")));
+                match macro_rule(name) {
+                    Some("platform-branch") if neutral(&toks[i + 2..]) => {}
+                    Some("std-env") | None => {}
+                    Some(rule) => out.push((*line, rule, format!("{name}!"))),
                 }
             }
             Token::Ident(name)
@@ -81,13 +92,31 @@ pub(super) fn host_findings(toks: &[Located]) -> Vec<(usize, &'static str, Strin
                     out.push((*line, "platform-branch", what));
                 }
             }
-            Token::Str(text) if formats_pointer(text) => {
+            Token::Str(text) if in_macro[i] && formats_pointer(text) => {
                 out.push((*line, "address", "a {:p} format".to_owned()));
             }
             _ => {}
         }
     }
     out
+}
+
+/// For each token, whether it is inside a macro invocation's arguments (`format!(..)`,
+/// `write!(f, ..)`), where a string literal is a format string.
+fn macro_arguments(toks: &[Located]) -> Vec<bool> {
+    let mut inside = vec![false; toks.len()];
+    for i in 0..toks.len() {
+        let call = matches!(toks.get(i), Some((_, Token::Ident(_))))
+            && toks.get(i + 1).map(|(_, t)| t) == Some(&Token::Punct('!'))
+            && opens(toks.get(i + 2).map(|(_, t)| t));
+        if call {
+            let len = bracketed(&toks[i + 2..]).len();
+            for flag in inside.iter_mut().skip(i + 3).take(len) {
+                *flag = true;
+            }
+        }
+    }
+    inside
 }
 
 /// Whether a token opens a macro's arguments.

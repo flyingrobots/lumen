@@ -47,7 +47,7 @@ use file_length::{code_lines, judge, Measured, EXCEPTIONS};
 use layout::Layout;
 
 /// The directories read, relative to the repository root.
-pub(crate) const ROOTS: [&str; 2] = ["crates", "xtask"];
+pub(crate) const ROOTS: &[&str] = &["crates", "xtask"];
 
 /// Each file's path, relative to the repository root with `/` separators, and its text.
 type Files = Vec<(String, String)>;
