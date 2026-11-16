@@ -8,13 +8,13 @@
 use super::{core_findings, CrateAliases};
 
 /// A label, the source, the rule and the line that must be reported.
-type Form = (&'static str, &'static str, &'static str, usize);
+pub(super) type Form = (&'static str, &'static str, &'static str, usize);
 
 fn reported(source: &str) -> Vec<(usize, &'static str)> {
     core_findings(source, &CrateAliases::default()).iter().map(|f| (f.line, f.rule)).collect()
 }
 
-const REJECTED: [Form; 40] = [
+pub(super) const REJECTED: &[Form] = &[
     ("a: thread::current().name() (issue)", "pub fn f() -> usize { std::thread::current().name().map_or(0, str::len) }", "thread-identity", 1),
     ("b: ptr.addr() (issue)", "pub fn f(x: &u32) -> usize { core::ptr::from_ref(x).addr() }", "address", 1),
     ("d: cfg!(target_os) (issue)", "pub fn f() -> u32 { u32::from(cfg!(target_os = \"macos\")) }", "platform-branch", 1),
@@ -33,6 +33,7 @@ const REJECTED: [Form; 40] = [
     ("a pointer cast to usize", "pub fn f(x: &u32) -> usize { x as *const u32 as usize }", "address", 1),
     ("as_ptr() cast to u64", "pub fn f(x: &[u8]) -> u64 { x.as_ptr() as u64 }", "address", 1),
     ("{:p} formats an address", "pub fn f(x: &u32) -> usize { format!(\"{x:p}\").len() }", "address", 1),
+    ("{:p} in write!", "pub fn f(w: &mut String, x: &u32) -> core::fmt::Result {\n    core::fmt::Write::write_fmt(w, format_args!(\"{:p}\", x))\n}", "address", 2),
     ("{:#p} and a width", "pub fn f(x: &u32) -> String { format!(\"at {0:>18p}\", x) }", "address", 1),
     ("is_aligned and align_offset", "pub fn f(x: &[u8]) -> usize { usize::from(x.as_ptr().is_aligned()) + x.as_ptr().align_offset(8) }", "address", 1),
     ("cfg!(target_pointer_width)", "pub fn f() -> u32 { if cfg!(target_pointer_width = \"64\") { 8 } else { 4 } }", "platform-branch", 1),
@@ -57,7 +58,7 @@ const REJECTED: [Form; 40] = [
     ("dbg! prints the source path to stderr", "pub fn f(x: u32) -> u32 { dbg!(x) }", "host-io", 1),
 ];
 
-const ACCEPTED: [(&str, &str); 13] = [
+const ACCEPTED: &[(&str, &str)] = &[
     ("modules named env, os and thread of the core's own", "mod env { pub fn var() -> u32 { 1 } }\nmod os { pub fn name() -> u32 { 2 } }\nmod thread { pub fn current() -> u32 { 3 } }\npub fn f() -> u32 { env::var() + os::name() + thread::current() }"),
     ("identifiers addr and file, a field addr", "pub struct Slot { pub addr: u32 }\npub fn f(s: &Slot) -> u32 { let addr = s.addr; let file = addr + 1; file * 2 }"),
     ("line!, column! and module_path!", "pub fn f() -> u32 { line!() + column!() + u32::try_from(module_path!().len()).unwrap_or(0) }"),
@@ -70,6 +71,7 @@ const ACCEPTED: [(&str, &str); 13] = [
     ("a field and a method named name and id", "pub struct W { pub id: u32 }\npub fn f(w: &W) -> u32 { w.id + w.name() }"),
     ("BTreeMap and core::hash::Hash", "use core::hash::Hash;\npub fn f<T: Hash>(_t: &T) -> std::collections::BTreeMap<u8, u8> { std::collections::BTreeMap::new() }"),
     ("a 'static reference type in a where clause", "pub fn f<T>() where &'static T: Sized {}"),
+    ("{:p} in a string that is not a format", "pub const S: &str = \"{:p}\";"),
     ("an atomic field, not a static", "pub struct Shared { end: core::sync::atomic::AtomicU32 }"),
 ];
 

@@ -27,7 +27,7 @@ pub(crate) const FIXTURE_SRC: &str = "xtask/clippy-fixture/src";
 pub(crate) const STD_ITEMS: &str = "xtask/bans/std-items.txt";
 
 /// The Clippy lints of the bans, as `cargo clippy -- -W help` spells them.
-const BAN_LINTS: [&str; 4] = [
+const BAN_LINTS: &[&str] = &[
     "clippy::disallowed-methods",
     "clippy::disallowed-types",
     "clippy::disallowed-macros",
@@ -72,7 +72,7 @@ pub(crate) struct Form {
 }
 
 /// The keys of `clippy.toml` whose arrays hold bans.
-const BAN_KEYS: [&str; 3] = ["disallowed-types", "disallowed-methods", "disallowed-macros"];
+const BAN_KEYS: &[&str] = &["disallowed-types", "disallowed-methods", "disallowed-macros"];
 
 /// `clippy.toml`'s bans, and a failure for each item of a ban array the check cannot read: not
 /// an inline table, or one without `path` and `reason` as strings, or with any other key
