@@ -117,7 +117,16 @@ part was built.
   `cfg_attr` on anything but `test`, `feature`, `doc` and `doctest` (`platform-branch`), `file!`
   and `panic::Location` (`source-path`), `DefaultHasher`, `SipHasher` and
   `collections::hash_map` (`std-hasher`), and `TypeId` and `type_name` (`type-identity`); its
-  rule tables are in `xtask/src/nondeterminism/rules.rs`. The
+  rule tables are in `xtask/src/nondeterminism/rules.rs`. `clippy.toml` also bans
+  `thread::current`, `Thread`, `ThreadId`, `thread_local!`, `LocalKey`, `panic::set_hook` and
+  `take_hook`, `io::stdin`/`stdout`/`stderr`/`pipe` with their types and `IsTerminal`,
+  `DefaultHasher`, `SipHasher`, `TypeId`, `type_name`, `type_name_of_val` and `panic::Location`,
+  each used by the fixture; the std item list holds every top-level module and root macro of std
+  and the items of `std::io`, `hash`, `any` and `panic`, each module and macro is decided, an
+  undecided one fails `xtask clippy-bans`, and a decision left to the scan is checked against
+  the scan's own tables. A test fails when a rule ID of the scan is reported by no seeded form
+  (rules only Clippy or `cargo-deny` enforce are listed in `VOCABULARY_ONLY`), and the scan's
+  tables and fixture lists in `xtask` are slices, so adding a form edits no length. The
   scan also checks the workspace boundary from `cargo metadata`: every deterministic crate's
   library is core and must deny float arithmetic; a member neither reached by `lumen` nor
   classified as tooling, a path dependency outside the workspace, a dependency from anywhere but
