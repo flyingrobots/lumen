@@ -9,7 +9,7 @@ use super::{Finding, RULES};
 
 /// The Clippy lints of the bans, and the two renamed names (`disallowed_method`,
 /// `disallowed_type`) that `rustc` still applies to them.
-const BAN_LINTS: [&str; 6] = [
+const BAN_LINTS: &[&str] = &[
     "disallowed_methods",
     "disallowed_types",
     "disallowed_macros",
@@ -22,11 +22,11 @@ const BAN_LINTS: [&str; 6] = [
 /// Clippy 0.1.96): `clippy::all` and `clippy::style` hold the three `disallowed_*` lints and
 /// `clippy::restriction` holds `float_arithmetic`. `warnings` holds every lint at `warn`, so
 /// with a ban lowered to `warn` it turns the ban off.
-pub(crate) const BAN_GROUPS: [&str; 4] =
-    ["clippy::all", "clippy::style", "clippy::restriction", "warnings"];
+pub(crate) const BAN_GROUPS: &[&str] =
+    &["clippy::all", "clippy::style", "clippy::restriction", "warnings"];
 
 /// The lint levels that can turn a ban off: everything below `deny`.
-const LOWERING: [&str; 3] = ["allow", "expect", "warn"];
+const LOWERING: &[&str] = &["allow", "expect", "warn"];
 
 /// Removes the findings a waiver covers and adds a `waiver` finding for each waiver that is
 /// malformed or covers nothing. A waiver is a plain line comment, read by the lexer, that starts
