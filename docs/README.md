@@ -48,6 +48,7 @@ sections, never rewrites.
 | [0007](adr/0007-smooth-shading.md) | Smooth shading: the integrator's identity and the vertex normals | accepted; clarified 2026-11-14 |
 | [0008](adr/0008-statistics.md) | Statistics: what is counted, where, and why it cannot change the image | accepted |
 | [0009](adr/0009-image-hash.md) | The image hash | accepted (recorded 2026-11-14) |
+| [0012](adr/0012-image-decoding.md) | Image decoding lives in a dependency-free `lumen-image` crate | accepted |
 
 ## Measurement records
 

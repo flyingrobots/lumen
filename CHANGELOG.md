@@ -134,6 +134,10 @@ part was built.
   requirement-to-evidence map, a how-to for measuring render time, a
   [contributor guide](CONTRIBUTING.md), an [index](docs/README.md), ADRs 0001 to 0009 and dated
   measurement records in `docs/measurements/`. (flyingrobots/lumen#5, #25, #39, #40, #57.)
+- **ADR 0012** ([image decoding](docs/adr/0012-image-decoding.md)): PNG and JPEG are decoded by
+  Lumen's own float-free code in a dependency-free `lumen-image` crate, with the supported and
+  refused features of each format stated. The crate is built by #195 to #199.
+  (flyingrobots/lumen#184.)
 - **Dependencies**: Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`,
   `bunny-broadphase`, `bunny-optics` and `bunny-codec` (default features off), version 0.7.1,
   as git dependencies pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (`BUNNY_REV`, checked
