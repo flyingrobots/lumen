@@ -41,7 +41,7 @@ pub(crate) enum Failure {
         /// Why it could not be written.
         error: PublishError,
     },
-    /// The report could not be written to standard output: exit code 1.
+    /// A message could not be written to standard output: exit code 1.
     Stdout(io::Error),
 }
 

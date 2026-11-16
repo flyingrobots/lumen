@@ -1,12 +1,13 @@
-//! What `lumen stats` prints: a built scene's statistics as `key value` lines (ADR 0008).
+//! The statistics messages (ADR 0008, ADR 0015): `scene_statistics`, which `lumen stats` and
+//! `render --stats` print, and `ray_statistics`, `traversal_statistics` and `run_statistics`,
+//! which `render --stats` adds.
 //!
-//! Each line is a key with no spaces, one space, and its value: one token, or several separated
-//! by single spaces (a vector's three components). Fixed-point values are printed in decimal
-//! with six places, rounded to nearest with ties away from zero, from their exact raw integers.
-//! docs/reference/cli.md, "Statistics", documents every key.
+//! Every number is an integer. A fixed-point value is a string, in decimal with six places,
+//! rounded to nearest with ties away from zero, from its exact raw integer, because a JSON
+//! number would be read as a float. A mean is not printed: its total and its count are, and a
+//! program divides. docs/reference/cli.md, "Statistics", documents every member.
 
 use core::fmt;
-use std::io::{self, Write};
 
 use bunny_linalg::FixedVec3;
 use bunny_num::FixedQ32_32;
@@ -15,164 +16,141 @@ use lumen::{
     TREE_LAYOUT,
 };
 
-/// Writes `lumen stats`: the scene's name, content identity and integrator, then its block.
-pub(crate) fn write_stats(
-    out: &mut impl Write,
-    name: &str,
-    scene: &Scene,
-    stats: &SceneStatistics,
-) -> io::Result<()> {
-    writeln!(out, "scene {name}")?;
-    writeln!(out, "scene-content {}", scene.content_id())?;
-    writeln!(out, "integrator {}", Integrator::for_scene(scene).id())?;
-    write_scene_block(out, scene, stats)
+use crate::json::{array, Object, Value};
+use crate::messages::message;
+
+/// The `scene_statistics` message: the scene's name, content identity and integrator, then its
+/// contents, lights and camera, its tree and its memory.
+pub(crate) fn scene_statistics(name: &str, scene: &Scene, stats: &SceneStatistics) -> Object {
+    let object = message("scene_statistics")
+        .with("scene", name)
+        .with("scene_content", scene.content_id().to_string())
+        .with("integrator", Integrator::for_scene(scene).id());
+    let object = contents(object, scene, stats);
+    let object = lights_and_camera(object, scene);
+    object.with("tree", tree(stats)).with("memory", memory(stats))
 }
 
-/// The label of every `memory.` line: a byte count is this build's type sizes times the counts,
-/// so it can differ between targets (a 32-bit `usize`, for one), unlike every other value.
-pub(crate) const MEMORY_NOTE: &str = "(information only: this build's type sizes)";
-
-/// The scene's statistics: its contents, lights and camera, its tree, its memory.
-pub(crate) fn write_scene_block(
-    out: &mut impl Write,
-    scene: &Scene,
-    stats: &SceneStatistics,
-) -> io::Result<()> {
-    write_contents(out, scene, stats)?;
-    write_lights_and_camera(out, scene)?;
-    write_tree(out, stats)?;
-    write_memory(out, stats)
-}
-
-fn write_contents(out: &mut impl Write, scene: &Scene, stats: &SceneStatistics) -> io::Result<()> {
+fn contents(object: Object, scene: &Scene, stats: &SceneStatistics) -> Object {
     let triangles = stats.triangles;
-    writeln!(out, "scene.triangles {triangles}")?;
-    // Lumen's triangles hold their own three vertices; none is shared.
-    writeln!(out, "scene.vertices {}", wide(triangles) * 3)?;
-    writeln!(out, "scene.triangles-smooth {}", stats.smooth_triangles)?;
-    writeln!(out, "scene.triangles-zero-area {}", stats.zero_area_triangles)?;
-    writeln!(out, "scene.materials {}", stats.triangles_by_material.len())?;
-    for (material, (count, albedo)) in
-        stats.triangles_by_material.iter().zip(scene.materials()).enumerate()
-    {
-        writeln!(out, "scene.material.{material}.triangles {count}")?;
-        writeln!(out, "scene.material.{material}.albedo {}", Channels(albedo.channels()))?;
-    }
-    writeln!(out, "scene.bounds-min {}", Vector(stats.bounds.min))?;
-    writeln!(out, "scene.bounds-max {}", Vector(stats.bounds.max))
+    let albedos = scene.materials().iter().map(|albedo| channels(albedo.channels()));
+    object
+        .with("triangles", triangles)
+        // Lumen's triangles hold their own three vertices; none is shared.
+        .with("vertices", u64::try_from(triangles).unwrap_or(u64::MAX).saturating_mul(3))
+        .with("triangles_smooth", stats.smooth_triangles)
+        .with("triangles_zero_area", stats.zero_area_triangles)
+        .with("material_triangles", array(stats.triangles_by_material.iter().copied()))
+        .with("material_albedo", array(albedos))
+        .with("bounds_min", vector(stats.bounds.min))
+        .with("bounds_max", vector(stats.bounds.max))
 }
 
-fn write_lights_and_camera(out: &mut impl Write, scene: &Scene) -> io::Result<()> {
+fn lights_and_camera(object: Object, scene: &Scene) -> Object {
     let lighting = scene.lighting();
-    match lighting.sun {
-        Some(sun) => {
-            writeln!(out, "light.sun present")?;
-            writeln!(out, "light.sun-toward {}", Vector(sun.toward_light()))?;
-            writeln!(out, "light.sun-irradiance {}", Channels(sun.irradiance()))?;
-        }
-        None => writeln!(out, "light.sun none")?,
-    }
-    writeln!(out, "light.sky {}", Channels(lighting.sky.radiance()))?;
+    let sun = lighting.sun.map(|sun| {
+        Object::new()
+            .with("toward", vector(sun.toward_light()))
+            .with("irradiance", channels(sun.irradiance()))
+    });
     let camera = scene.camera();
-    writeln!(out, "camera.position {}", Vector(camera.position))?;
-    writeln!(out, "camera.look {}", Vector(camera.look))?;
-    writeln!(out, "camera.up {}", Vector(camera.up))?;
-    writeln!(out, "camera.tan-half-fov {}", Fixed(camera.tan_half_fov))
+    object
+        .with("light", Object::new().with("sun", sun).with("sky", channels(lighting.sky.radiance())))
+        .with(
+            "camera",
+            Object::new()
+                .with("position", vector(camera.position))
+                .with("look", vector(camera.look))
+                .with("up", vector(camera.up))
+                .with("tan_half_fov", fixed(camera.tan_half_fov)),
+        )
 }
 
-fn write_tree(out: &mut impl Write, stats: &SceneStatistics) -> io::Result<()> {
+fn tree(stats: &SceneStatistics) -> Object {
     let tree = &stats.tree;
-    writeln!(out, "tree.builder {TREE_BUILDER}")?;
-    writeln!(out, "tree.layout {TREE_LAYOUT}")?;
-    writeln!(out, "tree.nodes {}", tree.nodes)?;
-    writeln!(out, "tree.interior-nodes {}", tree.interior_nodes)?;
-    writeln!(out, "tree.leaves {}", tree.leaves)?;
-    writeln!(out, "tree.leaf-depth-max {}", tree.max_leaf_depth)?;
-    writeln!(out, "tree.leaf-depth-total {}", tree.leaf_depth_total)?;
-    let leaves = wide(tree.leaves);
-    writeln!(out, "tree.leaf-depth-mean {}", Ratio(u128::from(tree.leaf_depth_total), leaves))?;
-    writeln!(out, "tree.leaf-triangles {}", tree.leaf_triangles)?;
-    writeln!(out, "tree.leaf-triangles-min {}", tree.min_leaf_triangles)?;
-    writeln!(out, "tree.leaf-triangles-max {}", tree.max_leaf_triangles)?;
-    write!(out, "tree.leaf-sizes")?;
-    for count in tree.leaf_sizes {
-        write!(out, " {count}")?;
-    }
-    writeln!(out)
+    Object::new()
+        .with("builder", TREE_BUILDER)
+        .with("layout", TREE_LAYOUT)
+        .with("nodes", tree.nodes)
+        .with("interior_nodes", tree.interior_nodes)
+        .with("leaves", tree.leaves)
+        .with("leaf_depth_max", tree.max_leaf_depth)
+        .with("leaf_depth_total", tree.leaf_depth_total)
+        .with("leaf_triangles", tree.leaf_triangles)
+        .with("leaf_triangles_min", tree.min_leaf_triangles)
+        .with("leaf_triangles_max", tree.max_leaf_triangles)
+        .with("leaf_sizes", array(tree.leaf_sizes))
 }
 
-fn write_memory(out: &mut impl Write, stats: &SceneStatistics) -> io::Result<()> {
+/// The byte counts: this build's type sizes times the counts, so they can differ between
+/// targets (a 32-bit `usize`, for one), unlike every other value; the schema marks them
+/// information only.
+fn memory(stats: &SceneStatistics) -> Object {
     let memory = &stats.memory;
-    for (name, bytes) in [
-        ("triangles", memory.triangles),
-        ("surfaces", memory.surfaces),
-        ("vertex-normals", memory.vertex_normals),
-        ("material-indices", memory.material_indices),
-        ("materials", memory.materials),
-        ("tree-nodes", memory.tree_nodes),
-        ("tree-primitive-indices", memory.tree_primitive_indices),
-        ("total", memory.total()),
-    ] {
-        writeln!(out, "memory.{name}-bytes {bytes} {MEMORY_NOTE}")?;
-    }
-    Ok(())
+    Object::new()
+        .with("triangles_bytes", memory.triangles)
+        .with("surfaces_bytes", memory.surfaces)
+        .with("vertex_normals_bytes", memory.vertex_normals)
+        .with("material_indices_bytes", memory.material_indices)
+        .with("materials_bytes", memory.materials)
+        .with("tree_nodes_bytes", memory.tree_nodes)
+        .with("tree_primitive_indices_bytes", memory.tree_primitive_indices)
+        .with("total_bytes", memory.total())
 }
 
-/// What a render's rays found (`render --stats`), after the scene block: per kind, then per
+/// The `ray_statistics` message (`render --stats`): what the rays found, per kind, then per
 /// pixel. Every value is a function of the scene, the size and the settings.
-pub(crate) fn write_rays(
-    out: &mut impl Write,
-    rays: &RayStatistics,
-    settings: RenderSettings,
-) -> io::Result<()> {
+pub(crate) fn ray_statistics(rays: &RayStatistics, settings: RenderSettings) -> Object {
     let found = &rays.outcomes;
-    for (key, value) in [
-        ("camera", found.camera()),
-        ("camera-hits", found.camera_hits),
-        ("camera-misses", found.camera_misses),
-        ("bounce", found.bounce()),
-        ("bounce-hits", found.bounce_hits),
-        ("bounce-misses", found.bounce_misses),
-        ("bounce-rejected", found.rejected_bounces),
-        ("shadow", found.shadow()),
-        ("shadow-occluded", found.shadow_occluded),
-        ("shadow-unoccluded", found.shadow_unoccluded),
-        ("total", rays.count().total()),
-        ("pixels", rays.pixels),
-        ("samples-per-pixel", u64::from(settings.samples_per_pixel())),
-        ("samples", rays.samples),
-        ("per-pixel-min", if rays.pixels == 0 { 0 } else { rays.min_pixel_rays }),
-        ("per-pixel-max", rays.max_pixel_rays),
-    ] {
-        writeln!(out, "rays.{key} {value}")?;
-    }
-    let mean = Ratio(u128::from(rays.count().total()), u128::from(rays.pixels));
-    writeln!(out, "rays.per-pixel-mean {mean}")
+    message("ray_statistics")
+        .with("camera", found.camera())
+        .with("camera_hits", found.camera_hits)
+        .with("camera_misses", found.camera_misses)
+        .with("bounce", found.bounce())
+        .with("bounce_hits", found.bounce_hits)
+        .with("bounce_misses", found.bounce_misses)
+        .with("bounce_rejected", found.rejected_bounces)
+        .with("shadow", found.shadow())
+        .with("shadow_occluded", found.shadow_occluded)
+        .with("shadow_unoccluded", found.shadow_unoccluded)
+        .with("total", rays.count().total())
+        .with("pixels", rays.pixels)
+        .with("samples_per_pixel", settings.samples_per_pixel())
+        .with("samples", rays.samples)
+        .with("per_pixel_min", if rays.pixels == 0 { 0 } else { rays.min_pixel_rays })
+        .with("per_pixel_max", rays.max_pixel_rays)
 }
 
-/// The label of every per-worker line: which worker took which band depends on timing.
-pub(crate) const RUN_NOTE: &str = "(information only: differs from run to run)";
-
-/// How the work was spread (`render --stats`), after the ray lines: the band height, the band
-/// count and the worker count, which follow from the size and the schedule, then each worker's
-/// bands, rows, pixels and rays, which do not.
-pub(crate) fn write_run(out: &mut impl Write, run: &RunStatistics) -> io::Result<()> {
-    writeln!(out, "run.band-rows {}", run.band_rows)?;
-    writeln!(out, "run.bands {}", run.bands)?;
-    writeln!(out, "run.workers {}", run.workers.len())?;
-    for (n, worker) in run.workers.iter().enumerate() {
-        let rays = worker.rays.total();
-        writeln!(out, "run.worker.{n}.bands {} {RUN_NOTE}", worker.bands)?;
-        writeln!(out, "run.worker.{n}.rows {} {RUN_NOTE}", worker.rows)?;
-        writeln!(out, "run.worker.{n}.pixels {} {RUN_NOTE}", worker.pixels)?;
-        writeln!(out, "run.worker.{n}.rays {rays} {RUN_NOTE}")?;
-    }
-    Ok(())
+/// The `run_statistics` message (`render --stats`): the band height and the band count, which
+/// follow from the size and the schedule, then each worker's bands, rows, pixels and rays, which
+/// depend on timing (information only).
+pub(crate) fn run_statistics(run: &RunStatistics) -> Object {
+    let workers = run.workers.iter().map(|worker| {
+        Object::new()
+            .with("bands", worker.bands)
+            .with("rows", worker.rows)
+            .with("pixels", worker.pixels)
+            .with("rays", worker.rays.total())
+    });
+    message("run_statistics")
+        .with("band_rows", run.band_rows)
+        .with("bands", run.bands)
+        .with("workers", array(workers))
 }
 
-/// A count, widened for arithmetic: lossless, as no target's `usize` is wider than 128 bits.
-fn wide(count: usize) -> u128 {
-    u128::try_from(count).unwrap_or(u128::MAX)
+/// A Q32.32 value as a decimal string with six places.
+pub(crate) fn fixed(value: FixedQ32_32) -> Value {
+    Value::String(Fixed(value).to_string())
+}
+
+/// A point or direction: its three components.
+fn vector(v: FixedVec3) -> Value {
+    array([fixed(v.x), fixed(v.y), fixed(v.z)])
+}
+
+/// Three channels, red, green and blue.
+fn channels(channels: [FixedQ32_32; 3]) -> Value {
+    array(channels.map(fixed))
 }
 
 /// A Q32.32 value in decimal with six places: `raw / 2^32`, rounded to nearest, ties away from
@@ -190,43 +168,8 @@ impl fmt::Display for Fixed {
     }
 }
 
-/// A point or direction: its three components, separated by spaces.
-struct Vector(FixedVec3);
-
-impl fmt::Display for Vector {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {} {}", Fixed(self.0.x), Fixed(self.0.y), Fixed(self.0.z))
-    }
-}
-
-/// Three channels, red, green and blue, separated by spaces.
-struct Channels([FixedQ32_32; 3]);
-
-impl fmt::Display for Channels {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let [r, g, b] = self.0;
-        write!(f, "{} {} {}", Fixed(r), Fixed(g), Fixed(b))
-    }
-}
-
-/// `numerator / denominator` in decimal with two places, rounded to nearest, ties up: exact
-/// integer arithmetic. Zero over zero is `0.00`.
-pub(crate) struct Ratio(pub(crate) u128, pub(crate) u128);
-
-impl fmt::Display for Ratio {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self(numerator, denominator) = *self;
-        // A count of leaves or rays and a sum of them, each below 2^64: no product overflows.
-        let hundredths = match denominator {
-            0 => 0,
-            d => (numerator * 200 + d) / (2 * d),
-        };
-        write!(f, "{}.{:02}", hundredths / 100, hundredths % 100)
-    }
-}
-
 #[cfg(test)]
 mod tests;
 mod traversal;
 
-pub(crate) use traversal::write_traversal;
+pub(crate) use traversal::traversal_statistics;

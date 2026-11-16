@@ -1,10 +1,11 @@
-//! The statistics text: the decimal forms, and every line for a scene small enough to count by
-//! hand.
+//! The statistics messages: the decimal form of a fixed-point value, and every member for a
+//! scene small enough to count by hand.
 
 use bunny_optics::{Albedo, DirectionalLight, SkyLight};
 use lumen::{CameraPlacement, Lighting, SceneSpec};
 
 use super::*;
+use crate::json::Value;
 
 const ONE: i64 = 1 << 32;
 
@@ -32,18 +33,6 @@ fn fixed_point_values_print_in_decimal_with_six_places() {
     assert_eq!(fixed(i64::MIN), "-2147483648.000000");
 }
 
-/// Oracle: long division by hand, two places, ties up.
-#[test]
-fn ratios_print_with_two_places_rounded_to_nearest() {
-    assert_eq!(Ratio(0, 0).to_string(), "0.00");
-    assert_eq!(Ratio(7, 7).to_string(), "1.00");
-    assert_eq!(Ratio(2, 3).to_string(), "0.67");
-    assert_eq!(Ratio(1, 8).to_string(), "0.13");
-    assert_eq!(Ratio(1, 200).to_string(), "0.01");
-    assert_eq!(Ratio(1, 201).to_string(), "0.00");
-    assert_eq!(Ratio(426_614, 27_639).to_string(), "15.44");
-}
-
 /// One triangle under a sun straight above, two materials (the second unused), seen from four
 /// units in front.
 fn one_triangle() -> Scene {
@@ -67,98 +56,62 @@ fn one_triangle() -> Scene {
     .expect("builds")
 }
 
-/// Oracle: counting by hand. One triangle is one leaf at depth 0 with no compact node; its box
-/// is its vertices' extent. The memory lines follow, each labelled as a fact about this build.
-#[test]
-fn every_line_of_a_one_triangle_scene() {
+/// The `scene_statistics` line of the one-triangle scene.
+fn one_triangle_line() -> String {
     let scene = one_triangle();
-    let mut text = Vec::new();
-    write_scene_block(&mut text, &scene, &scene.statistics().expect("counts")).expect("writes");
-    let want = "\
-scene.triangles 1
-scene.vertices 3
-scene.triangles-smooth 0
-scene.triangles-zero-area 0
-scene.materials 2
-scene.material.0.triangles 1
-scene.material.0.albedo 0.500000 0.500000 0.500000
-scene.material.1.triangles 0
-scene.material.1.albedo 1.000000 0.000000 0.000000
-scene.bounds-min -1.000000 -1.000000 0.000000
-scene.bounds-max 1.000000 1.000000 0.000000
-light.sun present
-light.sun-toward 0.000000 1.000000 0.000000
-light.sun-irradiance 1.000000 2.000000 3.000000
-light.sky 0.500000 0.500000 1.000000
-camera.position 0.000000 0.000000 4.000000
-camera.look 0.000000 0.000000 -1.000000
-camera.up 0.000000 1.000000 0.000000
-camera.tan-half-fov 1.000000
-tree.builder bunny_broadphase::build_bvh_sah
-tree.layout bunny_broadphase::compact_bvh
-tree.nodes 1
-tree.interior-nodes 0
-tree.leaves 1
-tree.leaf-depth-max 0
-tree.leaf-depth-total 0
-tree.leaf-depth-mean 0.00
-tree.leaf-triangles 1
-tree.leaf-triangles-min 1
-tree.leaf-triangles-max 1
-tree.leaf-sizes 1 0 0 0 0
-";
-    let text = String::from_utf8(text).expect("utf-8");
-    let (counts, memory) = text.split_at(text.find("memory.").expect("memory lines"));
-    assert_eq!(counts, want);
-    assert_eq!(memory.lines().count(), 8, "{memory}");
-    assert!(memory.lines().all(|line| line.ends_with(MEMORY_NOTE)), "{memory}");
+    scene_statistics("a-name/1", &scene, &scene.statistics().expect("counts")).to_json()
+}
+
+/// Oracle: counting by hand. One triangle is one leaf at depth 0 with no compact node; its box
+/// is its vertices' extent; the second material names no triangle. The memory member follows,
+/// a fact about this build, checked by the next test.
+#[test]
+fn every_member_of_a_one_triangle_scene() {
+    let scene = one_triangle();
+    let want = format!(
+        concat!(
+            r#"{{"schema":"lumen-message/1","type":"scene_statistics","scene":"a-name/1","#,
+            r#""scene_content":"{}","integrator":"lumen-diffuse-path/1","#,
+            r#""triangles":1,"vertices":3,"triangles_smooth":0,"triangles_zero_area":0,"#,
+            r#""material_triangles":[1,0],"#,
+            r#""material_albedo":[["0.500000","0.500000","0.500000"],["1.000000","0.000000","0.000000"]],"#,
+            r#""bounds_min":["-1.000000","-1.000000","0.000000"],"#,
+            r#""bounds_max":["1.000000","1.000000","0.000000"],"#,
+            r#""light":{{"sun":{{"toward":["0.000000","1.000000","0.000000"],"#,
+            r#""irradiance":["1.000000","2.000000","3.000000"]}},"#,
+            r#""sky":["0.500000","0.500000","1.000000"]}},"#,
+            r#""camera":{{"position":["0.000000","0.000000","4.000000"],"#,
+            r#""look":["0.000000","0.000000","-1.000000"],"up":["0.000000","1.000000","0.000000"],"#,
+            r#""tan_half_fov":"1.000000"}},"#,
+            r#""tree":{{"builder":"bunny_broadphase::build_bvh_sah","#,
+            r#""layout":"bunny_broadphase::compact_bvh","nodes":1,"interior_nodes":0,"leaves":1,"#,
+            r#""leaf_depth_max":0,"leaf_depth_total":0,"leaf_triangles":1,"#,
+            r#""leaf_triangles_min":1,"leaf_triangles_max":1,"leaf_sizes":[1,0,0,0,0]}},"#,
+            r#""memory":{{"#
+        ),
+        scene.content_id()
+    );
+    let line = one_triangle_line();
+    assert!(line.starts_with(&want), "{line}\nwant {want}");
 }
 
 /// Oracle: the sizes the one-triangle scene's buffers have on a 64-bit target (ADR 0007's
 /// measurements: a `TraceTriangle` is 72 bytes, an `Option<TriangleSurface>` 224; an albedo is
-/// three `i64`s; an index a `u32`). Another pointer width may differ, which is why the lines are
-/// information only.
+/// three `i64`s; an index a `u32`). Another pointer width may differ, which is why the schema
+/// marks the member information only.
 #[cfg(target_pointer_width = "64")]
 #[test]
-fn the_memory_lines_of_a_one_triangle_scene_on_a_64_bit_target() {
-    let scene = one_triangle();
-    let mut text = Vec::new();
-    write_scene_block(&mut text, &scene, &scene.statistics().expect("counts")).expect("writes");
-    let text = String::from_utf8(text).expect("utf-8");
-    let memory: Vec<&str> = text.lines().filter(|line| line.starts_with("memory.")).collect();
-    let want: Vec<String> = "\
-memory.triangles-bytes 72
-memory.surfaces-bytes 224
-memory.vertex-normals-bytes 0
-memory.material-indices-bytes 4
-memory.materials-bytes 48
-memory.tree-nodes-bytes 0
-memory.tree-primitive-indices-bytes 4
-memory.total-bytes 352
-"
-    .lines()
-    .map(|line| format!("{line} {MEMORY_NOTE}"))
-    .collect();
-    assert_eq!(memory, want);
-}
-
-/// Oracle: the header is the scene's name, its content identity and its integrator, as the
-/// render report prints them.
-#[test]
-fn the_stats_command_starts_with_the_scene_it_describes() {
-    let scene = one_triangle();
-    let mut text = Vec::new();
-    write_stats(&mut text, "a-name/1", &scene, &scene.statistics().expect("counts"))
-        .expect("writes");
-    let text = String::from_utf8(text).expect("utf-8");
-    let want = format!(
-        "scene a-name/1\nscene-content {}\nintegrator lumen-diffuse-path/1\nscene.triangles 1\n",
-        scene.content_id()
+fn the_memory_of_a_one_triangle_scene_on_a_64_bit_target() {
+    let want = concat!(
+        r#""memory":{"triangles_bytes":72,"surfaces_bytes":224,"vertex_normals_bytes":0,"#,
+        r#""material_indices_bytes":4,"materials_bytes":48,"tree_nodes_bytes":0,"#,
+        r#""tree_primitive_indices_bytes":4,"total_bytes":352}}"#
     );
-    assert!(text.starts_with(&want), "{text}");
+    let line = one_triangle_line();
+    assert!(line.ends_with(want), "{line}");
 }
 
-/// Oracle: a scene without a sun has one `light.sun none` line and no sun direction.
+/// Oracle: a scene without a sun has `"sun":null`, and no sun direction.
 #[test]
 fn a_scene_without_a_sun_says_so() {
     let base = lumen::reference_scene().expect("builds");
@@ -173,115 +126,116 @@ fn a_scene_without_a_sun_says_so() {
         camera: base.camera(),
     })
     .expect("builds");
-    let mut text = Vec::new();
-    write_scene_block(&mut text, &scene, &scene.statistics().expect("counts")).expect("writes");
-    let text = String::from_utf8(text).expect("utf-8");
-    assert!(text.contains("\nlight.sun none\nlight.sky "), "{text}");
-    assert!(!text.contains("light.sun-toward"), "{text}");
+    let line = scene_statistics("x/1", &scene, &scene.statistics().expect("counts")).to_json();
+    assert!(line.contains(r#""light":{"sun":null,"sky":["#), "{line}");
+    assert!(!line.contains("toward"), "{line}");
 }
 
 /// The command reference, `docs/reference/cli.md`, as it is in the repository.
 const REFERENCE: &str = include_str!("../../../../../../docs/reference/cli.md");
 
-/// Whether the command reference documents `key`, a key `lumen stats` or `render --stats`
-/// prints. A material's or a worker's number is written `N` there, and the memory buffers are
-/// listed by name under `memory.NAME-bytes`; a traversal key is `traversal.KIND.COUNTER` with its
-/// `-mean` and `-max` forms, each counter named in the table.
-fn documented(key: &str) -> bool {
-    let parts: Vec<&str> = key.split('.').collect();
-    let general: String = parts
-        .iter()
-        .map(|part| if part.bytes().all(|b| b.is_ascii_digit()) { "N" } else { part })
-        .collect::<Vec<_>>()
-        .join(".");
-    let named = |text: &str| REFERENCE.contains(&format!("`{text}`"));
-    match parts.as_slice() {
-        ["memory", buffer] => {
-            named("memory.NAME-bytes") && named(buffer.strip_suffix("-bytes").unwrap_or(buffer))
+/// The section of the command reference about messages of type `kind`: from its heading,
+/// ``### `kind` ``, to the next heading.
+fn section(kind: &str) -> &'static str {
+    let heading = format!("### `{kind}`\n");
+    let at = REFERENCE.find(&heading).unwrap_or_else(|| panic!("no section for {kind}"));
+    let rest = &REFERENCE[at + heading.len()..];
+    &rest[..rest.find("\n#").unwrap_or(rest.len())]
+}
+
+/// Every member path of `object`: its keys, a nested object's keys after a dot, and the keys of
+/// an array's objects after `[].`.
+fn paths(object: &Object, prefix: &str, out: &mut Vec<String>) {
+    for (key, value) in object.members() {
+        let path = format!("{prefix}{key}");
+        match value {
+            Value::Object(inner) => paths(inner, &format!("{path}."), out),
+            Value::Array(items) => {
+                for item in items {
+                    if let Value::Object(inner) = item {
+                        paths(inner, &format!("{path}[]."), out);
+                    }
+                }
+            }
+            _ => {}
         }
-        ["run", "worker", _, field] => named(&general) || named(&format!(".{field}")),
-        ["traversal", _, "peak-stack"] => named("traversal.KIND.peak-stack"),
-        ["traversal", _, field] => {
-            let (counter, form) = field
-                .strip_suffix("-mean")
-                .map(|counter| (counter, "traversal.KIND.COUNTER-mean"))
-                .or_else(|| field.strip_suffix("-max").map(|c| (c, "traversal.KIND.COUNTER-max")))
-                .unwrap_or((field, "traversal.KIND.COUNTER"));
-            named(form) && named(counter)
-        }
-        _ => named(&general),
+        out.push(path);
     }
 }
 
-/// Oracle: the command reference's key tables. Every key the statistics blocks print, for a
-/// scene with a sun, two materials, a rendered run on two workers and the traversal lines (whose
-/// keys do not depend on the counts), is documented there.
-/// Witness count: the keys checked, more than the 31 the scene block alone prints.
+/// Whether the section for messages of type `kind` documents `path`. A traversal member is
+/// `KIND.COUNTER` there, with `KIND` and every counter named, and its maximum `COUNTER_max`.
+fn documented(kind: &str, path: &str) -> bool {
+    let text = section(kind);
+    let named = |name: &str| text.contains(&format!("`{name}`"));
+    if matches!(path, "schema" | "type") {
+        return true;
+    }
+    match path.split_once('.') {
+        Some((ray, counter)) if kind == "traversal_statistics" => {
+            named(ray) && (named(counter) || named(counter.trim_end_matches("_max")))
+        }
+        _ => named(path),
+    }
+}
+
+/// Oracle: the command reference's member tables. Every member path the statistics messages
+/// print, for a scene with a sun, two materials, a rendered run on two workers and the
+/// traversal message, is documented in its message's section.
+/// Witness count: the paths checked, more than the 40 the scene message alone holds.
 #[test]
-fn every_printed_key_is_in_the_command_reference() {
+fn every_printed_member_is_in_the_command_reference() {
     let scene = one_triangle();
     let size = lumen::ImageSize::new(4, 3).expect("size");
     let settings = lumen::RenderSettings::new(2, 0).expect("settings");
     let schedule = lumen::Schedule::new(2, lumen::DEFAULT_BAND_ROWS).expect("schedule");
     let (render, run) =
         lumen::render_traced_with_run(&scene, &scene, size, settings, schedule).expect("renders");
-    let rays = render.statistics.outcomes;
-    let mut text = Vec::new();
-    write_stats(&mut text, "a-name/1", &scene, &scene.statistics().expect("counts"))
-        .and_then(|()| write_rays(&mut text, &render.statistics, settings))
-        .and_then(|()| write_traversal(&mut text, &lumen::TraversalStatistics::default(), &rays))
-        .and_then(|()| write_run(&mut text, &run))
-        .expect("writes");
-    let text = String::from_utf8(text).expect("utf-8");
-    let keys: Vec<&str> = text.lines().filter_map(|line| line.split(' ').next()).collect();
-    let missing: Vec<&&str> = keys.iter().filter(|key| !documented(key)).collect();
-    assert!(missing.is_empty(), "not in docs/reference/cli.md: {missing:?}");
-    assert!(keys.len() > 31, "only {} keys checked", keys.len());
+    let messages = [
+        ("scene_statistics", scene_statistics("a/1", &scene, &scene.statistics().expect("counts"))),
+        ("ray_statistics", ray_statistics(&render.statistics, settings)),
+        ("traversal_statistics", traversal_statistics(&lumen::TraversalStatistics::default())),
+        ("run_statistics", run_statistics(&run)),
+    ];
+    let mut checked = 0;
+    for (kind, message) in &messages {
+        let mut found = Vec::new();
+        paths(message, "", &mut found);
+        let missing: Vec<&String> = found.iter().filter(|path| !documented(kind, path)).collect();
+        assert!(missing.is_empty(), "{kind}: not in docs/reference/cli.md: {missing:?}");
+        checked += found.len();
+    }
+    assert!(checked > 40, "only {checked} members checked");
 }
 
-/// Oracle: the lines, written by hand from the values set. Camera rays: 3, whose box tests total
-/// 10 (mean 3.33, most 5), leaf visits 2 (0.67, 1), peak stack 4; the other counters and kinds are
-/// zero, and a kind with no rays has a mean of 0.00. Distinct values per counter, so a counter
-/// printed under another's key, or a total printed as the most, is seen.
+/// Oracle: the line, written by hand from the values set. Camera rays: box tests total 10 (most
+/// 5), leaf visits 2 (most 1), peak stack 4; the other counters and kinds are zero. Distinct
+/// values per counter, so a counter written under another's name, or a total written as the
+/// most, is seen.
 #[test]
-fn the_traversal_lines_of_known_counts() {
+fn the_traversal_line_of_known_counts() {
     let mut traversal = lumen::TraversalStatistics::default();
     let camera = &mut traversal.camera;
     (camera.total.box_tests, camera.most.box_tests) = (10, 5);
     (camera.total.leaf_visits, camera.most.leaf_visits) = (2, 1);
     camera.total.peak_stack = 4;
-    let mut rays = lumen::RayOutcomes::default();
-    (rays.camera_hits, rays.camera_misses) = (2, 1);
-    let mut text = Vec::new();
-    write_traversal(&mut text, &traversal, &rays).expect("writes");
-    let text = String::from_utf8(text).expect("utf-8");
-    let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines.len(), 3 * 19);
-    assert_eq!(
-        lines[..19],
-        [
-            "traversal.camera.box-tests 10",
-            "traversal.camera.box-tests-mean 3.33",
-            "traversal.camera.box-tests-max 5",
-            "traversal.camera.box-entries 0",
-            "traversal.camera.box-entries-mean 0.00",
-            "traversal.camera.box-entries-max 0",
-            "traversal.camera.popped-skipped 0",
-            "traversal.camera.popped-skipped-mean 0.00",
-            "traversal.camera.popped-skipped-max 0",
-            "traversal.camera.interior-visits 0",
-            "traversal.camera.interior-visits-mean 0.00",
-            "traversal.camera.interior-visits-max 0",
-            "traversal.camera.leaf-visits 2",
-            "traversal.camera.leaf-visits-mean 0.67",
-            "traversal.camera.leaf-visits-max 1",
-            "traversal.camera.primitive-tests 0",
-            "traversal.camera.primitive-tests-mean 0.00",
-            "traversal.camera.primitive-tests-max 0",
-            "traversal.camera.peak-stack 4",
-        ]
+    traversal.shadow.total.primitive_tests = 7;
+    let zero = concat!(
+        r#"{"box_tests":0,"box_entries":0,"popped_skipped":0,"interior_visits":0,"#,
+        r#""leaf_visits":0,"primitive_tests":0,"box_tests_max":0,"box_entries_max":0,"#,
+        r#""popped_skipped_max":0,"interior_visits_max":0,"leaf_visits_max":0,"#,
+        r#""primitive_tests_max":0,"peak_stack":0}"#
     );
-    assert_eq!(lines[19], "traversal.bounce.box-tests 0");
-    assert_eq!(lines[38], "traversal.shadow.box-tests 0");
-    assert_eq!(lines[56], "traversal.shadow.peak-stack 0");
+    let want = format!(
+        concat!(
+            r#"{{"schema":"lumen-message/1","type":"traversal_statistics","#,
+            r#""camera":{{"box_tests":10,"box_entries":0,"popped_skipped":0,"interior_visits":0,"#,
+            r#""leaf_visits":2,"primitive_tests":0,"box_tests_max":5,"box_entries_max":0,"#,
+            r#""popped_skipped_max":0,"interior_visits_max":0,"leaf_visits_max":1,"#,
+            r#""primitive_tests_max":0,"peak_stack":4}},"bounce":{},"shadow":{}}}"#
+        ),
+        zero,
+        zero.replace(r#""primitive_tests":0"#, r#""primitive_tests":7"#)
+    );
+    assert_eq!(traversal_statistics(&traversal).to_json(), want);
 }

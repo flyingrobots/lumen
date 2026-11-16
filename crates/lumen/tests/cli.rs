@@ -9,8 +9,8 @@
     clippy::disallowed_methods,
     clippy::disallowed_types,
     clippy::disallowed_macros,
-    reason = "std-fs, std-process, std-env, float-type: runs the command in a scratch directory and \
-              reads its files and timing lines; a test outside the deterministic core"
+    reason = "std-fs, std-process, std-env: runs the command in a scratch directory and reads its \
+              files; a test outside the deterministic core"
 )]
 
 use std::ops::Deref;
@@ -21,6 +21,8 @@ use std::time::{Duration, Instant};
 use lumen::{render_reference, write_png, BuiltinScene, RenderSettings};
 
 mod golden;
+mod json;
+use json::{messages, one, types, Json};
 use golden::{
     GOLDEN_96X54_4SPP, GOLDEN_CANYON_96X54_4SPP, GOLDEN_CANYON_CONTENT,
     GOLDEN_FIXED_POINT_96X54_4SPP, GOLDEN_FIXED_POINT_CONTENT, GOLDEN_REFERENCE_CONTENT,
@@ -56,8 +58,10 @@ impl Scratch {
         command
     }
 
+    /// Runs the command with `args`. Whatever it wrote to standard output is checked line by
+    /// line against `lumen-message/1` ([`messages`]), so every run of every test checks it.
     fn lumen(&self, args: &[&str]) -> Output {
-        self.command().args(args).output().expect("lumen runs")
+        checked(self.command().args(args).output().expect("lumen runs"))
     }
 
     fn is_empty(&self) -> bool {
@@ -83,12 +87,21 @@ fn path_str(path: &Path) -> &str {
     path.to_str().expect("utf-8 path")
 }
 
-/// The value of the line `key value...` in the command's output.
-fn field<'a>(stdout: &'a str, key: &str) -> &'a str {
-    stdout
-        .lines()
-        .find_map(|line| line.strip_prefix(key).and_then(|rest| rest.strip_prefix(' ')))
-        .unwrap_or_else(|| panic!("no {key} line in {stdout:?}"))
+/// `output`, once its standard output has been checked by [`messages`].
+fn checked(output: Output) -> Output {
+    messages(&text(&output.stdout));
+    output
+}
+
+/// The messages of a run that succeeded, parsed and checked.
+fn succeeded(output: &Output) -> Vec<Json> {
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    messages(&text(&output.stdout))
+}
+
+/// A string member as a `Json` value, for comparing a whole member.
+fn string(text: &str) -> Json {
+    Json::String(text.to_owned())
 }
 
 fn assert_refused(output: &Output, code: i32, message: &str) {
@@ -99,7 +112,7 @@ fn assert_refused(output: &Output, code: i32, message: &str) {
     assert!(output.stdout.is_empty());
 }
 
-/// The arguments of a small render, the report's fields and the file it writes.
+/// The arguments of a small render and the file it writes.
 fn small_render<'a>(out: &'a str, extra: &[&'a str]) -> Vec<&'a str> {
     let mut args =
         vec!["render", "--width", "40", "--height", "24", "--samples", "2", "--seed", "5"];
@@ -108,35 +121,51 @@ fn small_render<'a>(out: &'a str, extra: &[&'a str]) -> Vec<&'a str> {
     args
 }
 
+/// A render prints `provenance`, `result` and `timings`, in that order and nothing else.
 #[test]
-fn the_report_names_the_scene_the_settings_and_the_work() {
+fn a_render_prints_its_provenance_result_and_timings() {
     let dir = Scratch::new("report");
     let out = dir.file("a.png");
-    let output = dir.lumen(&small_render(path_str(&out), &[]));
-    assert!(output.status.success(), "{}", text(&output.stderr));
-    let stdout = text(&output.stdout);
-    assert_eq!(field(&stdout, "scene"), "lumen-reference-scene/4");
-    assert_eq!(field(&stdout, "integrator"), "lumen-diffuse-path/1");
-    assert_eq!(field(&stdout, "shading"), "bunny-diffuse-shading/1");
-    assert_eq!(field(&stdout, "sampler"), "bunny-sobol-owen/1");
-    assert_eq!(field(&stdout, "tone"), "bunny-tone-srgb/1");
-    assert_eq!(field(&stdout, "encoding"), "bunny-rgba8-opaque/1");
-    assert_eq!(field(&stdout, "bunny"), lumen::BUNNY_REV);
-    assert_eq!(field(&stdout, "size"), "40x24");
-    assert_eq!(field(&stdout, "samples"), "2");
-    assert_eq!(field(&stdout, "seed"), "5");
-    assert_eq!(field(&stdout, "bounces"), "1");
-    assert_eq!(field(&stdout, "pixels"), "960");
-    assert_eq!(field(&stdout, "band-rows"), "1");
-    // As many workers as asked for, but never more than the 24 one-row bands.
-    let asked: u32 = field(&stdout, "threads-asked").parse().expect("a count");
-    assert_eq!(field(&stdout, "threads").parse::<u32>(), Ok(asked.min(24)));
+    let printed = succeeded(&dir.lumen(&small_render(path_str(&out), &[])));
+    assert_eq!(types(&printed), ["provenance", "result", "timings"]);
 }
 
 #[test]
-fn the_report_times_every_stage() {
+fn the_provenance_names_the_scene_the_settings_and_the_work() {
+    let dir = Scratch::new("provenance");
+    let out = dir.file("a.png");
+    let printed = succeeded(&dir.lumen(&small_render(path_str(&out), &[])));
+    let provenance = one(&printed, "provenance");
+    assert_eq!(provenance.str("scene"), "lumen-reference-scene/4");
+    assert_eq!(provenance.str("integrator"), "lumen-diffuse-path/1");
+    assert_eq!(provenance.str("shading"), "bunny-diffuse-shading/1");
+    assert_eq!(provenance.str("sampler"), "bunny-sobol-owen/1");
+    assert_eq!(provenance.str("tone"), "bunny-tone-srgb/1");
+    assert_eq!(provenance.str("encoding"), "bunny-rgba8-opaque/1");
+    assert_eq!(provenance.str("bunny"), lumen::BUNNY_REV);
+    assert_eq!((provenance.int("width"), provenance.int("height")), (40, 24));
+    assert_eq!(provenance.int("samples"), 2);
+    assert_eq!(provenance.int("seed"), 5);
+    assert_eq!(provenance.int("bounces"), 1);
+    assert_eq!(provenance.int("pixels"), 960);
+    let result = one(&printed, "result");
+    assert_eq!((result.int("width"), result.int("height")), (40, 24));
+    assert_eq!(result.int("band_rows"), 1);
+    // As many workers as asked for, but never more than the 24 one-row bands.
+    let asked = result.int("threads_asked");
+    assert_eq!(result.int("threads"), asked.min(24));
+}
+
+/// Oracle: this test's own clock, read around the run, and the sum of the parts. The four parts
+/// are consecutive spans of one clock that add up to the total exactly, and each is rounded down
+/// to a whole microsecond, losing less than 1 us; so their sum is at most `total_us` and, being
+/// an integer above `total_us - 4`, at least `total_us - 3`. The total cannot exceed the run's
+/// wall time seen from outside.
+#[test]
+fn the_timings_cover_every_stage_in_microseconds() {
     let dir = Scratch::new("timings");
     let out = dir.file("a.png");
+    let started = Instant::now();
     let output = dir.lumen(&[
         "render",
         "--width",
@@ -148,13 +177,13 @@ fn the_report_times_every_stage() {
         "--out",
         path_str(&out),
     ]);
-    assert!(output.status.success(), "{}", text(&output.stderr));
-    let stdout = text(&output.stdout);
-    for timing in ["scene", "render", "hash", "png", "total"] {
-        let line = field(&stdout, &format!("{timing}-seconds"));
-        let seconds: f64 = line.split(' ').next().expect("value").parse().expect("number");
-        assert!(seconds >= 0.0, "{timing}: {line}");
-    }
+    let printed = succeeded(&output);
+    let outside = started.elapsed().as_micros();
+    let timings = one(&printed, "timings");
+    let parts: i128 = ["scene_us", "render_us", "hash_us", "png_us"].map(|p| timings.int(p)).iter().sum();
+    let total = timings.int("total_us");
+    assert!(parts <= total && total - parts <= 3, "{timings:?}");
+    assert!(u128::try_from(total).expect("non-negative") <= outside, "{total} > {outside}");
 }
 
 #[test]
@@ -169,25 +198,25 @@ fn two_processes_write_the_same_file_and_print_the_same_hash() {
         })
         .into();
     assert_eq!(std::fs::read(&a).expect("a"), std::fs::read(&b).expect("b"));
-    assert_eq!(field(&outputs[0], "image"), field(&outputs[1], "image"));
-    assert_eq!(field(&outputs[0], "rays"), field(&outputs[1], "rays"));
+    let results: Vec<Vec<Json>> = outputs.iter().map(|stdout| messages(stdout)).collect();
+    let (first, second) = (one(&results[0], "result"), one(&results[1], "result"));
+    assert_eq!(first.at("image"), second.at("image"));
+    assert_eq!(first.at("rays"), second.at("rays"));
 }
 
 #[test]
 fn the_printed_hash_ray_count_and_file_are_the_librarys() {
     let dir = Scratch::new("library-agrees");
     let out = dir.file("a.png");
-    let output = dir.lumen(&small_render(path_str(&out), &[]));
-    assert!(output.status.success(), "{}", text(&output.stderr));
-    let stdout = text(&output.stdout);
+    let printed = succeeded(&dir.lumen(&small_render(path_str(&out), &[])));
+    let result = one(&printed, "result");
     let render =
         render_reference(40, 24, RenderSettings::new(2, 5).expect("valid")).expect("renders");
-    assert_eq!(field(&stdout, "image"), render.image.hash());
+    assert_eq!(result.str("image"), render.image.hash());
     let r = render.rays;
-    assert_eq!(
-        field(&stdout, "rays"),
-        format!("{} (closest {}, shadow {})", r.total(), r.closest, r.shadow)
-    );
+    assert_eq!(result.int("rays.total"), i128::from(r.total()));
+    assert_eq!(result.int("rays.closest"), i128::from(r.closest));
+    assert_eq!(result.int("rays.shadow"), i128::from(r.shadow));
     let mut expected = Vec::new();
     write_png(&mut expected, &render.image).expect("writes to memory");
     assert_eq!(std::fs::read(&out).expect("the file"), expected);
@@ -197,16 +226,19 @@ fn the_printed_hash_ray_count_and_file_are_the_librarys() {
 fn help_prints_the_usage() {
     let dir = Scratch::new("help");
     let help = dir.lumen(&["--help"]);
-    assert!(help.status.success());
-    assert!(text(&help.stdout).starts_with("usage: lumen render"));
+    let printed = succeeded(&help);
+    assert_eq!(types(&printed), ["help"]);
+    assert!(printed[0].str("usage").starts_with("usage: lumen render"));
 }
 
 #[test]
 fn version_prints_the_package_version() {
     let dir = Scratch::new("version");
     let version = dir.lumen(&["--version"]);
-    assert!(version.status.success());
-    assert!(text(&version.stdout).starts_with(&format!("lumen {}", env!("CARGO_PKG_VERSION"))));
+    let printed = succeeded(&version);
+    assert_eq!(types(&printed), ["version"]);
+    assert_eq!(printed[0].str("lumen"), env!("CARGO_PKG_VERSION"));
+    assert_eq!(printed[0].str("bunny"), lumen::BUNNY_REV);
 }
 
 /// Each refusal exits with code 2 and its message, prints no panic and no report, and leaves
@@ -264,9 +296,9 @@ fn bad_sizes_are_refused_before_anything_is_written() {
     }
 }
 
-/// The report's lines that do not depend on the clock.
-fn stable_lines(stdout: &str) -> Vec<&str> {
-    stdout.lines().filter(|line| !line.contains("information only")).collect()
+/// The messages that do not depend on the clock: every one but `timings`.
+fn stable_messages(stdout: &[u8]) -> Vec<Json> {
+    messages(&text(stdout)).into_iter().filter(|m| m.str("type") != "timings").collect()
 }
 
 /// A value that reads as an option is refused for every option that takes a value, writes
@@ -292,8 +324,7 @@ fn an_option_looking_value_is_refused_unless_written_with_an_equals_sign() {
     let refused = dir.lumen(&["render", "--out", "--width"]);
     assert!(text(&refused.stderr).contains("write --out=--width"), "{}", text(&refused.stderr));
     let output = dir.lumen(&["render", "--width=8", "--height=4", "--samples=1", "--out=--width"]);
-    assert!(output.status.success(), "{}", text(&output.stderr));
-    assert_eq!(field(&text(&output.stdout), "png").split(' ').next(), Some("--width"));
+    assert_eq!(one(&succeeded(&output), "result").str("png.path"), "--width");
     assert!(dir.file("--width").is_file());
     // A negative number is a value, so a number option refuses it as a number.
     assert_refused(&dir.lumen(&["render", "--height", "-3"]), 2, "--height needs a whole number");
@@ -334,24 +365,28 @@ fn leading_zeros_mean_the_same_number_for_every_numeric_option() {
         "003",
     ]);
     assert!(plain.status.success() && zeros.status.success());
-    let (plain, zeros) = (text(&plain.stdout), text(&zeros.stdout));
-    assert_eq!(stable_lines(&plain), stable_lines(&zeros));
-    assert_eq!(field(&zeros, "size"), "24x16");
+    let (plain, zeros) = (stable_messages(&plain.stdout), stable_messages(&zeros.stdout));
+    assert_eq!(plain, zeros);
+    let provenance = one(&zeros, "provenance");
+    assert_eq!((provenance.int("width"), provenance.int("height")), (24, 16));
+    assert_eq!((provenance.int("samples"), provenance.int("seed")), (2, 7));
+    let result = one(&zeros, "result");
+    assert_eq!((result.int("threads_asked"), result.int("band_rows")), (2, 3));
     // The padded zero is still zero, and a padded refused value is refused.
     assert_refused(&dir.lumen(&["render", "--threads", "000"]), 2, "threads must be at least 1");
     assert_refused(&dir.lumen(&["render", "--samples", "0003"]), 2, "must be a power of two");
 }
 
-/// The report's byte count is what the file holds.
+/// The byte count in `result` is what the file holds, and the path is the one given.
 #[test]
 fn the_reported_byte_count_is_the_files_length() {
     let dir = Scratch::new("byte-count");
     let out = dir.file("a.png");
-    let output = dir.lumen(&small_render(path_str(&out), &[]));
-    assert!(output.status.success(), "{}", text(&output.stderr));
-    let png = field(&text(&output.stdout), "png").to_owned();
+    let printed = succeeded(&dir.lumen(&small_render(path_str(&out), &[])));
+    let png = one(&printed, "result").at("png");
     let length = std::fs::metadata(&out).expect("the file").len();
-    assert_eq!(png, format!("{} ({length} bytes)", out.display()));
+    assert_eq!(png.str("path"), path_str(&out));
+    assert_eq!(png.int("bytes"), i128::from(length));
 }
 
 #[test]
@@ -514,16 +549,15 @@ mod non_unicode {
 }
 
 #[test]
-fn without_out_no_file_is_written_and_png_is_none() {
+fn without_out_no_file_is_written_and_png_is_null() {
     let dir = Scratch::new("no-out");
     let output = dir.lumen(&["render", "--width", "8", "--height", "4", "--samples", "1"]);
-    assert!(output.status.success(), "{}", text(&output.stderr));
-    assert_eq!(field(&text(&output.stdout), "png"), "none");
+    assert_eq!(one(&succeeded(&output), "result").at("png"), &Json::Null);
     assert!(dir.is_empty(), "a file was written");
 }
 
 #[test]
-fn the_report_names_the_threads_and_the_band_asked_for() {
+fn the_result_names_the_threads_and_the_band_asked_for() {
     let dir = Scratch::new("threads-report");
     for (threads, rows) in [("1", "32"), ("3", "5"), ("8", "1"), ("2", "7")] {
         let output = dir.lumen(&[
@@ -539,11 +573,12 @@ fn the_report_names_the_threads_and_the_band_asked_for() {
             "--band-rows",
             rows,
         ]);
-        assert!(output.status.success(), "{}", text(&output.stderr));
-        let stdout = text(&output.stdout);
-        assert_eq!(field(&stdout, "threads-asked"), threads);
-        assert_eq!(field(&stdout, "threads"), threads);
-        assert_eq!(field(&stdout, "band-rows"), rows);
+        let printed = succeeded(&output);
+        let result = one(&printed, "result");
+        let number = |text: &str| text.parse::<i128>().expect("a count");
+        assert_eq!(result.int("threads_asked"), number(threads));
+        assert_eq!(result.int("threads"), number(threads));
+        assert_eq!(result.int("band_rows"), number(rows));
     }
 }
 
@@ -568,9 +603,9 @@ fn the_hash_and_ray_count_are_the_same_at_every_thread_count_and_band_height() {
             "--band-rows",
             rows,
         ]);
-        assert!(output.status.success(), "{}", text(&output.stderr));
-        let stdout = text(&output.stdout);
-        seen.push((field(&stdout, "image").to_owned(), field(&stdout, "rays").to_owned()));
+        let printed = succeeded(&output);
+        let result = one(&printed, "result");
+        seen.push((result.str("image").to_owned(), result.at("rays").clone()));
     }
     let render =
         render_reference(40, 24, RenderSettings::new(2, 5).expect("valid")).expect("renders");
@@ -578,12 +613,10 @@ fn the_hash_and_ray_count_are_the_same_at_every_thread_count_and_band_height() {
     assert!(seen.iter().all(|(_, rays)| *rays == seen[0].1), "{seen:?}");
 }
 
-fn render_scene(dir: &Scratch, size: [&str; 2], extra: &[&str]) -> String {
+fn render_scene(dir: &Scratch, size: [&str; 2], extra: &[&str]) -> Vec<Json> {
     let mut args = vec!["render", "--width", size[0], "--height", size[1], "--samples", "4"];
     args.extend_from_slice(extra);
-    let output = dir.lumen(&args);
-    assert!(output.status.success(), "{}", text(&output.stderr));
-    text(&output.stdout)
+    succeeded(&dir.lumen(&args))
 }
 
 /// `--scene` names the scene: the reported identity is that scene's.
@@ -591,12 +624,12 @@ fn render_scene(dir: &Scratch, size: [&str; 2], extra: &[&str]) -> String {
 fn each_scene_reports_its_own_identity() {
     let dir = Scratch::new("scene-identity");
     for scene in BuiltinScene::ALL {
-        let stdout = render_scene(&dir, ["8", "4"], &["--scene", scene.name()]);
-        assert_eq!(field(&stdout, "scene"), scene.id());
+        let printed = render_scene(&dir, ["8", "4"], &["--scene", scene.name()]);
+        assert_eq!(one(&printed, "provenance").str("scene"), scene.id());
     }
 }
 
-/// The `scene-content` line (the last provenance line, after `bounces`) is the scene's golden
+/// The provenance's `scene_content` (its last member, after `bounces`) is the scene's golden
 /// content identity, and the image is the one the library's golden hash records for it (96 by
 /// 54 pixels, 4 samples, seed 0).
 #[test]
@@ -608,21 +641,23 @@ fn each_scene_renders_its_golden_image() {
         BuiltinScene::Canyon => (GOLDEN_CANYON_96X54_4SPP, GOLDEN_CANYON_CONTENT),
     };
     for scene in BuiltinScene::ALL {
-        let stdout = render_scene(&dir, ["96", "54"], &["--scene", scene.name()]);
+        let printed = render_scene(&dir, ["96", "54"], &["--scene", scene.name()]);
         let (image, content) = golden(scene);
-        assert_eq!(field(&stdout, "image"), image, "{}", scene.name());
-        let after_bounces = stdout.lines().skip_while(|line| *line != "bounces 1").nth(1);
-        assert_eq!(after_bounces, Some(format!("scene-content {content}").as_str()));
+        assert_eq!(one(&printed, "result").str("image"), image, "{}", scene.name());
+        let provenance = one(&printed, "provenance");
+        assert_eq!(provenance.keys().last(), Some(&"scene_content"));
+        assert_eq!(provenance.str("scene_content"), content, "{}", scene.name());
     }
 }
 
 #[test]
 fn without_scene_the_reference_scene_is_rendered() {
     let dir = Scratch::new("default-scene");
-    let stdout = render_scene(&dir, ["96", "54"], &[]);
-    assert_eq!(field(&stdout, "scene"), BuiltinScene::Reference.id());
-    assert_eq!(field(&stdout, "scene-content"), GOLDEN_REFERENCE_CONTENT);
-    assert_eq!(field(&stdout, "image"), GOLDEN_96X54_4SPP);
+    let printed = render_scene(&dir, ["96", "54"], &[]);
+    let provenance = one(&printed, "provenance");
+    assert_eq!(provenance.str("scene"), BuiltinScene::Reference.id());
+    assert_eq!(provenance.str("scene_content"), GOLDEN_REFERENCE_CONTENT);
+    assert_eq!(one(&printed, "result").str("image"), GOLDEN_96X54_4SPP);
 }
 
 #[test]
@@ -640,7 +675,8 @@ fn an_unknown_scene_is_a_usage_error_listing_the_scenes() {
 #[test]
 fn help_lists_the_scenes() {
     let dir = Scratch::new("help-scenes");
-    let help = text(&dir.lumen(&["--help"]).stdout);
+    let printed = succeeded(&dir.lumen(&["--help"]));
+    let help = one(&printed, "help").str("usage");
     for scene in BuiltinScene::ALL {
         assert!(help.contains(scene.name()), "{}", scene.name());
     }

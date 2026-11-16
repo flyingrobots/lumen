@@ -1,0 +1,928 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lumen-message/1",
+  "description": "Every line lumen writes to standard output: one JSON object, with schema lumen-message/1 and a type (ADR 0015). Within this version a member or a type may be added and none is removed, renamed or retyped: a consumer ignores a member it does not know, and a whole line whose type it does not know. Every number is an integer. The schema uses only type, const, enum, properties, required, additionalProperties, items, minItems, maxItems, minimum, maximum, minLength, maxLength, allOf, if, then and $ref to $defs.",
+  "type": "object",
+  "required": [
+    "schema",
+    "type"
+  ],
+  "properties": {
+    "schema": {
+      "const": "lumen-message/1"
+    },
+    "type": {
+      "description": "The message's type. The types of this version so far: provenance, result, timings, scene_statistics, ray_statistics, traversal_statistics, run_statistics, help, version.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "provenance"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/provenance"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "result"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/result"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "timings"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/timings"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "scene_statistics"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/scene_statistics"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "ray_statistics"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/ray_statistics"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "traversal_statistics"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/traversal_statistics"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "run_statistics"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/run_statistics"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "help"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/help"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "version"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/version"
+      }
+    }
+  ],
+  "$defs": {
+    "count": {
+      "description": "A count: an integer from 0 to 2^64 - 1.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615
+    },
+    "micros": {
+      "description": "A time in whole microseconds, rounded down. Information only: a wall-clock reading, which differs from run to run; never compare it between runs.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615
+    },
+    "identity": {
+      "description": "A stable name and version, such as lumen-diffuse-path/1.",
+      "type": "string",
+      "minLength": 1
+    },
+    "sha256": {
+      "description": "sha256: and 64 lowercase hex digits.",
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71
+    },
+    "fixed": {
+      "description": "A Q32.32 fixed-point value in decimal with six places, from its exact raw integer, rounded to nearest with ties away from zero, such as \"-1.125000\". A string, because a JSON number would be read as a float.",
+      "type": "string",
+      "minLength": 8
+    },
+    "vector": {
+      "description": "A point or direction: x, y and z.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fixed"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "channels": {
+      "description": "Red, green and blue.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fixed"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "side": {
+      "description": "An image width or height in pixels, 1..=32768.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 32768
+    },
+    "samples": {
+      "description": "Samples per pixel: a power of two from 1 to 1024.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1024
+    },
+    "threads": {
+      "description": "A thread count, 1..=256.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
+    },
+    "band_rows": {
+      "description": "The rows in a band, 1..=2^32 - 1.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "provenance": {
+      "description": "The render's provenance (RenderProvenance::fields() in order), written when the render starts.",
+      "type": "object",
+      "required": [
+        "schema",
+        "type",
+        "scene",
+        "integrator",
+        "shading",
+        "sampler",
+        "tone",
+        "encoding",
+        "bunny",
+        "width",
+        "height",
+        "pixels",
+        "samples",
+        "seed",
+        "bounces",
+        "scene_content"
+      ],
+      "properties": {
+        "schema": {
+          "const": "lumen-message/1"
+        },
+        "type": {
+          "const": "provenance"
+        },
+        "scene": {
+          "description": "The scene's identity, or null for a scene given no name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "integrator": {
+          "$ref": "#/$defs/identity",
+          "description": "The integrator, or the debug view's identity."
+        },
+        "shading": {
+          "description": "The shading contract, or none for a debug view that uses none.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sampler": {
+          "$ref": "#/$defs/identity"
+        },
+        "tone": {
+          "$ref": "#/$defs/identity"
+        },
+        "encoding": {
+          "$ref": "#/$defs/identity"
+        },
+        "bunny": {
+          "description": "The Bunny commit, 40 lowercase hex digits.",
+          "type": "string",
+          "minLength": 40,
+          "maxLength": 40
+        },
+        "width": {
+          "$ref": "#/$defs/side"
+        },
+        "height": {
+          "$ref": "#/$defs/side"
+        },
+        "pixels": {
+          "description": "width times height, at most 2^27.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 134217728
+        },
+        "samples": {
+          "$ref": "#/$defs/samples"
+        },
+        "seed": {
+          "description": "The sampler's seed, 0..=2^32 - 1.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "bounces": {
+          "$ref": "#/$defs/count",
+          "description": "The bounces per path: 1 for the lit image, 0 for a debug view."
+        },
+        "scene_content": {
+          "$ref": "#/$defs/sha256",
+          "description": "The scene's content identity (ADR 0005)."
+        }
+      },
+      "additionalProperties": true
+    },
+    "result": {
+      "description": "What the render produced, written when it finishes.",
+      "type": "object",
+      "required": [
+        "schema",
+        "type",
+        "width",
+        "height",
+        "threads",
+        "threads_asked",
+        "band_rows",
+        "rays",
+        "image",
+        "png"
+      ],
+      "properties": {
+        "schema": {
+          "const": "lumen-message/1"
+        },
+        "type": {
+          "const": "result"
+        },
+        "width": {
+          "$ref": "#/$defs/side"
+        },
+        "height": {
+          "$ref": "#/$defs/side"
+        },
+        "threads": {
+          "$ref": "#/$defs/threads",
+          "description": "The workers that rendered: never more than the bands."
+        },
+        "threads_asked": {
+          "$ref": "#/$defs/threads",
+          "description": "--threads, or what the system reports available."
+        },
+        "band_rows": {
+          "$ref": "#/$defs/band_rows"
+        },
+        "rays": {
+          "description": "Every ray traced, the closest-hit queries (camera and bounce rays) and the any-hit queries (shadow rays).",
+          "type": "object",
+          "required": [
+            "total",
+            "closest",
+            "shadow"
+          ],
+          "properties": {
+            "total": {
+              "$ref": "#/$defs/count"
+            },
+            "closest": {
+              "$ref": "#/$defs/count"
+            },
+            "shadow": {
+              "$ref": "#/$defs/count"
+            }
+          },
+          "additionalProperties": true
+        },
+        "image": {
+          "$ref": "#/$defs/sha256",
+          "description": "The image hash: the SHA-256 of the raw RGBA8 bytes (ADR 0009)."
+        },
+        "png": {
+          "description": "The file written, or null without --out.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "path",
+            "bytes"
+          ],
+          "properties": {
+            "path": {
+              "description": "The path as given (a path that is not Unicode in its lossy form).",
+              "type": "string"
+            },
+            "bytes": {
+              "$ref": "#/$defs/count",
+              "description": "The bytes written: the PNG's length."
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "timings": {
+      "description": "Each part's wall-clock time in whole microseconds. Information only: a wall-clock reading, which differs from run to run; never compare it between runs.",
+      "type": "object",
+      "required": [
+        "schema",
+        "type",
+        "scene_us",
+        "render_us",
+        "hash_us",
+        "png_us",
+        "total_us"
+      ],
+      "properties": {
+        "schema": {
+          "const": "lumen-message/1"
+        },
+        "type": {
+          "const": "timings"
+        },
+        "scene_us": {
+          "$ref": "#/$defs/micros"
+        },
+        "render_us": {
+          "$ref": "#/$defs/micros"
+        },
+        "hash_us": {
+          "$ref": "#/$defs/micros"
+        },
+        "png_us": {
+          "$ref": "#/$defs/micros"
+        },
+        "total_us": {
+          "$ref": "#/$defs/micros",
+          "description": "The whole command after argument parsing: scene, render, hash and png."
+        }
+      },
+      "additionalProperties": true
+    },
+    "scene_statistics": {
+      "description": "A built scene's statistics (ADR 0008): lumen stats, and render --stats.",
+      "type": "object",
+      "required": [
+        "schema",
+        "type",
+        "scene",
+        "scene_content",
+        "integrator",
+        "triangles",
+        "vertices",
+        "triangles_smooth",
+        "triangles_zero_area",
+        "material_triangles",
+        "material_albedo",
+        "bounds_min",
+        "bounds_max",
+        "light",
+        "camera",
+        "tree",
+        "memory"
+      ],
+      "properties": {
+        "schema": {
+          "const": "lumen-message/1"
+        },
+        "type": {
+          "const": "scene_statistics"
+        },
+        "scene": {
+          "$ref": "#/$defs/identity"
+        },
+        "scene_content": {
+          "$ref": "#/$defs/sha256"
+        },
+        "integrator": {
+          "$ref": "#/$defs/identity"
+        },
+        "triangles": {
+          "$ref": "#/$defs/count"
+        },
+        "vertices": {
+          "$ref": "#/$defs/count"
+        },
+        "triangles_smooth": {
+          "$ref": "#/$defs/count"
+        },
+        "triangles_zero_area": {
+          "$ref": "#/$defs/count"
+        },
+        "material_triangles": {
+          "description": "The triangles naming each material, in the material table's order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/count"
+          }
+        },
+        "material_albedo": {
+          "description": "Each material's albedo.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/channels"
+          }
+        },
+        "bounds_min": {
+          "$ref": "#/$defs/vector"
+        },
+        "bounds_max": {
+          "$ref": "#/$defs/vector"
+        },
+        "light": {
+          "type": "object",
+          "required": [
+            "sun",
+            "sky"
+          ],
+          "properties": {
+            "sun": {
+              "description": "The sun, or null for a scene without one.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "required": [
+                "toward",
+                "irradiance"
+              ],
+              "properties": {
+                "toward": {
+                  "$ref": "#/$defs/vector"
+                },
+                "irradiance": {
+                  "$ref": "#/$defs/channels"
+                }
+              },
+              "additionalProperties": true
+            },
+            "sky": {
+              "$ref": "#/$defs/channels"
+            }
+          },
+          "additionalProperties": true
+        },
+        "camera": {
+          "type": "object",
+          "required": [
+            "position",
+            "look",
+            "up",
+            "tan_half_fov"
+          ],
+          "properties": {
+            "position": {
+              "$ref": "#/$defs/vector"
+            },
+            "look": {
+              "$ref": "#/$defs/vector"
+            },
+            "up": {
+              "$ref": "#/$defs/vector"
+            },
+            "tan_half_fov": {
+              "$ref": "#/$defs/fixed"
+            }
+          },
+          "additionalProperties": true
+        },
+        "tree": {
+          "type": "object",
+          "required": [
+            "builder",
+            "layout",
+            "nodes",
+            "interior_nodes",
+            "leaves",
+            "leaf_depth_max",
+            "leaf_depth_total",
+            "leaf_triangles",
+            "leaf_triangles_min",
+            "leaf_triangles_max",
+            "leaf_sizes"
+          ],
+          "properties": {
+            "builder": {
+              "type": "string"
+            },
+            "layout": {
+              "type": "string"
+            },
+            "nodes": {
+              "$ref": "#/$defs/count"
+            },
+            "interior_nodes": {
+              "$ref": "#/$defs/count"
+            },
+            "leaves": {
+              "$ref": "#/$defs/count"
+            },
+            "leaf_depth_max": {
+              "$ref": "#/$defs/count"
+            },
+            "leaf_depth_total": {
+              "$ref": "#/$defs/count"
+            },
+            "leaf_triangles": {
+              "$ref": "#/$defs/count"
+            },
+            "leaf_triangles_min": {
+              "$ref": "#/$defs/count"
+            },
+            "leaf_triangles_max": {
+              "$ref": "#/$defs/count"
+            },
+            "leaf_sizes": {
+              "description": "Leaves of 1, 2, 3 and 4 triangles, and of more.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/count"
+              },
+              "minItems": 5,
+              "maxItems": 5
+            }
+          },
+          "additionalProperties": true
+        },
+        "memory": {
+          "description": "Information only: this build's type sizes times the counts, which can differ between targets.",
+          "type": "object",
+          "required": [
+            "triangles_bytes",
+            "surfaces_bytes",
+            "vertex_normals_bytes",
+            "material_indices_bytes",
+            "materials_bytes",
+            "tree_nodes_bytes",
+            "tree_primitive_indices_bytes",
+            "total_bytes"
+          ],
+          "properties": {
+            "triangles_bytes": {
+              "$ref": "#/$defs/count"
+            },
+            "surfaces_bytes": {
+              "$ref": "#/$defs/count"
+            },
+            "vertex_normals_bytes": {
+              "$ref": "#/$defs/count"
+            },
+            "material_indices_bytes": {
+              "$ref": "#/$defs/count"
+            },
+            "materials_bytes": {
+              "$ref": "#/$defs/count"
+            },
+            "tree_nodes_bytes": {
+              "$ref": "#/$defs/count"
+            },
+            "tree_primitive_indices_bytes": {
+              "$ref": "#/$defs/count"
+            },
+            "total_bytes": {
+              "$ref": "#/$defs/count"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "ray_statistics": {
+      "description": "What a render's rays found (render --stats): a function of the scene, the size and the settings.",
+      "type": "object",
+      "required": [
+        "schema",
+        "type",
+        "camera",
+        "camera_hits",
+        "camera_misses",
+        "bounce",
+        "bounce_hits",
+        "bounce_misses",
+        "bounce_rejected",
+        "shadow",
+        "shadow_occluded",
+        "shadow_unoccluded",
+        "total",
+        "pixels",
+        "samples_per_pixel",
+        "samples",
+        "per_pixel_min",
+        "per_pixel_max"
+      ],
+      "properties": {
+        "schema": {
+          "const": "lumen-message/1"
+        },
+        "type": {
+          "const": "ray_statistics"
+        },
+        "camera": {
+          "$ref": "#/$defs/count"
+        },
+        "camera_hits": {
+          "$ref": "#/$defs/count"
+        },
+        "camera_misses": {
+          "$ref": "#/$defs/count"
+        },
+        "bounce": {
+          "$ref": "#/$defs/count"
+        },
+        "bounce_hits": {
+          "$ref": "#/$defs/count"
+        },
+        "bounce_misses": {
+          "$ref": "#/$defs/count"
+        },
+        "bounce_rejected": {
+          "$ref": "#/$defs/count"
+        },
+        "shadow": {
+          "$ref": "#/$defs/count"
+        },
+        "shadow_occluded": {
+          "$ref": "#/$defs/count"
+        },
+        "shadow_unoccluded": {
+          "$ref": "#/$defs/count"
+        },
+        "total": {
+          "$ref": "#/$defs/count"
+        },
+        "pixels": {
+          "$ref": "#/$defs/count"
+        },
+        "samples_per_pixel": {
+          "$ref": "#/$defs/samples"
+        },
+        "samples": {
+          "$ref": "#/$defs/count"
+        },
+        "per_pixel_min": {
+          "$ref": "#/$defs/count"
+        },
+        "per_pixel_max": {
+          "$ref": "#/$defs/count"
+        }
+      },
+      "additionalProperties": true
+    },
+    "traversal_kind": {
+      "description": "Bunny's traversal counts for one kind of ray: each counter summed over the rays, its most for any one ray (_max), and the deepest stack.",
+      "type": "object",
+      "required": [
+        "box_tests",
+        "box_entries",
+        "popped_skipped",
+        "interior_visits",
+        "leaf_visits",
+        "primitive_tests",
+        "box_tests_max",
+        "box_entries_max",
+        "popped_skipped_max",
+        "interior_visits_max",
+        "leaf_visits_max",
+        "primitive_tests_max",
+        "peak_stack"
+      ],
+      "properties": {
+        "box_tests": {
+          "$ref": "#/$defs/count"
+        },
+        "box_entries": {
+          "$ref": "#/$defs/count"
+        },
+        "popped_skipped": {
+          "$ref": "#/$defs/count"
+        },
+        "interior_visits": {
+          "$ref": "#/$defs/count"
+        },
+        "leaf_visits": {
+          "$ref": "#/$defs/count"
+        },
+        "primitive_tests": {
+          "$ref": "#/$defs/count"
+        },
+        "box_tests_max": {
+          "$ref": "#/$defs/count"
+        },
+        "box_entries_max": {
+          "$ref": "#/$defs/count"
+        },
+        "popped_skipped_max": {
+          "$ref": "#/$defs/count"
+        },
+        "interior_visits_max": {
+          "$ref": "#/$defs/count"
+        },
+        "leaf_visits_max": {
+          "$ref": "#/$defs/count"
+        },
+        "primitive_tests_max": {
+          "$ref": "#/$defs/count"
+        },
+        "peak_stack": {
+          "$ref": "#/$defs/count"
+        }
+      },
+      "additionalProperties": true
+    },
+    "traversal_statistics": {
+      "description": "What Bunny's traversals did (render --stats), per kind of ray.",
+      "type": "object",
+      "required": [
+        "schema",
+        "type",
+        "camera",
+        "bounce",
+        "shadow"
+      ],
+      "properties": {
+        "schema": {
+          "const": "lumen-message/1"
+        },
+        "type": {
+          "const": "traversal_statistics"
+        },
+        "camera": {
+          "$ref": "#/$defs/traversal_kind"
+        },
+        "bounce": {
+          "$ref": "#/$defs/traversal_kind"
+        },
+        "shadow": {
+          "$ref": "#/$defs/traversal_kind"
+        }
+      },
+      "additionalProperties": true
+    },
+    "run_statistics": {
+      "description": "How the work was spread (render --stats).",
+      "type": "object",
+      "required": [
+        "schema",
+        "type",
+        "band_rows",
+        "bands",
+        "workers"
+      ],
+      "properties": {
+        "schema": {
+          "const": "lumen-message/1"
+        },
+        "type": {
+          "const": "run_statistics"
+        },
+        "band_rows": {
+          "$ref": "#/$defs/band_rows"
+        },
+        "bands": {
+          "$ref": "#/$defs/count"
+        },
+        "workers": {
+          "description": "What each worker took and traced; which worker took which band depends on timing. Information only: the split differs from run to run; the totals do not.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "required": [
+              "bands",
+              "rows",
+              "pixels",
+              "rays"
+            ],
+            "properties": {
+              "bands": {
+                "$ref": "#/$defs/count"
+              },
+              "rows": {
+                "$ref": "#/$defs/count"
+              },
+              "pixels": {
+                "$ref": "#/$defs/count"
+              },
+              "rays": {
+                "$ref": "#/$defs/count"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "help": {
+      "description": "lumen --help: the usage text.",
+      "type": "object",
+      "required": [
+        "schema",
+        "type",
+        "usage"
+      ],
+      "properties": {
+        "schema": {
+          "const": "lumen-message/1"
+        },
+        "type": {
+          "const": "help"
+        },
+        "usage": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "version": {
+      "description": "lumen --version.",
+      "type": "object",
+      "required": [
+        "schema",
+        "type",
+        "lumen",
+        "bunny"
+      ],
+      "properties": {
+        "schema": {
+          "const": "lumen-message/1"
+        },
+        "type": {
+          "const": "version"
+        },
+        "lumen": {
+          "description": "The package version.",
+          "type": "string",
+          "minLength": 1
+        },
+        "bunny": {
+          "description": "The Bunny commit the binary was built against.",
+          "type": "string",
+          "minLength": 40,
+          "maxLength": 40
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}
