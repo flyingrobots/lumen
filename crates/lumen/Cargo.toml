@@ -19,6 +19,7 @@ bunny-linalg.workspace = true
 bunny-num.workspace = true
 bunny-optics.workspace = true
 bunny-query.workspace = true
+lumen-image.workspace = true
 
 [lints]
 workspace = true

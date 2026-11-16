@@ -1,0 +1,18 @@
+[package]
+name = "lumen-image"
+description = "Lumen's image decoders: dependency-free, float-free and deterministic (ADR 0012)."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+keywords = ["jpeg", "decoder", "deterministic"]
+categories = ["multimedia::images"]
+publish = false
+
+# No dependency, not even Bunny's, and no dev-dependency (docs/adr/0012-image-decoding.md).
+[dependencies]
+
+[lints]
+workspace = true
