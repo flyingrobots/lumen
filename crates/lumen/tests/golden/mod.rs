@@ -13,7 +13,7 @@ pub(crate) const GOLDEN_BUNNY_REV: &str = "2cd551e248d55407a8f27e84dcb26d1b1d876
 
 /// The golden image hash of the reference scene.
 ///
-/// Recorded for `lumen-reference-scene/3`, `lumen-diffuse-path/1` (Bunny's
+/// Recorded for `lumen-reference-scene/4`, `lumen-diffuse-path/1` (Bunny's
 /// `bunny-sobol-owen/1` and `bunny-diffuse-shading/1`), `bunny-tone-srgb/1` and
 /// `bunny-rgba8-opaque/1`, at 96 by 54 pixels, 4 samples per pixel, seed 0, at the pinned Bunny
 /// commit, `BUNNY_REV`: a test checks that `Cargo.lock` resolves every Bunny crate to it, and the
@@ -33,15 +33,19 @@ pub(crate) const GOLDEN_BUNNY_REV: &str = "2cd551e248d55407a8f27e84dcb26d1b1d876
 /// `sha256:3e90dbd46172423c9c9e1e60c0c6b15e35c6ceeefa0647ba53833b8d89e6bfa7`; updated when the
 /// scene identity changed to `lumen-reference-scene/3` (flyingrobots/lumen#14: the Stanford bunny
 /// added, the camera moved), every other identity, the settings and the Bunny commit unchanged.
-/// The current value was recorded against Bunny dcd6bd37613738de93f7084e7c8aa0283de964ea and held,
-/// unchanged, as the pin moved to 3c395f9950ac63d5ecfbd2055c306954111daf9d,
-/// 3c0dab3e77c0d45de8904906a134e846dfe5ec6c and d4fe51d38fa10f8d6496bd110955314edac30bbf.
+/// Version 3's value, `sha256:4f9d5436dde802b5956d1ad6b83fe9671021ae5838f54bc697ae18690ebb9a46`,
+/// was recorded against Bunny dcd6bd37613738de93f7084e7c8aa0283de964ea and held, unchanged, as the
+/// pin moved to 3c395f9950ac63d5ecfbd2055c306954111daf9d, 3c0dab3e77c0d45de8904906a134e846dfe5ec6c,
+/// d4fe51d38fa10f8d6496bd110955314edac30bbf and 2cd551e248d55407a8f27e84dcb26d1b1d8768bd. Updated
+/// when the scene identity changed to `lumen-reference-scene/4` (flyingrobots/lumen#179: the
+/// bunny turned a quarter turn to face the camera, where it stands), every other identity, the
+/// settings and the Bunny commit (2cd551e248d55407a8f27e84dcb26d1b1d8768bd) unchanged.
 #[allow(
     dead_code,
     reason = "each test crate that includes this module uses only the hashes it needs"
 )]
 pub(crate) const GOLDEN_96X54_4SPP: &str =
-    "sha256:4f9d5436dde802b5956d1ad6b83fe9671021ae5838f54bc697ae18690ebb9a46";
+    "sha256:e85881b5671aa0394c04064538999a627807d3a3436f0936828e67f467438172";
 
 /// The golden image hash of the Fixed Point scene, `lumen-fixed-point-scene/2`: 96 by 54 pixels,
 /// 4 samples per pixel, seed 0, rendered from `fixed_point_scene()` (and by
@@ -75,7 +79,7 @@ pub(crate) const GOLDEN_FIXED_POINT_96X54_4SPP: &str =
     "sha256:da6cb05db0d366a2088f19e6eefed2ab017dd0d27c6c5e364a85121054d6093e";
 
 /// The golden content identity (`Scene::content_id`, `lumen-scene-content/2`, ADR 0005) of the
-/// reference scene, `lumen-reference-scene/3`. Like the image hashes it is one value for every
+/// reference scene, `lumen-reference-scene/4`. Like the image hashes it is one value for every
 /// platform. It changes only with the scene's content (a new scene version) or the encoding (a
 /// new `lumen-scene-content` version); any other change is a bug.
 ///
@@ -83,13 +87,16 @@ pub(crate) const GOLDEN_FIXED_POINT_96X54_4SPP: &str =
 /// `sha256:84541be146ebac194b43dfc91f9205356818d517c71f52d947a3ca417178d356` (the reference
 /// scene) and `sha256:10b0e9bd01ec5aa20c899d2efc8c45cca5d84a404c7c64ca48b44a38999b48a5` (Fixed
 /// Point, below); both changed when the encoding became version 2, which adds the vertex
-/// normals (flyingrobots/lumen#39). Neither scene's content or image hash changed.
+/// normals (flyingrobots/lumen#39). Neither scene's content or image hash changed. The reference
+/// scene's version 3 value under `lumen-scene-content/2`,
+/// `sha256:c1e109477c09328421d76efefd923bd625d842fe3afb93dfadb21ae905bd0f66`, changed with its
+/// content when version 4 turned the bunny (flyingrobots/lumen#179).
 #[allow(
     dead_code,
     reason = "each test crate that includes this module uses only the constants it needs"
 )]
 pub(crate) const GOLDEN_REFERENCE_CONTENT: &str =
-    "sha256:c1e109477c09328421d76efefd923bd625d842fe3afb93dfadb21ae905bd0f66";
+    "sha256:f2405288d483691cd3ec16ac2c96de641ea24d26ced3febc1f44c3a13feb3594";
 
 /// The golden content identity of the Fixed Point scene, `lumen-fixed-point-scene/2`, on the
 /// same terms as [`GOLDEN_REFERENCE_CONTENT`]. Version 1's, under `lumen-scene-content/2`, was

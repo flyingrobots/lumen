@@ -88,7 +88,7 @@ fn the_provenance_lists_what_the_command_prints_in_its_order() {
     assert_eq!(
         provenance.fields(),
         [
-            ("scene", id("lumen-reference-scene/3")),
+            ("scene", id("lumen-reference-scene/4")),
             ("integrator", id("lumen-diffuse-path/1")),
             ("shading", id("bunny-diffuse-shading/1")),
             ("sampler", id("bunny-sobol-owen/1")),

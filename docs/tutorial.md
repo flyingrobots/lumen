@@ -35,12 +35,12 @@ to standard error. Then `lumen` prints its report. Abridged: the lines shown are
 timing lines it also prints vary from run to run:
 
 ```text
-scene lumen-reference-scene/3
+scene lumen-reference-scene/4
 integrator lumen-diffuse-path/1
 size 320x180
 samples 4
 seed 0
-image sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23
+image sha256:d6e4ff7d768e266a30e54a04d62f6a13aeeebd2f6f68f8783faaaff9c7f505a8
 png first.png (230699 bytes)
 ```
 
@@ -62,7 +62,7 @@ Without `--out` nothing is written (the report says `png none`), but the hash is
 
 ```text
 threads 1
-image sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23
+image sha256:d6e4ff7d768e266a30e54a04d62f6a13aeeebd2f6f68f8783faaaff9c7f505a8
 ```
 
 It is the same hash. The first render used every core; this one used one. Every number that
