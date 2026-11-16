@@ -48,6 +48,7 @@ sections, never rewrites.
 | [0007](adr/0007-smooth-shading.md) | Smooth shading: the integrator's identity and the vertex normals | accepted; clarified 2026-11-14 |
 | [0008](adr/0008-statistics.md) | Statistics: what is counted, where, and why it cannot change the image | accepted |
 | [0009](adr/0009-image-hash.md) | The image hash | accepted (recorded 2026-11-14) |
+| [0011](adr/0011-analytic-surfaces-lights-and-lens.md) | Analytic surfaces, point lights and the thin lens: arithmetic in Bunny, scene model in Lumen | accepted (2026-11-15) |
 
 ## Measurement records
 

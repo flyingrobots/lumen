@@ -134,6 +134,8 @@ part was built.
   requirement-to-evidence map, a how-to for measuring render time, a
   [contributor guide](CONTRIBUTING.md), an [index](docs/README.md), ADRs 0001 to 0009 and dated
   measurement records in `docs/measurements/`. (flyingrobots/lumen#5, #25, #39, #40, #57.)
+- **ADR 0011** records that arithmetic for analytic shapes, point lights and the thin lens is
+  versioned Bunny contracts, and that Lumen owns the scene model. (flyingrobots/lumen#183.)
 - **Dependencies**: Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`,
   `bunny-broadphase`, `bunny-optics` and `bunny-codec` (default features off), version 0.7.1,
   as git dependencies pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (`BUNNY_REV`, checked
