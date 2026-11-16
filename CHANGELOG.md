@@ -157,6 +157,10 @@ part was built.
   `4k-fixed-point`, `canyon`, `4k-canyon`, `test`, `nondeterminism`, `clippy-bans`,
   `doc-links`, `help`) over the container runner. (flyingrobots/lumen#17, #23, #25, #40, #104,
   #115.)
+- **The command's interface, decided** ([ADR 0015](docs/adr/0015-command-interface.md)): a job
+  file in, an output directory, versioned JSON Lines on standard output and on standard error, and
+  published JSON Schemas; the key-value report is to be retired. Nothing is built yet.
+  (flyingrobots/lumen#218; built by #219 to #222.)
 - **Documentation**: the README as a short router, opening with a rendered picture of the reference
   scene and showing Fixed Point and the canyon beside the command and image hash of each (three
   1280 by 720, 64 samples per pixel renders in `docs/images/`, lossless re-encodings of the PNGs
@@ -170,6 +174,8 @@ part was built.
   Lumen's own float-free code in a dependency-free `lumen-image` crate, with the supported and
   refused features of each format stated. The crate is built by #195 to #199.
   (flyingrobots/lumen#184.)
+- **ADR 0011** records that arithmetic for analytic shapes, point lights and the thin lens is
+  versioned Bunny contracts, and that Lumen owns the scene model. (flyingrobots/lumen#183.)
 - **Dependencies**: Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`,
   `bunny-broadphase`, `bunny-optics` and `bunny-codec` (default features off), version 0.7.1,
   as git dependencies pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (`BUNNY_REV`, checked
