@@ -6,16 +6,17 @@
     clippy::disallowed_methods,
     clippy::disallowed_types,
     clippy::disallowed_macros,
-    reason = "time-instant, host-parallelism, std-env, std-fs, host-io, float-type: the command's \
-              edge reads its arguments, writes the PNG to a file or standard output, times the \
-              phases in seconds and asks the host for the default thread count; the library gets \
-              only values"
+    reason = "time-instant, host-parallelism, std-env, std-fs, host-io: the command's edge reads \
+              its arguments, writes the PNG to a file and its messages to standard output, times \
+              the phases in microseconds and asks the host for the default thread count; the \
+              library gets only values"
 )]
 
 mod cli;
 mod failure;
+mod json;
+mod messages;
 mod publish;
-mod report;
 mod stats;
 
 use std::ffi::OsString;
@@ -31,7 +32,7 @@ use lumen::{
     RenderSettings, Schedule, View, BUNNY_REV, MAX_THREADS,
 };
 use publish::Disk;
-use report::{Report, Times};
+use messages::{emit, Outcome, Times};
 
 fn main() -> ExitCode {
     match command(std::env::args_os().skip(1)) {
@@ -46,8 +47,8 @@ fn main() -> ExitCode {
 /// Runs the command line `args` (after the program name).
 fn command(args: impl Iterator<Item = OsString>) -> Result<(), Failure> {
     match cli::parse(args).map_err(Failure::Usage)? {
-        Command::Help => println!("{USAGE}"),
-        Command::Version => println!("lumen {} (bunny {BUNNY_REV})", env!("CARGO_PKG_VERSION")),
+        Command::Help => print(&messages::help(USAGE))?,
+        Command::Version => print(&messages::version(env!("CARGO_PKG_VERSION"), BUNNY_REV))?,
         Command::Stats { scene } => describe(scene)?,
         Command::Render { scene, width, height, settings, threads, band, out, detail, view } => {
             let threads = threads.unwrap_or_else(available_threads);
@@ -68,12 +69,16 @@ fn available_threads() -> u32 {
         .clamp(1, MAX_THREADS)
 }
 
+/// Writes one message to standard output.
+fn print(message: &json::Object) -> Result<(), Failure> {
+    emit(&mut io::stdout().lock(), message).map_err(Failure::Stdout)
+}
+
 /// Builds the chosen scene and prints its statistics: no render, no clock.
 fn describe(scene: BuiltinScene) -> Result<(), Failure> {
     let built = scene.build().map_err(Failure::Scene)?;
     let statistics = built.statistics().map_err(Failure::Statistics)?;
-    let mut stdout = io::stdout().lock();
-    stats::write_stats(&mut stdout, scene.id(), &built, &statistics).map_err(Failure::Stdout)
+    print(&stats::scene_statistics(scene.id(), &built, &statistics))
 }
 
 /// What to render: the scene, the view, the size, the settings and the schedule.
@@ -86,9 +91,10 @@ struct Job {
     schedule: Schedule,
 }
 
-/// Builds the chosen scene, checks that the PNG can be written if asked, renders it, hashes the
-/// image, publishes the PNG, and prints
-/// what was made and how long each part took.
+/// Builds the chosen scene, checks that the PNG can be written if asked, prints the render's
+/// `provenance`, renders it, hashes the image, publishes the PNG, and prints the `result` and
+/// the `timings` (and with `--stats` the four statistics messages). Each message is flushed when
+/// it is written (ADR 0015).
 ///
 /// The times are wall-clock readings of a monotonic clock (`Instant`), taken around each part;
 /// they are printed and never reach the image.
@@ -102,6 +108,9 @@ fn run(job: Job, out: Option<&Path>, detail: Detail) -> Result<(), Failure> {
             .map_err(|error| Failure::Output { path: path.to_path_buf(), error })?;
     }
     let built = started.elapsed();
+    let provenance =
+        RenderProvenance::named(scene.id(), &built_scene, size, settings).with_view(view);
+    print(&messages::provenance(&provenance))?;
     // Only `--stats` asks the workers and the traversals to count: without it the render does no
     // counting work for run or traversal statistics (ADR 0008).
     let (render, counted) = match detail {
@@ -135,15 +144,12 @@ fn run(job: Job, out: Option<&Path>, detail: Detail) -> Result<(), Failure> {
         png: total.saturating_sub(hashed),
         total,
     };
-    let report = Report {
-        provenance: RenderProvenance::named(scene.id(), &built_scene, size, settings)
-            .with_view(view),
+    let outcome = Outcome {
         schedule,
         workers: schedule.workers(size),
         rays: render.rays,
         hash,
         png: out.map(Path::to_path_buf).zip(written),
-        times,
     };
     // Read after the clock stops, and only when asked: the statistics take no part in the times.
     let statistics = match detail {
@@ -153,19 +159,15 @@ fn run(job: Job, out: Option<&Path>, detail: Detail) -> Result<(), Failure> {
             Some(built_scene.statistics().map_err(Failure::Statistics)?)
         }
     };
-    let mut stdout = io::stdout().lock();
-    report.write(&mut stdout).map_err(Failure::Stdout)?;
+    print(&messages::result(&provenance, &outcome))?;
+    print(&messages::timings(&times))?;
     if let Some(scene_statistics) = statistics {
-        stats::write_scene_block(&mut stdout, &built_scene, &scene_statistics)
-            .and_then(|()| stats::write_rays(&mut stdout, &render.statistics, settings))
-            .and_then(|()| {
-                counted.as_ref().map_or(Ok(()), |(run, traversal)| {
-                    let outcomes = &render.statistics.outcomes;
-                    stats::write_traversal(&mut stdout, traversal, outcomes)
-                        .and_then(|()| stats::write_run(&mut stdout, run))
-                })
-            })
-            .map_err(Failure::Stdout)?;
+        print(&stats::scene_statistics(scene.id(), &built_scene, &scene_statistics))?;
+        print(&stats::ray_statistics(&render.statistics, settings))?;
+        if let Some((run, traversal)) = &counted {
+            print(&stats::traversal_statistics(traversal))?;
+            print(&stats::run_statistics(run))?;
+        }
     }
     Ok(())
 }

@@ -20,11 +20,14 @@ part was built.
   scene (`--scene reference|fixed-point`), renders it at `--width` by `--height` (each
   `1..=32768`, at most `2^27` pixels; default 320 by 180) with `--samples` (a power of two from 1
   to 1024, default 4) and `--seed` (`0..=4294967295`, default 0) on `--threads` (`1..=256`,
-  default what the system reports) taking bands of `--band-rows` rows (default 1), prints a
-  report (the render's provenance, the threads and band height, the rays, the image hash, the
-  file and the wall-clock times) and, with `--out`, writes the PNG; `--stats` adds the scene, ray
-  and run statistics. `lumen stats` prints a scene's statistics without rendering; `--help` and
-  `--version` (with the Bunny commit). A refused command line or value exits 2 with a message
+  default what the system reports) taking bands of `--band-rows` rows (default 1), prints its
+  messages and, with `--out`, writes the PNG; `--stats` adds the scene, ray, traversal and run
+  statistics. `lumen stats` prints a scene's statistics without rendering; `--help` and
+  `--version` (with the Bunny commit). Standard output is JSON Lines: every line is one object
+  under `lumen-message/1` (`schemas/lumen-message-1.schema.json`, ADR 0015), of type
+  `provenance`, `result`, `timings`, `scene_statistics`, `ray_statistics`,
+  `traversal_statistics`, `run_statistics`, `help` or `version`; numbers are integers and times
+  are integer microseconds, information only (flyingrobots/lumen#219). A refused command line or value exits 2 with a message
   (and the usage text, except for a size); anything that fails after that exits 1. Arguments
   are read as OS strings; every option also takes `--option=value`; a separate value that reads
   as an option is refused; leading zeros are decimal. `--out` is checked before the render and

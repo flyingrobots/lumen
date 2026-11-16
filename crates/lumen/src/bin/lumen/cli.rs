@@ -31,12 +31,14 @@ usage: lumen render [--scene NAME] [--out FILE] [--width W] [--height H] [--samp
 
 Renders one of lumen's built-in scenes (reference, the default, fixed-point or canyon) on T threads,
 each taking bands of R whole rows, with N samples per pixel of a diffuse path (a shadow-casting
-sun, a uniform sky and one bounce), writes it to a PNG file if --out is given, and prints the
-image hash (SHA-256 of the raw RGBA8 bytes) and the timing. The image is the same for every
-thread count and band height. --stats adds the scene's statistics and what the rays found
-after the report (see docs/reference/cli.md). `lumen stats` builds the scene, renders nothing
-and prints what it holds: triangles by material, bounds, lights, camera, the shape of its tree
-and its memory.
+sun, a uniform sky and one bounce), writes it to a PNG file if --out is given, and prints its
+provenance, its result (the image hash, SHA-256 of the raw RGBA8 bytes) and its timings. The
+image is the same for every thread count and band height. --stats adds the scene's statistics
+and what the rays found (see docs/reference/cli.md). `lumen stats` builds the scene, renders
+nothing and prints what it holds: triangles by material, bounds, lights, camera, the shape of
+its tree and its memory.
+Standard output is JSON Lines: each line is one JSON object of lumen-message/1, this text
+included.
 --view NAME renders a debug view instead of the lit image: lit (the default), normals (the
 first hit's geometric normal as colour, back faces dimmer), shading-normals (the interpolated
 vertex normal where a triangle has them), depth (near white to far dark grey), primitive-id or
@@ -80,19 +82,19 @@ pub(crate) enum Command {
         band: BandRows,
         /// The PNG file to write, with the bytes it was given, if any.
         out: Option<PathBuf>,
-        /// Whether the report ends with the statistics.
+        /// Whether the statistics messages follow the render's.
         detail: Detail,
         /// What to draw: the lit image or a debug view.
         view: View,
     },
 }
 
-/// How much `render` reports.
+/// How much `render` prints.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Detail {
-    /// The report alone, as before statistics existed.
+    /// The render's messages alone: `provenance`, `result` and `timings`.
     Report,
-    /// The report, then the scene and ray statistics (`--stats`).
+    /// Those, then the four statistics messages (`--stats`).
     Statistics,
 }
 
