@@ -87,6 +87,7 @@ dependencies = [
  "bunny-num",
  "bunny-optics",
  "bunny-query",
+ "lumen-image",
 ]
 
 [[package]]
@@ -98,6 +99,10 @@ dependencies = [
  "bunny-linalg",
  "bunny-num",
 ]
+
+[[package]]
+name = "lumen-image"
+version = "0.1.0"
 
 [[package]]
 name = "xtask"

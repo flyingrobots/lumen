@@ -170,6 +170,9 @@ part was built.
   Lumen's own float-free code in a dependency-free `lumen-image` crate, with the supported and
   refused features of each format stated. The crate is built by #195 to #199.
   (flyingrobots/lumen#184.)
+- **`lumen-image`, baseline JPEG** (work in progress): a dependency-free, float-free workspace
+  crate inside the deterministic core, with a baseline JPEG decoder to RGB8 under the identity
+  `lumen-jpeg-decode/1`. (flyingrobots/lumen#197.)
 - **ADR 0011** records that arithmetic for analytic shapes, point lights and the thin lens is
   versioned Bunny contracts, and that Lumen owns the scene model. (flyingrobots/lumen#183.)
 - **Dependencies**: Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`,

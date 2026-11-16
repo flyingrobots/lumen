@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/lumen", "xtask", "xtask/clippy-fixture"]
+members = ["crates/lumen", "crates/lumen-image", "xtask", "xtask/clippy-fixture"]
 resolver = "2"
 
 [workspace.package]
@@ -22,6 +22,8 @@ bunny-linalg = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e24
 bunny-num = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd" }
 bunny-optics = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd" }
 bunny-query = { git = "https://github.com/flyingrobots/bunny", rev = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd" }
+# Lumen's own image decoders (docs/adr/0012-image-decoding.md): a member with no dependency.
+lumen-image = { path = "crates/lumen-image" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
