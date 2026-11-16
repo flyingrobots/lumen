@@ -1,0 +1,15 @@
+[package]
+name = "lumen-image"
+description = "Lumen's image decoders: integer-only, with no dependency (ADR 0012)."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+keywords = ["zlib", "inflate", "deterministic"]
+categories = ["compression"]
+publish = false
+
+[lints]
+workspace = true
