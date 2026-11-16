@@ -9,13 +9,13 @@ use super::tokens::is_float;
 use super::{core_findings, denies_float_arithmetic, waiver_forms, CrateAliases};
 
 /// A seeded violation: a label, the source, the rule and the line that must be reported.
-type Form = (&'static str, &'static str, &'static str, usize);
+pub(super) type Form = (&'static str, &'static str, &'static str, usize);
 
 fn reported(source: &str) -> Vec<(usize, &'static str)> {
     core_findings(source, &CrateAliases::default()).iter().map(|f| (f.line, f.rule)).collect()
 }
 
-const REJECTED: [Form; 82] = [
+pub(super) const REJECTED: &[Form] = &[
     ("instant: qualified call", "pub fn f() { let _ = std::time::Instant::now(); }", "time-instant", 1),
     ("instant: use then bare call", "use std::time::Instant;\npub fn f() { let _ = Instant::now(); }", "time-instant", 1),
     ("instant: use group", "use std::time::{Duration, Instant};\npub fn f() -> Duration { Instant::now().elapsed() }", "time-instant", 1),
@@ -100,7 +100,7 @@ const REJECTED: [Form; 82] = [
     ("float: Bunny's is_finite of an inferred float", "pub fn f() -> bool { bunny_num::is_finite(Default::default()) }", "float-type", 1),
 ];
 
-const ACCEPTED: [(&str, &str); 20] = [
+const ACCEPTED: &[(&str, &str)] = &[
     ("sin and sqrt methods on a fixed-point type", "pub struct Fx(pub i64);\nimpl Fx { pub fn sin(self) -> Self { self } pub fn sqrt(self) -> Self { self } }\npub fn f() -> Fx { Fx(1).sin().sqrt() }"),
     ("HashMap in a comment and a doc comment", "// a HashMap would iterate in a random order\n/// not a std::collections::HashMap\npub fn f() {}"),
     ("HashMap and f64 in strings", "pub fn f() -> (&'static str, &'static str) { (\"std::collections::HashMap\", r#\"f64::NAN 0.5\"#) }"),
@@ -240,4 +240,33 @@ fn a_crate_root_denies_float_arithmetic_only_in_an_inner_deny_or_forbid() {
     ] {
         assert!(!denies_float_arithmetic(root), "{root}");
     }
+}
+
+#[test]
+fn every_rule_the_scan_reports_has_a_seeded_form_that_reports_it() {
+    let mut reported: Vec<&str> = REJECTED
+        .iter()
+        .chain(super::host_tests::REJECTED)
+        .flat_map(|(_, source, _, _)| core_findings(source, &CrateAliases::default()))
+        .map(|f| f.rule)
+        .collect();
+    for (_, others, read, _, _) in super::crate_alias_tests::CASES {
+        let mut texts = others.to_vec();
+        texts.push(read);
+        let aliases = super::crate_aliases(&texts, &["lumen".to_owned(), "probe_dep".to_owned()]);
+        reported.extend(core_findings(read, &aliases).iter().map(|f| f.rule));
+    }
+    let unseeded: Vec<&&str> = super::RULES
+        .iter()
+        .filter(|rule| !super::rules::VOCABULARY_ONLY.contains(rule) && !reported.contains(rule))
+        .collect();
+    assert!(unseeded.is_empty(), "rules no seeded form reports: {unseeded:?}");
+    let vocabulary: Vec<&&str> = super::rules::VOCABULARY_ONLY
+        .iter()
+        .filter(|rule| reported.contains(rule) || !super::RULES.contains(rule))
+        .collect();
+    assert!(
+        vocabulary.is_empty(),
+        "vocabulary-only rules that are reported or unknown: {vocabulary:?}"
+    );
 }

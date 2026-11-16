@@ -11,8 +11,11 @@ msrv = "1.96.0"
 # address types of `std::net` (core's plain data, no socket and no lookup); constants such as
 # `std::env::consts::OS` cannot be listed here and are the token scan's. Of `std::thread` the
 # sleeps, the spawns and the core count; of `std::time` the clocks, and the float methods of
-# `Duration`; of Bunny, every type and function that takes or returns a float. Every entry must
-# fire on xtask/clippy-fixture (`cargo run -p xtask -- clippy-bans`).
+# `Duration`; of Bunny, every type and function that takes or returns a float. Of `std::thread`
+# also its identity (`current`, `Thread`, `ThreadId`) and `LocalKey`, and of `std::io`, `hash`,
+# `any` and `panic` the items xtask/src/clippy_bans/std_items/decisions.rs decides banned; the
+# float aliases `c_double` and `c_float`; and `thread_local!`. Every entry must fire on
+# xtask/clippy-fixture (`cargo run -p xtask -- clippy-bans`).
 
 disallowed-types = [
     { path = "f32", reason = "float-type: no float in the deterministic core" },
@@ -62,6 +65,22 @@ disallowed-types = [
     { path = "std::net::TcpStream", reason = "network: the library has no network" },
     { path = "std::net::ToSocketAddrs", reason = "network: the library has no network" },
     { path = "std::net::UdpSocket", reason = "network: the library has no network" },
+    { path = "std::thread::Thread", reason = "thread-identity: which worker ran the pixel" },
+    { path = "std::thread::ThreadId", reason = "thread-identity: which worker ran the pixel" },
+    { path = "std::thread::LocalKey", reason = "shared-state: per-thread state outside the pixel's inputs" },
+    { path = "std::io::Stdin", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::StdinLock", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::Stdout", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::StdoutLock", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::Stderr", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::StderrLock", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::IsTerminal", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::PipeReader", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::PipeWriter", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::hash::DefaultHasher", reason = "std-hasher: its algorithm is unspecified across releases" },
+    { path = "std::hash::SipHasher", reason = "std-hasher: deprecated; a std hasher in output" },
+    { path = "std::any::TypeId", reason = "type-identity: unspecified and build-dependent" },
+    { path = "std::panic::Location", reason = "source-path: the source path given to the compiler" },
     { path = "bunny_num::Scalar", reason = "float-type: Bunny's float bridge: no float in the deterministic core" },
     { path = "bunny_linalg::Vec2", reason = "float-type: Bunny's float bridge: no float in the deterministic core" },
     { path = "bunny_linalg::Vec3", reason = "float-type: Bunny's float bridge: no float in the deterministic core" },
@@ -135,6 +154,15 @@ disallowed-methods = [
     { path = "std::process::exit", reason = "std-process: the library starts and ends no process" },
     { path = "std::process::id", reason = "std-process: the library starts and ends no process" },
     { path = "std::net::ToSocketAddrs::to_socket_addrs", reason = "network: a name lookup on the host" },
+    { path = "std::thread::current", reason = "thread-identity: which worker ran the pixel" },
+    { path = "std::io::stdin", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::stdout", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::stderr", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::io::pipe", reason = "host-io: the process's own streams; the library prints nothing" },
+    { path = "std::any::type_name", reason = "type-identity: unspecified and build-dependent" },
+    { path = "std::any::type_name_of_val", reason = "type-identity: unspecified and build-dependent" },
+    { path = "std::panic::set_hook", reason = "shared-state: a process-wide hook" },
+    { path = "std::panic::take_hook", reason = "shared-state: a process-wide hook" },
     { path = "std::time::Duration::as_secs_f32", reason = "float-type: a float with no float token written" },
     { path = "std::time::Duration::as_secs_f64", reason = "float-type: a float with no float token written" },
     { path = "std::time::Duration::div_duration_f32", reason = "float-type: a float with no float token written" },
@@ -169,4 +197,5 @@ disallowed-methods = [
 disallowed-macros = [
     { path = "std::env", reason = "std-env: the build machine's environment" },
     { path = "std::option_env", reason = "std-env: the build machine's environment" },
+    { path = "std::thread_local", reason = "shared-state: per-thread state outside the pixel's inputs" },
 ]

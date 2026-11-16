@@ -1,7 +1,7 @@
 //! This module owns the scan's vocabulary: its rule IDs, and the names and paths each bans.
 
 /// Every rule ID: Echo's `ban-nondeterminism` vocabulary, then Lumen's own.
-pub(crate) const RULES: [&str; 31] = [
+pub(crate) const RULES: &[&str] = &[
     "time-system",
     "time-instant",
     "thread-sleep",
@@ -35,9 +35,25 @@ pub(crate) const RULES: [&str; 31] = [
     "type-identity",
 ];
 
+/// The rule IDs the scan never reports: Echo's crate-level and float rules that `cargo-deny` and
+/// Clippy's bans enforce in Lumen (`random`, `host-callback`, `json-serialization`, `wasm-serde`:
+/// no crates.io crate can enter; `float-sentinel`, `float-op`: every float is `float-type` or
+/// `float-literal` here), and `thread-spawn`, which only Clippy reports. They are in [`RULES`]
+/// because a Clippy waiver's reason names them.
+#[cfg(test)]
+pub(super) const VOCABULARY_ONLY: &[&str] = &[
+    "random",
+    "host-callback",
+    "json-serialization",
+    "wasm-serde",
+    "float-sentinel",
+    "float-op",
+    "thread-spawn",
+];
+
 /// The std modules that hold a banned item: a path a macro builds from a metavariable root
 /// (`$root::fs`) through one of them is refused, since the scan cannot know the root.
-pub(super) const STD_MODULES: [&str; 16] = [
+pub(super) const STD_MODULES: &[&str] = &[
     "env",
     "fs",
     "process",
@@ -57,16 +73,16 @@ pub(super) const STD_MODULES: [&str; 16] = [
 ];
 
 /// The roots of the standard library.
-pub(super) const STD_ROOTS: [&str; 3] = ["std", "core", "alloc"];
+pub(super) const STD_ROOTS: &[&str] = &["std", "core", "alloc"];
 
 /// The float types: `f16` and `f128` are unstable on the pinned toolchain, and named so that
 /// a toolchain that stabilises them cannot bring one into the core unseen.
-pub(super) const FLOAT_TYPES: [&str; 4] = ["f16", "f32", "f64", "f128"];
+pub(super) const FLOAT_TYPES: &[&str] = &["f16", "f32", "f64", "f128"];
 
 /// Names banned wherever they are spelled, and their rules. `c_double` and `c_float` are std's
 /// aliases of `f64` and `f32` (`core::ffi`, `std::ffi`, `std::os::raw`): a float type with no
 /// float token.
-pub(super) const NAMES: [(&str, &str); 14] = [
+pub(super) const NAMES: &[(&str, &str)] = &[
     ("Instant", "time-instant"),
     ("SystemTime", "time-system"),
     ("UNIX_EPOCH", "time-system"),
@@ -88,7 +104,7 @@ pub(super) const NAMES: [(&str, &str); 14] = [
 /// because `sleep_ms` is not under `sleep`. The Bunny paths are its float bridge, whose values
 /// carry floats with no float token (`PlyVertex.x`), and `bunny_num::is_finite`, which takes one
 /// and whose name has no float word.
-pub(super) const PATHS: [(&[&str], &str); 47] = [
+pub(super) const PATHS: &[(&[&str], &str)] = &[
     (&["std", "env"], "std-env"),
     (&["std", "fs"], "std-fs"),
     (&["std", "process"], "std-process"),
