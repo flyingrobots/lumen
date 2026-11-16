@@ -18,6 +18,11 @@ use lumen::{BuiltinScene, View};
 /// (flyingrobots/lumen#179: the bunny turned to face the camera), every view identity and the
 /// Bunny commit unchanged. The new normals value was computed on aarch64 Linux and,
 /// independently, by CI on x86-64 Linux before it was recorded.
+///
+/// The depth, primitive-id and material-id rows were added in review of flyingrobots/lumen#227
+/// (ADR 0010 asks for a golden per built view per built-in scene, and the table had none for
+/// these three). They were recorded for `lumen-reference-scene/4`, `lumen-fixed-point-scene/2`
+/// and `lumen-canyon-scene/1`, each computed at two schedules that agreed.
 pub(crate) const GOLDEN_VIEWS_96X54: &[(BuiltinScene, View, &str)] = &[
     (
         BuiltinScene::Reference,
@@ -78,5 +83,50 @@ pub(crate) const GOLDEN_VIEWS_96X54: &[(BuiltinScene, View, &str)] = &[
         BuiltinScene::Canyon,
         View::BvhCost,
         "sha256:e9c2bb4f460a411ef703868acf304d88a27e3b8d67e8300039a7bda13c692dfb",
+    ),
+    (
+        BuiltinScene::Reference,
+        View::Depth,
+        "sha256:f57cba5f8305072d0d945914223b1c3f6fd071daa5436bc8bbd307320512af29",
+    ),
+    (
+        BuiltinScene::Reference,
+        View::PrimitiveId,
+        "sha256:1c2bec5e11df1268986c28aeef809428b6825405219fc9959072b09d30a34328",
+    ),
+    (
+        BuiltinScene::Reference,
+        View::MaterialId,
+        "sha256:56748c037aca5c807fc398fa1fb9cdd71e827ee8f2611d6274beb8397854bba0",
+    ),
+    (
+        BuiltinScene::FixedPoint,
+        View::Depth,
+        "sha256:b96fd9d83de196985b9d37f860d525b369773ffe2e8ca147d0b0d78772f7ab69",
+    ),
+    (
+        BuiltinScene::FixedPoint,
+        View::PrimitiveId,
+        "sha256:d7f4b3d1caabfc6ebacfc94db2764d67c974a7bb5f5954725f728fe9e809f61a",
+    ),
+    (
+        BuiltinScene::FixedPoint,
+        View::MaterialId,
+        "sha256:8a36c15fdcbaee22ab6d50f80e0b3c628a09143c65948f92cb382d1a81d4cff1",
+    ),
+    (
+        BuiltinScene::Canyon,
+        View::Depth,
+        "sha256:27d2513b27bf33a3866088cd77bd8ed2ff997c2ac6ba888fc60e570806afd8e8",
+    ),
+    (
+        BuiltinScene::Canyon,
+        View::PrimitiveId,
+        "sha256:875d624d71a7aa0cae3c9e6a9ad66b7f1a7730da3339ea679595fed45db5b7b8",
+    ),
+    (
+        BuiltinScene::Canyon,
+        View::MaterialId,
+        "sha256:f7d22a292c870f4a878af80e093999e66ea03252f036b8316be03efce04476e4",
     ),
 ];

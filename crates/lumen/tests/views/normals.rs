@@ -127,6 +127,15 @@ fn a_view_is_its_own_integrator_in_the_provenance() {
 #[test]
 fn every_view_has_its_golden_hash_at_every_schedule() {
     assert_eq!(BUNNY_REV, GOLDEN_BUNNY_REV);
+    // Coverage: every debug view of every built-in scene has a row, so a new view or scene
+    // cannot be left out silently.
+    for builtin in BuiltinScene::ALL {
+        for view in View::ALL {
+            let rows = GOLDEN_VIEWS_96X54.iter().filter(|&&(b, v, _)| b == builtin && v == view);
+            let expected = usize::from(view != View::Lit);
+            assert_eq!(rows.count(), expected, "{} {view}: golden rows", builtin.name());
+        }
+    }
     for &(builtin, view, golden) in GOLDEN_VIEWS_96X54 {
         let scene = builtin.build().expect("builds");
         for threads in [1, 2, 4, 18] {
