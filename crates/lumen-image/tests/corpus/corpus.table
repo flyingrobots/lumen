@@ -1,0 +1,36 @@
+| `empty` | `empty.raw` | 0 | 8 | fixed | `aca503def43dc086a5aaa5c3d6f86bcbbc2aa6a80007ddea4a81bce2b376fceb` |
+| `final_stored` | `final_stored.raw` | 3700 | 1545 | dynamic, stored x2 | `3f754f95da9af9c317f0bee0b281ad9d6142881e0f8b47607384c8a7217deeda` |
+| `fixed_strategy` | `fixed_strategy.raw` | 20000 | 5342 | fixed | `fac2fb0410617d404c9b7eab84af1a525cf88ad43a74df88b97220e36743a7e3` |
+| `huffman_only` | `huffman_only.raw` | 20000 | 10519 | dynamic x2 | `d123a9c8e521ae7aed9b48c6f2ba3e5854b9955f742d8d4576a2d4f7af630072` |
+| `level_1` | `level_1.raw` | 40000 | 10675 | dynamic | `5a8117e6f2f251ac26f4a8cd27771093762c2a685999a3d1b90b8af0d29a196b` |
+| `level_2` | `level_1.raw` | 40000 | 10443 | dynamic | `64d11c3ecaaf7fe4ac958f58d28f084d36b4e29c1d9a97308a9832ab5abe5895` |
+| `level_3` | `level_1.raw` | 40000 | 9645 | dynamic | `e5894073b0cbd81d5644d68f5d9a174a5c058d1c0dac56ce2e62b9886f9693a2` |
+| `level_4` | `level_1.raw` | 40000 | 9420 | dynamic | `90036a448da5fa72920258ab2005f4e7d55869e5bf5e976e1dd245b882d63ead` |
+| `level_5` | `level_1.raw` | 40000 | 8845 | dynamic | `8dffe3ea1c5830c413ead6ed1c8c96147caef06cc992bf1495a32fe7b7812123` |
+| `level_6` | `level_1.raw` | 40000 | 8305 | dynamic | `be5b0f39d4f9a425a4890fa5f00c971374b1899d06674aaf104b8b79886df464` |
+| `level_7` | `level_1.raw` | 40000 | 8268 | dynamic | `ca630fe618e2e8be80bc15757efa1c7fc00d614f6d9cc858d14eddc7f0199a6b` |
+| `level_8` | `level_1.raw` | 40000 | 8266 | dynamic | `1bc2fcd2291718dd17d372dbccc7b454c0952d6e15aaa8cb570c5b31e4b087d8` |
+| `level_9` | `level_1.raw` | 40000 | 8266 | dynamic | `1bc2fcd2291718dd17d372dbccc7b454c0952d6e15aaa8cb570c5b31e4b087d8` |
+| `max_distance` | `max_distance.raw` | 33026 | 34564 | fixed | `883db1f9acaa21e57e31c775409ed0708ea5bf324c50aff0b6fe4e162dc6e269` |
+| `noise` | `noise.raw` | 20000 | 20016 | stored x2 | `88f701ce3c1883be61cca7fe562ada7b99953348b2fce3db8f199e9fec3ae6c3` |
+| `one_byte` | `one_byte.raw` | 1 | 9 | fixed | `0c5d0951f7867ca2f99c7fd5bf7ae00e477e65c20847532870ae33a81236aeab` |
+| `rle` | `rle.raw` | 20000 | 10487 | dynamic x2 | `c4a7c2dd2617eb5818c722be15cc52d4b1d3328b8bc523271511ae7ca6c62d36` |
+| `run_258` | `run_258.raw` | 20000 | 43 | dynamic | `2fc2d8b54a08717a2f1a405b77309df0e29a4143cd88b58ad87e6bf0e43ca624` |
+| `short_text` | `short_text.raw` | 120 | 93 | dynamic | `3c3fce012ec5f5a6b0f814c95224ccb0fad1bed3843f43bf0e34d67d0afbfb5c` |
+| `small_window` | `small_window.raw` | 20000 | 6525 | dynamic | `2cdb285f2ccb2143e017386e00542f5e1c3580d65b3a5437b9130eee6483a7ef` |
+| `stored_multi` | `stored_multi.raw` | 70000 | 70016 | stored x2 | `2083f5a7615a535748bfbac2361dfdbff4587619338bad2f0082d1b6d6ce3dde` |
+| `stored_small` | `stored_small.raw` | 1000 | 1011 | stored | `599d3a4d201f8e3dc0f4d1492fd401ba6e697df0bf2bf8797dcd1f112113c7be` |
+| `empty.raw` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `final_stored.raw` | 3700 | `bc205f959cf452b364d4afad548a59832998f573a70e61d6c6950183c47264e0` |
+| `fixed_strategy.raw` | 20000 | `1f8de4ce447c2b7b0c3fe8dcc3764349a24d0207e83f161388dedc54ef187957` |
+| `huffman_only.raw` | 20000 | `c05f67ad3b3b141f642b6d195282dab9dab765cda3a37db38b00d31a726eeba0` |
+| `level_1.raw` | 40000 | `6047bce9add3acccc284fb321cc7b60adef48f30439d6bfa581c5839d6549a6a` |
+| `max_distance.raw` | 33026 | `c28970b54518a6908e371100b0bbdb6fc2c301255396a76777e7f1eda07a3f73` |
+| `noise.raw` | 20000 | `a23a346a52bea99a81333db1a0288acfd6fc88f6beff3c65c1a5a6c0214d2839` |
+| `one_byte.raw` | 1 | `72dfcfb0c470ac255cde83fb8fe38de8a128188e03ea5ba5b2a93adbea1062fa` |
+| `rle.raw` | 20000 | `3012c9aeab22d26227fc20f366b7a71324bcd19c1f09c5d968b67cb18dc81eb4` |
+| `run_258.raw` | 20000 | `cc17faaad36649c4603dda4d8ff97cb149722af0bcac0746305a2134ad2d0b97` |
+| `short_text.raw` | 120 | `237411b1c8c28eca0d8b49d562b85f52e823f76e7f00f0a24f083808536ddc01` |
+| `small_window.raw` | 20000 | `b47be152c1e4509497bf3d262bbd9612385e829764117bfc51306df9aa3bd097` |
+| `stored_multi.raw` | 70000 | `f8b58ae9a520ad84487fabaea5e87c6b9a63d34141e838981feb600078ab328f` |
+| `stored_small.raw` | 1000 | `ee351d9f8ddd78318dafb7818b3d4c713a25bdd3b38080a31cfb1011b46629d8` |
