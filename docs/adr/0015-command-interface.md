@@ -1,8 +1,10 @@
 # ADR 0015: The command's interface: job files in, JSON Lines out, published schemas
 
-Status: accepted (flyingrobots/lumen#218); built by flyingrobots/lumen#219 to #222. Nothing in
-this record is built yet: the command still prints the key-value report described in the
-[command reference](../reference/cli.md).
+Status: accepted (flyingrobots/lumen#218); built by flyingrobots/lumen#219 to #222. Four details
+the maintainer's decision left open were settled on 2026-11-16 by the coordinator, to whom the
+maintainer delegated decisions: the rule for a new message `type`, the rule for a render's `name`,
+the output directory and when messages are written. Nothing in this record is built yet: the
+command still prints the key-value report described in the [command reference](../reference/cli.md).
 
 ## Context
 
@@ -34,14 +36,31 @@ cost to a user. Each schema becomes a versioned contract once flyingrobots/lumen
   describe the machine and not the image.
 - `--out` is a directory when `--config` is given, because one path cannot hold several images.
   A render's `name` is its file name, and it also tells the result message which file is which.
-  A name that would leave `DIR` is refused before anything renders, and every destination is
-  checked before the first render starts, as `--out FILE` is checked today.
+  Every destination is checked before the first render starts, as `--out FILE` is checked today.
+- A `name` matches `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`: ASCII letters, digits, dot, underscore and
+  hyphen, starting with a letter or digit, at most 64 characters. A name equal to a Windows
+  reserved device name is refused, compared without case and ignoring anything after the first
+  dot: `CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1` to `LPT9`. The file is `DIR/NAME.png`.
+  A name that breaks the rule is a `job_invalid` before anything renders. Any character the file
+  system accepts was rejected: path separators and `..` would have to be policed case by case, and
+  names would behave differently on each platform.
+- `DIR` is created, with its parents, before the first render starts, if it is missing. If it
+  exists and is not a directory, the command refuses with `output_not_directory` (status 2)
+  before anything renders. An existing `DIR/NAME.png` is replaced by the same atomic publish as
+  a single `--out` file. Requiring the directory to exist was rejected: it adds a step for every
+  caller and gains no safety, since the caller chose the path.
 - The existing options stay. `lumen render --scene NAME --out FILE.png` and its siblings keep
   working for the built-in scenes, so the one-line quickstart survives. `--config` is refused
   together with `--scene`, `--width`, `--height`, `--samples`, `--seed` or a `--out` that names a
   file.
 - Renders run in order. A job that fails at its second render leaves the first PNG complete and
   no partial file.
+- Messages are written as the work proceeds, each flushed when written: one line when a render
+  starts (its `provenance`) and the lines of its result when it finishes, then, for a job, one
+  closing `job_summary`. A long job shows progress, and a failure leaves a truthful prefix.
+  Writing everything at the end was rejected: no progress, and the results of the finished renders
+  are lost if a later one fails. The order of the lines of one job is deterministic, since renders
+  run in the job's order; the members that hold times stay information only.
 
 ### Output: JSON Lines under `lumen-message/1`
 
@@ -95,7 +114,10 @@ A schema's version is the number after the slash, and within a version:
   (such as an error `code`) may not lose a value. Any of those makes a new version, such as
   `lumen-message/2`.
 
-A consumer therefore ignores a member it does not know. This is the rule the report had, "lines
+Adding a message `type` is an addition like a new member: it is allowed within a version. A
+consumer therefore ignores a member it does not know, and ignores a whole line whose `type` it
+does not know. A new schema version for each new type was rejected: it would churn versions for
+every feature, and consumers gain nothing from it. This is the rule the report had, "lines
 are only ever added", stated for JSON: the report's promise was about whole lines of text, and
 this promise is about the members of an object. The schemas themselves state it: an object in
 `lumen-message/1` or `lumen-error/1` allows additional members. The job schema is the exception,
@@ -130,7 +152,7 @@ identity and the counts are those the [command reference](../reference/cli.md) s
 defaults (`lumen render --out first.png`); times, thread counts and the statistics other than
 the triangle, node and byte counts are made up, and the made-up ray counts are consistent with the
 report's totals. A render in a job also carries its
-`name` in `provenance`, `result` and `timings`.
+`name` in `provenance`, `result` and `timings`; the examples show a single render.
 
 `provenance` is the render's `RenderProvenance`, thirteen fields, replacing the first thirteen
 report lines (built by #219):
@@ -210,10 +232,17 @@ timing, so the schema marks `workers` as information only; the totals are exact:
 The `schema` member of every message is the version tag. The `schema` message's `name` member
 holds the schema that `document` describes, which is why the two differ.
 
-`render` prints `provenance` and `result` then `timings`; with `--stats` the four statistics
-messages then follow in the order `scene_statistics`, `ray_statistics`, `traversal_statistics`,
-`run_statistics`, as the blocks follow the report today. A job prints those three, or those
-seven, once for each render, in the job's order. `lumen stats` prints one `scene_statistics`
+`job_summary` closes a job (`--config`) and is not printed by a single render:
+
+```json
+{"schema":"lumen-message/1","type":"job_summary","renders":3,"total_us":412000}
+```
+
+`render` prints `provenance` when the render starts, then `result` and `timings` when it finishes;
+with `--stats` the four statistics messages follow in the order `scene_statistics`,
+`ray_statistics`, `traversal_statistics`, `run_statistics`, as the blocks follow the report
+today. A job prints those lines once for each render, in the job's order, each flushed when
+written, then `job_summary`. `lumen stats` prints one `scene_statistics`
 message and nothing else.
 
 ### Every error code
@@ -241,6 +270,7 @@ Status 2, the command line was refused:
 | `invalid_band_rows` | band rows of 0 | `{"schema":"lumen-error/1","code":"invalid_band_rows","message":"--band-rows: a band must be at least 1 row","status":2}` |
 | `unknown_scene` | a scene name the command does not have | `{"schema":"lumen-error/1","code":"unknown_scene","message":"--scene: ...","status":2}` |
 | `config_conflict` | `--config` given with `--scene`, `--width`, `--height`, `--samples`, `--seed` or a file `--out` | `{"schema":"lumen-error/1","code":"config_conflict","message":"--config cannot be used with --scene","status":2}` |
+| `output_not_directory` | `--out DIR` with `--config` names something that exists and is not a directory | `{"schema":"lumen-error/1","code":"output_not_directory","message":"out: not a directory","status":2}` |
 | `unknown_schema` | `lumen schema NAME` with a name the binary does not embed | `{"schema":"lumen-error/1","code":"unknown_schema","message":"no schema named \"lumen-x/1\"","status":2}` |
 
 The `...` stands for the library's text, which the command keeps (for example `--samples:` and
@@ -278,18 +308,6 @@ render reports the failure and exits 1.
   version and a new schema file.
 - The tutorial, the command reference and the README are rewritten with #219, and the tutorial's
   shown output stays checked against the real output.
-
-## Left open
-
-The decision's record and issue do not settle these. This ADR does not decide them; the task that
-needs each one raises it before it merges.
-
-- Whether adding a message `type` within `lumen-message/1` is allowed, or needs a new version. A
-  consumer that rejects unknown types would break. The version rule above covers fields only.
-- Which characters a render's `name` may hold. The invariant is fixed: it names one file in `DIR`,
-  never a path that leaves it. The character set and any length limit are #221's to propose.
-- Whether `--out DIR` is created when it is missing, or refused as `output_refused`.
-- Whether the messages of one render are written as the render proceeds or after it has finished.
 
 ## Alternatives rejected
 
