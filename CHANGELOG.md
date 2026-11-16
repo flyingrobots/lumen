@@ -100,6 +100,11 @@ part was built.
 - **The image hash and the PNG**: `sha256:` and the lowercase hex SHA-256 of the raw RGBA8 bytes
   (ADR 0009), with Lumen's own SHA-256; a PNG encoder with stored deflate blocks, whose bytes are
   a fixed function of the pixels (`write_png`, `png_len`). (flyingrobots/lumen#2.)
+- **Image decoding, `lumen-image`** (ADR 0012): a workspace crate with no dependency and no
+  float, inside the deterministic core, that `lumen` depends on. It decompresses a zlib stream
+  (RFC 1950 and 1951: stored, fixed- and dynamic-Huffman blocks, the Adler-32 check) into a
+  caller-limited output, refusing every malformed stream with a typed error and its byte
+  offset. (flyingrobots/lumen#195.)
 - **Tests**: hand-derived radiance, shadows against exact geometry, every ray and every sample
   against brute force and an independent composition, order independence, counts against
   oracles other than the counting code, golden image hashes and content digests (one value for
