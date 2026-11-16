@@ -6,7 +6,7 @@ the lighting, the camera, and what the tests check about each. `lumen render --s
 
 ## The reference scene
 
-`lumen-reference-scene/3` is built in `crates/lumen/src/reference/`, entirely in Q32.32 integers
+`lumen-reference-scene/4` is built in `crates/lumen/src/reference/`, entirely in Q32.32 integers
 with no floating point and no randomness from the host. Four of its objects are defined in code;
 the fifth, the Stanford bunny, is read from a mesh file embedded in the binary
 (`assets/stanford-bunny/bun_zipper_res3.ply`, see [below](#the-stanford-bunny)). It is made of
@@ -24,8 +24,8 @@ albedo (linear, red, green, blue, in 256ths):
    pushed out with Bunny's `FixedVec3::normalize`, adapted from Bunny's scene benchmark
    (27 648 triangles); albedo `(205, 60, 45)`, red;
 5. the Stanford bunny: 3 851 triangles (every face of the file, none dropped), in the file's
-   face order, standing on the ground left of the sphere and facing it, about 1.24 units long,
-   1.21 tall and 0.96 deep; albedo `(70, 165, 85)`, green.
+   face order, standing on the ground left of the sphere and facing the camera, about 0.96 units
+   wide, 1.21 tall and 1.24 deep; albedo `(70, 165, 85)`, green.
 
 The bunny's triangles come after all the others, so primitives 0 to 27 659 are those of version
 2 in the same order, and the bunny is 27 660 to 31 510.
@@ -53,12 +53,13 @@ Every vertex coordinate is a multiple of `2^-16` below 256 units, so it is exact
 survives Geordi's `bunny-ply-binary-le-f32/1` mesh layout unchanged; the sphere's and the bunny's
 vertices are floored to that grid.
 
-The primitive order matters: of two triangles hit at the same distance, the lower index wins.
-**Any change to the scene's triangles, their order, their materials, the lighting or the camera
-placement is a new scene version, and changes every image hash.** Version 2
-(`lumen-reference-scene/2`: the first four objects, the same materials and lighting, and the
-camera at `(0, 1, 5)`) is retired. Version 1 (`lumen-reference-scene/1`: the same triangles and
-camera with no materials or lights, shaded by the normal-colour debugging view
+The primitive order matters: of two triangles hit at the same distance, the lower index wins. **Any
+change to the scene's triangles, their order, their materials, the lighting or the camera placement
+is a new scene version, and changes every image hash.** Version 3 (`lumen-reference-scene/3`: the
+same scene with the bunny turned half a turn, facing the sphere, so the camera saw it in profile) is
+retired. Version 2 (`lumen-reference-scene/2`: the first four objects, the same materials and
+lighting, and the camera at `(0, 1, 5)`) is retired. Version 1 (`lumen-reference-scene/1`: the same
+triangles and camera with no materials or lights, shaded by the normal-colour debugging view
 `lumen-normal-shading/1`) is retired too. Neither the old versions nor the normal view is kept: they
 would have needed their own render paths, flags, golden hashes and tests to stay honest, and the
 current render shows the same geometry.
@@ -95,16 +96,17 @@ interim reader was deleted. The file has one coordinate in exponent form, `8.207
 the manifest's bounds, converted by Bunny, equal the converted mesh's bounds exactly.
 
 **Placing it** (`BUNNY_PLACEMENT` in `crates/lumen/src/reference/bunny.rs`, applied by
-`crates/lumen/src/mesh/placement.rs`): every vertex is turned half a turn
-about `+Y` (`x` and `z` negated, exact; the file's bunny faces `-X`), scaled by 8 (a shift of
-three bits, exact), floored to the `2^-16` grid like the sphere, and moved by whole grid steps:
-`(-2.375, -1.392303466796875, 0.5)`. The Y offset puts the lowest vertex (file vertex 1 748,
-`y = 0.0334143`) exactly on the ground plane, so the bunny stands on the ground rather than a hair
-above it; the touching surfaces are handled by Bunny's start-point rule. Placed, the bunny spans
-`x = -2.8625..=-1.6201`, `y = -1.125..=0.0862` and `z = 0.0323..=0.9934`. A face that has zero area
-once placed would be dropped and listed (`PlacedMesh::dropped`) so that no degenerate triangle
-reaches Bunny's `TriangleSurface`; for this file and placement none is (the smallest face keeps
-about `2.2e-5` square units), and a test asserts the count.
+`crates/lumen/src/mesh/placement.rs`): every vertex is turned a quarter turn about `+Y` (`(x, y, z)`
+to `(z, y, -x)`, exact; the file's bunny faces `-X`, so it turns to face `+Z`, the camera), scaled
+by 8 (a shift of three bits, exact), floored to the `2^-16` grid like the sphere, and moved by whole
+grid steps: `(-2.22845458984375, -1.392303466796875, 0.3791046142578125)`, which keeps the centre of
+the bunny's box within a grid step of where version 3 had it. The Y offset puts the lowest vertex
+(file vertex 1 748, `y = 0.0334143`) exactly on the ground plane, so the bunny stands on the ground
+rather than a hair above it; the touching surfaces are handled by Bunny's start-point rule. Placed,
+the bunny spans `x = -2.7218..=-1.7607`, `y = -1.125..=0.0862` and `z = -0.1084..=1.1340`. A face
+that has zero area once placed would be dropped and listed (`PlacedMesh::dropped`) so that no
+degenerate triangle reaches Bunny's `TriangleSurface`; for this file and placement none is (the
+smallest face keeps about `2.2e-5` square units), and a test asserts the count.
 
 **What the mesh is like.** Its winding is consistent: every edge shared by exactly two faces is
 traversed in opposite directions by them, and the faces wind counter-clockwise seen from outside

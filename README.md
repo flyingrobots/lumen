@@ -23,10 +23,11 @@ cd lumen
 cargo run --release -p lumen -- render --out first.png
 ```
 
-The report ends with the image hash, which is the same on every platform CI checks:
+The report ends with the image hash of the reference scene, `lumen-reference-scene/4`, which is
+the same on every platform CI checks:
 
 ```text
-image sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23
+image sha256:d6e4ff7d768e266a30e54a04d62f6a13aeeebd2f6f68f8783faaaff9c7f505a8
 png first.png (230699 bytes)
 ```
 
@@ -51,3 +52,9 @@ Apache-2.0. See [LICENSE](LICENSE).
 The Stanford Bunny mesh in `assets/stanford-bunny/` is not covered by that license: it is from the
 Stanford 3D Scanning Repository, Stanford Computer Graphics Laboratory, and is used with
 attribution. See `assets/stanford-bunny/README.md`.
+
+The PBR Stanford bunny in `assets/stanford-bunny-pbr/` is not covered by it either: it is "Stanford
+Bunny PBR" by hackmans on Sketchfab, licensed
+[CC BY 4.0](http://creativecommons.org/licenses/by/4.0/), and derived from the Stanford Bunny in
+Morgan McGuire's Computer Graphics Archive. Credit the author where it is used. See
+`assets/stanford-bunny-pbr/README.md`.

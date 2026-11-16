@@ -41,18 +41,22 @@ part was built.
   `PixelAccumulator`, toned by `bunny-tone-srgb/1` and written by `write_rgba8`. Queries use a
   binned-SAH tree in Bunny's compact layout, chosen by measurement.
   (flyingrobots/lumen#2, #3, #39.)
-- **Three built-in scenes** ([reference](docs/reference/scenes.md)), entirely in Q32.32
-  integers: `lumen-reference-scene/3` (ground, wall, octahedron, a bumpy sphere and the Stanford
-  bunny, 31 511 triangles), `lumen-fixed-point-scene/2` (the full-resolution Stanford bunny,
-  smooth shaded, in sunglasses at a craps table with two dice and the ON puck, 71 575 triangles)
-  and `lumen-canyon-scene/1` (566 005 triangles: a terrain of 480 256 from the integer generator
-  `lumen-canyon-heightfield/1`, specified exactly in `scenes::canyon::heightfield`, three craft
-  of Lumen's own design, the full-resolution bunny on a ledge and a banded planet).
-  `BuiltinScene` is their registry. The canyon's public helpers refuse what they cannot compute
-  rather than wrap or panic (`HeightfieldSpec::bounds` and `centre_256` with `HeightfieldError`,
-  `Rational::new` and `Pose::place` with `PoseError`). Both Stanford meshes are in
-  `assets/stanford-bunny/` with their provenance, read by Bunny's ASCII PLY reader and placed
-  exactly (`mesh`). (flyingrobots/lumen#2, #14, #15, #27, #39, #40, #160.)
+- **Three built-in scenes** ([reference](docs/reference/scenes.md)), entirely in Q32.32 integers:
+  `lumen-reference-scene/4` (ground, wall, octahedron, a bumpy sphere and the Stanford bunny facing
+  the camera, 31 511 triangles), `lumen-fixed-point-scene/2` (the full-resolution Stanford bunny,
+  smooth shaded, in sunglasses at a craps table with two dice and the ON puck, 71 575 triangles) and
+  `lumen-canyon-scene/1` (566 005 triangles: a terrain of 480 256 from the integer generator
+  `lumen-canyon-heightfield/1`, specified exactly in `scenes::canyon::heightfield`, three craft of
+  Lumen's own design, the full-resolution bunny on a ledge and a banded planet). `BuiltinScene` is
+  their registry. The canyon's public helpers refuse what they cannot compute rather than wrap or
+  panic (`HeightfieldSpec::bounds` and `centre_256` with `HeightfieldError`, `Rational::new` and
+  `Pose::place` with `PoseError`). Both Stanford meshes are in `assets/stanford-bunny/` with their
+  provenance, read by Bunny's ASCII PLY reader and placed exactly (`mesh`). (flyingrobots/lumen#2,
+  #14, #15, #27, #39, #40, #160, #179.)
+- **The PBR Stanford bunny asset** (`assets/stanford-bunny-pbr/`): a 5 696-triangle COLLADA
+  model and its albedo, normal, roughness and metallic maps (17 333 859 bytes), byte for byte from
+  the author's archive, with their source, CC BY 4.0 attribution and SHA-256 hashes. Nothing reads
+  them yet. (flyingrobots/lumen#207.)
 - **Rendering on all cores** (ADR 0003, which supersedes ADR 0001): row bands from `chunks_mut`
   handed out under one small lock, results returned through `join`, one shared atomic. The image
   and the ray count are the same at every thread count and band height; a failed render reports
@@ -72,12 +76,27 @@ part was built.
   shape, buffer sizes), ray statistics in every `Render` (`RayOutcomes`, `RayStatistics`), and
   run statistics on request (`render_traced_with_run`, `RunStatistics`), which cost a render
   that does not ask no counting work and nothing measured above the noise of 14 runs (about
-  1 to 2 %; asking costs about 2.5 % at 18 threads); and traversal statistics on request
+  1 to 2 %); and traversal statistics on request
   (`render_traced_with_traversal` through `CountingTracer`, which returns Bunny's
   `TraversalCounts` with each answer): `TraversalStatistics` per kind of ray, sums and maxima,
   the same at every schedule, which `render --stats` prints as `traversal.` lines
-  (`docs/measurements/2026-11-14-traversal-cost.md` has them for the three scenes).
+  (`docs/measurements/2026-11-14-traversal-cost.md` has them for the three scenes). A render
+  with `--stats` takes about a tenth longer than a plain one (+10 to 11 %, measured with the
+  traversal counting; +2.5 % before it); a render without it pays nothing.
   (flyingrobots/lumen#29.)
+- **Debug views** ([reference](docs/reference/cli.md#debug-views), ADR 0010): `lumen render --view
+  NAME` and `render_view` draw, through the same scheduler as the lit image, `normals`
+  (`lumen-view-normals/1`: the first hit's geometric normal as colour, back faces at half
+  amplitude, misses black), `shading-normals` (`lumen-view-shading-normals/1`: Bunny's
+  `smooth_normal` of a triangle's vertex normals at the hit), `depth` (grey by the first hit's
+  distance over the scene's own range), `primitive-id` and `material-id` (a stable colour per
+  triangle or material from Bunny's `bunny-sample-hash/1`), `wireframe` (edges where the hit's
+  smallest exact barycentric weight is below 1/32), `bvh-cost` (the camera ray's box tests plus
+  primitive tests from Bunny's counted search, through a fixed heat ramp); each one ray through
+  each pixel's centre, so `--samples 1` only and no `--stats`. `RenderProvenance::with_view`
+  records a view as the `integrator`; `lit`, the default, is `render_scheduled` itself, its bytes
+  and provenance unchanged. `Scene` gains `bounds` and `material_index`. Golden hashes for every
+  built-in scene; `make views`. (Part of flyingrobots/lumen#16.)
 - **The image hash and the PNG**: `sha256:` and the lowercase hex SHA-256 of the raw RGBA8 bytes
   (ADR 0009), with Lumen's own SHA-256; a PNG encoder with stored deflate blocks, whose bytes are
   a fixed function of the pixels (`write_png`, `png_len`). (flyingrobots/lumen#2.)
@@ -147,6 +166,10 @@ part was built.
   requirement-to-evidence map, a how-to for measuring render time, a
   [contributor guide](CONTRIBUTING.md), an [index](docs/README.md), ADRs 0001 to 0009 and dated
   measurement records in `docs/measurements/`. (flyingrobots/lumen#5, #25, #39, #40, #57.)
+- **ADR 0012** ([image decoding](docs/adr/0012-image-decoding.md)): PNG and JPEG are decoded by
+  Lumen's own float-free code in a dependency-free `lumen-image` crate, with the supported and
+  refused features of each format stated. The crate is built by #195 to #199.
+  (flyingrobots/lumen#184.)
 - **Dependencies**: Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`,
   `bunny-broadphase`, `bunny-optics` and `bunny-codec` (default features off), version 0.7.1,
   as git dependencies pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (`BUNNY_REV`, checked

@@ -27,25 +27,30 @@ pub const BUNNY_DROPPED_FACES: usize = 0;
 /// The bunny's triangles in the reference scene.
 pub const BUNNY_TRIANGLE_COUNT: usize = BUNNY_FACE_COUNT - BUNNY_DROPPED_FACES;
 
-/// The bunny's placement in the reference scene ([`crate::reference_scene`]): a half turn
-/// about `+Y` (the file's bunny faces `-X`; turned, it faces `+X`, toward the sphere, three-quarters
-/// toward the camera), a scale of
-/// 8 (about 1.24 units long, 1.21 tall and 0.96 deep), and a translation that puts it left of the
-/// sphere, its lowest vertex exactly on the ground plane.
+/// The bunny's placement in the reference scene ([`crate::reference_scene`]): a quarter turn
+/// about `+Y` (the file's bunny faces `-X`; turned, it faces `+Z`, toward the camera), a scale of
+/// 8 (about 0.96 units wide, 1.21 tall and 1.24 deep), and a translation that puts it left of the
+/// sphere, its lowest vertex exactly on the ground plane, the centre of its box where version 3's
+/// was: the bunny turns where it stands.
 ///
 /// The offsets in grid steps of `2^-16` units:
 ///
-/// - X: `-155 648`, `-2.375` units, so it spans `x = -2.8625..=-1.6201`;
+/// - X: `-146 044`, `-2.228` units, so it spans `x = -2.7218..=-1.7607`, centred on `-2.2412`;
 /// - Y: `-91 246`. The lowest vertex (index 1748, `y = 0.0334143`, raw `143 513 326`) scales to
 ///   raw `1 148 106 608`, which floors to `17 518` grid steps; `GROUND_Y` is `-73 728` steps, and
 ///   `-73 728 - 17 518 = -91 246`. So that vertex lies exactly on the ground (`y = -1.125`): the
 ///   bunny stands on the plane rather than floating a hair above it, and Bunny's start-point
 ///   rule handles the touching surfaces;
-/// - Z: `32 768`, `0.5` units (the octahedron's depth), so it spans `z = 0.0323..=0.9934`.
+/// - Z: `24 845`, `0.379` units, so it spans `z = -0.1084..=1.1340`, centred on `0.5128`, about
+///   the octahedron's depth.
+///
+/// Version 3 of the scene turned it half a turn, with offsets `(-155 648, -91 246, 32 768)`, so
+/// the bunny faced `+X`, toward the sphere, and the camera saw it in profile; the X and Z offsets
+/// above keep the centre of its box within a grid step of that version's.
 pub const BUNNY_PLACEMENT: MeshPlacement = MeshPlacement {
-    turn: MeshTurn::HalfAboutY,
+    turn: MeshTurn::QuarterAboutY,
     shift: 3,
-    offset_steps: [-155_648, -91_246, 32_768],
+    offset_steps: [-146_044, -91_246, 24_845],
 };
 
 /// The Stanford bunny (`assets/stanford-bunny/bun_zipper_res3.ply`, read by

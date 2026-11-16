@@ -43,19 +43,26 @@ renders into `DIR`, as a file named by the image's hash.
   path. It is echoed in every message about that render, so a caller can key its own records on
   the label. A name that is empty, too long or a duplicate is a `job_invalid` before anything
   renders.
-- Lumen names each output file by the render's image hash: `DIR/<64 lowercase hex digits of the
-  image's SHA-256>.png`. The `result` message carries the `name`, the `file` (that file name,
-  relative to `DIR`) and the image hash. Two renders whose pixels are identical produce the same
-  file, which is written once, and both results name it. A file already present under that name is
-  the same image by construction and is replaced by identical bytes.
+- Lumen names each output file by the render's size and image hash:
+  `DIR/<width>x<height>-<64 lowercase hex digits of the image's SHA-256>.png`, for example
+  `1280x640-f3f1....png`. The `result` message carries the `name`, the `file` (that file name,
+  relative to `DIR`), the size and the image hash. Two renders share a file only when both size and
+  hash are equal; then the file is written once and both results name it. A file already present
+  under that name is the same image by construction and is replaced by identical bytes.
+  - Why the size: [ADR 0009](0009-image-hash.md) defines the image hash over the raw RGBA8 bytes
+    without the width or height, and says that a hash identifies an image only together with its
+    size. A uniform 4 by 4 image and a uniform 8 by 2 image have the same hash and need different
+    PNG files, so a name made of the hash alone would let one overwrite the other.
   - Consequences: no name can escape `DIR`, because no name reaches the file system; file names
     are safe on every file system; a caller cannot choose a file name (it renames the file or
-    records the mapping itself).
+    records the mapping itself); a buffer reshaped to another size gets another file.
   - Rejected: (a) the name as the file name with a restricted character set, which refuses natural
     labels and ties a caller's key to file-system rules; (b) the name as the file name with any
     character, where path separators, `..`, reserved names and per-platform differences would
     have to be policed; (c) numbering files by position in the job, since a file's name would
-    change when the job is reordered and would say nothing about its content.
+    change when the job is reordered and would say nothing about its content; (d) a new artifact
+    hash binding size, pixel format and bytes, which is a second identity to define and keep beside
+    the image hash when the size is already a provenance field.
 - `DIR` is created, with its parents, before the first render starts, if it is missing. If it
   exists and is not a directory, the command refuses with `output_not_directory` (status 2)
   before anything renders. A file in `DIR` is published by the same atomic publish as
@@ -94,13 +101,22 @@ which is a string inside the `help` message.
 
 Standard error holds one JSON object per line under `"schema": "lumen-error/1"`, one for each
 failure, and the command exits with the status it has today: 2 for a refused command line, 1 for
-anything that fails once the arguments are accepted, and 0 never with an error record. A failure
-before the first render writes nothing to standard output; a job that fails later has already
-written the messages of the renders that finished. The usage text leaves error output and lives only in the `help`
-message.
+anything that fails once the arguments are accepted, and 0 never with an error record. Because messages
+are streamed and cannot be retracted, one rule covers partial success:
+
+- A failure before any render starts (a refused command line, an invalid job, an output directory
+  that cannot be used) writes nothing to standard output and one error record to standard error.
+- A failure during a job leaves every message already written on standard output standing: the
+  earlier renders' `provenance`, `result` and `timings` are true and their files are complete. It
+  writes no `result` for the failed render and no `job_summary`, and writes exactly one error
+  record to standard error that names the failed render by its `name` and its index in the job.
+  The exit status is 1.
+
+The usage text leaves error output and lives only in the `help` message.
 
 An error record has the members `schema`, `code`, `message`, `status` and, when they apply, `path`
-and `rule` (for a bad job), and `lossy`. `code` is a stable identifier: it never changes within a
+and `rule` (for a bad job), `name` and `index` (the failed render, for a failure during a job: its
+label and its zero-based position in the job's `renders`), and `lossy`. `code` is a stable identifier: it never changes within a
 version, and the schema enumerates every code. `message` is the human text and is not a contract.
 
 ### Published schemas
@@ -174,17 +190,17 @@ report lines (built by #219):
 {"schema":"lumen-message/1","type":"provenance","scene":"lumen-reference-scene/3","integrator":"lumen-diffuse-path/1","shading":"bunny-diffuse-shading/1","sampler":"bunny-sobol-owen/1","tone":"bunny-tone-srgb/1","encoding":"bunny-rgba8-opaque/1","bunny":"2cd551e248d55407a8f27e84dcb26d1b1d8768bd","width":320,"height":180,"pixels":57600,"samples":4,"seed":0,"bounces":1,"scene_content":"sha256:c1e109477c09328421d76efefd923bd625d842fe3afb93dfadb21ae905bd0f66"}
 ```
 
-`result` is what the render produced: the run's schedule, the rays, the image hash and the file
+`result` is what the render produced: the size, the run's schedule, the rays, the image hash and the file
 (`png` is `null` without `--out`; `rays` are the `rays` line's three counts):
 
 ```json
-{"schema":"lumen-message/1","type":"result","threads":8,"threads_asked":8,"band_rows":1,"rays":{"total":616892,"closest":406903,"shadow":209989},"image":"sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23","png":{"path":"first.png","bytes":230699}}
+{"schema":"lumen-message/1","type":"result","width":320,"height":180,"threads":8,"threads_asked":8,"band_rows":1,"rays":{"total":616892,"closest":406903,"shadow":209989},"image":"sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23","png":{"path":"first.png","bytes":230699}}
 ```
 
-In a job, `png.path` is `DIR` joined to `file`, and `file` is the hash's 64 digits and `.png`:
+In a job, `png.path` is `DIR` joined to `file`, and `file` is the size, a hyphen, the hash's 64 digits and `.png`:
 
 ```json
-{"schema":"lumen-message/1","type":"result","name":"first view","file":"77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23.png","threads":8,"threads_asked":8,"band_rows":1,"rays":{"total":616892,"closest":406903,"shadow":209989},"image":"sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23","png":{"path":"out/77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23.png","bytes":230699}}
+{"schema":"lumen-message/1","type":"result","name":"first view","file":"320x180-77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23.png","width":320,"height":180,"threads":8,"threads_asked":8,"band_rows":1,"rays":{"total":616892,"closest":406903,"shadow":209989},"image":"sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23","png":{"path":"out/320x180-77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23.png","bytes":230699}}
 ```
 
 `timings` is every wall-clock time, in microseconds, information only (rates are not printed: a
@@ -304,7 +320,7 @@ Status 1, the arguments were accepted and the work failed:
 | `job_invalid` | the job is JSON but breaks a rule of `lumen-render-job/1`: a missing, unknown or mistyped key, a value out of range, an empty, over-long or duplicate `name` | `{"schema":"lumen-error/1","code":"job_invalid","message":"samples must be a power of two from 1 to 1024","status":1,"path":"/renders/1/samples","rule":"samples"}` |
 | `scene_failed` | the scene could not be built | `{"schema":"lumen-error/1","code":"scene_failed","message":"the reference scene could not be built: ...","status":1}` |
 | `statistics_failed` | the scene's statistics could not be read | `{"schema":"lumen-error/1","code":"statistics_failed","message":"statistics: the scene's tree is malformed at compact node 3","status":1}` |
-| `render_failed` | the render failed | `{"schema":"lumen-error/1","code":"render_failed","message":"...","status":1}` |
+| `render_failed` | the render failed | `{"schema":"lumen-error/1","code":"render_failed","message":"...","status":1,"name":"first view","index":1}` |
 | `ray_check_failed` | the ray statistics contradict the size and settings, which no library render does | `{"schema":"lumen-error/1","code":"ray_check_failed","message":"ray statistics: 3 camera rays counted, expected one per sample, 4","status":1}` |
 | `output_refused` | a destination cannot be written, found before the first render | `{"schema":"lumen-error/1","code":"output_refused","message":"/no/such/dir/x.png: No such file or directory (os error 2)","status":1}` |
 | `output_failed` | writing a PNG failed after rendering; the destination is as it was | `{"schema":"lumen-error/1","code":"output_failed","message":"out/x.png: disk full","status":1}` |

@@ -16,7 +16,7 @@ either.
 
 ```text
 usage: lumen render [--scene NAME] [--out FILE] [--width W] [--height H] [--samples N] [--seed S]
-                    [--threads T] [--band-rows R] [--stats]
+                    [--threads T] [--band-rows R] [--view NAME] [--stats]
        lumen stats [--scene NAME]
        lumen --help | --version
 
@@ -28,6 +28,12 @@ thread count and band height. --stats adds the scene's statistics and what the r
 after the report (see docs/reference/cli.md). `lumen stats` builds the scene, renders nothing
 and prints what it holds: triangles by material, bounds, lights, camera, the shape of its tree
 and its memory.
+--view NAME renders a debug view instead of the lit image: lit (the default), normals (the
+first hit's geometric normal as colour, back faces dimmer), shading-normals (the interpolated
+vertex normal where a triangle has them), depth (near white to far dark grey), primitive-id or
+material-id (a colour per triangle or per material), wireframe (triangle edges) or bvh-cost (the
+camera ray's box and triangle tests as heat); a debug view is one ray through each pixel's
+centre, so it takes --samples 1 only (the default for it), and --stats is for the lit image.
 Scenes (--scene NAME): reference, fixed-point (the Stanford bunny in sunglasses at a craps table),
 canyon (craft flying along a fractal canyon under a banded planet).
 Defaults: --scene reference --width 320 --height 180 --samples 4 --seed 0 --band-rows 1, and as
@@ -65,7 +71,7 @@ built against (`BUNNY_REV`), and exits 0.
 
 | Option | Value | Default | Refused |
 | --- | --- | --- | --- |
-| `--scene NAME` | `reference` (`lumen-reference-scene/3`), `fixed-point` (`lumen-fixed-point-scene/2`) or `canyon` (`lumen-canyon-scene/1`); see [the scenes](scenes.md) | `reference` | any other name: exit 2, the message lists the scenes |
+| `--scene NAME` | `reference` (`lumen-reference-scene/4`), `fixed-point` (`lumen-fixed-point-scene/2`) or `canyon` (`lumen-canyon-scene/1`); see [the scenes](scenes.md) | `reference` | any other name: exit 2, the message lists the scenes |
 | `--out FILE` | the PNG file to write; any path, kept byte for byte if it is not Unicode | none: nothing is written | a destination that cannot be written: exit 1, before the render ([below](#the-output-file)) |
 | `--width W` | the width in pixels, `1..=32768` (the limit of Bunny's camera), with at most `2^27` pixels in all (a 512 MiB RGBA8 buffer, enough for 16K at 15360 by 8640) | 320 | 0, more than 32768, or too many pixels with the height: exit 2 |
 | `--height H` | the height in pixels, on the same terms | 180 | as for the width |
@@ -73,7 +79,8 @@ built against (`BUNNY_REV`), and exits 0.
 | `--seed S` | the sampler's seed, `0..=4294967295`, the domain of Geordi's render settings | 0 | anything else: exit 2 |
 | `--threads T` | worker threads, `1..=256`; the image does not depend on it | what `std::thread::available_parallelism` reports (inside a container, its CPU limit), within `1..=256` | 0 or more than 256: exit 2 |
 | `--band-rows R` | the whole image rows a worker takes at a time, at least 1; the image does not depend on it | 1 | 0: exit 2 |
-| `--stats` | a flag: add the statistics after the report | off | given twice: exit 2 |
+| `--view NAME` | what to draw: `lit`, the lit image, or a [debug view](#debug-views) | `lit` | an unknown name (the message lists the views), `--samples` other than 1 with a debug view, or `--stats` with one: exit 2 |
+| `--stats` | a flag: add the statistics after the report | off | given twice, or with a debug view: exit 2 |
 
 There is no `--tile` option any more; it is refused as unknown. Each option may be given once;
 a repeated option is refused with exit status 2.
@@ -94,6 +101,30 @@ the report prints `96`), because a refusal would only reject a value whose meani
 Arguments are read as OS strings, so an output path that is not valid Unicode is
 used as given; a non-Unicode number or option is refused like any other bad argument.
 
+## Debug views
+
+`lumen render --view NAME` draws a debug view of the scene instead of the lit image, through the
+same threads and bands, so a view is the same bytes at every thread count and band height.
+[ADR 0010](../adr/0010-debug-views.md) records the design.
+
+| View | Identity | Pixel |
+| --- | --- | --- |
+| `lit` (default) | the scene's integrator | the lit image, exactly as without `--view` |
+| `normals` | `lumen-view-normals/1` | the first hit's geometric normal `(x, y, z)` as `128 + round(127 * (x, y, z))` on a front face and `128 + round(63 * (x, y, z))` on a back face (dimmer and greyer); black where the ray hits nothing |
+| `shading-normals` | `lumen-view-shading-normals/1` | the same map of the interpolated vertex normal (Bunny's `smooth_normal`) on a triangle with all three vertex normals, and of the geometric normal elsewhere; magenta where the vertex normals cancel |
+| `depth` | `lumen-view-depth/1` | the first hit's distance as grey, `255 - floor(239 * d / R)`, from white at the eye to grey 16 at `R` and beyond; `R` is the largest one-axis distance from the eye to a corner of the scene's box |
+| `primitive-id` | `lumen-view-primitive-id/1` | a colour per triangle: the low three bytes of Bunny's `bunny-sample-hash/1` of its index, each `32 + byte * 224 / 256` |
+| `material-id` | `lumen-view-material-id/1` | a colour per material, the same way from the triangle's material index under another seed |
+| `wireframe` | `lumen-view-wireframe/1` | white where the hit's smallest barycentric weight (from Bunny's exact numerators) is below 1/32, dark grey `(64, 64, 64)` inside a triangle |
+| `bvh-cost` | `lumen-view-bvh-cost/1` | the camera ray's box tests plus primitive tests (Bunny's counted search), sky rays included, through a heat ramp: black, blue at 128, red at 256, yellow at 384, white at 512 and above |
+
+A debug view traces one ray through each pixel's centre, so it takes `--samples 1` only (its
+default) and does not depend on `--seed`; `--stats`, which describes the lit image's paths, is
+refused with one. In the [report](#the-report), `integrator` is the view's identity, `shading` the
+Bunny contracts it uses (`none` for every first-hit view but `shading-normals`), `samples` 1 and `bounces` 0; every other line is
+as for the lit image. `make views` renders every debug view of every built-in scene into
+`out/views/` (`VIEWS=` chooses).
+
 ## The report
 
 `lumen render` prints one `key value` line per fact to standard output. The first thirteen are
@@ -103,7 +134,7 @@ and `--out first.png`; the lines in angle brackets vary from machine to machine 
 every other line is exact:
 
 ```text
-scene lumen-reference-scene/3
+scene lumen-reference-scene/4
 integrator lumen-diffuse-path/1
 shading bunny-diffuse-shading/1
 sampler bunny-sobol-owen/1
@@ -115,12 +146,12 @@ pixels 57600
 samples 4
 seed 0
 bounces 1
-scene-content sha256:c1e109477c09328421d76efefd923bd625d842fe3afb93dfadb21ae905bd0f66
+scene-content sha256:f2405288d483691cd3ec16ac2c96de641ea24d26ced3febc1f44c3a13feb3594
 threads <workers used>
 threads-asked <--threads, or what the system reports available>
 band-rows 1
-rays 616892 (closest 406903, shadow 209989)
-image sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23
+rays 616658 (closest 406903, shadow 209755)
+image sha256:d6e4ff7d768e266a30e54a04d62f6a13aeeebd2f6f68f8783faaaff9c7f505a8
 png first.png (230699 bytes)
 scene-seconds <time> (information only)
 render-seconds <time> (information only)
@@ -224,7 +255,9 @@ without `--stats` the render calls the uncounted ones.
 `lumen stats` after its first three, which the report already gives), then what the rays found,
 then what the traversals did, then how the work was spread over the workers.
 Without `--stats` the output is the report alone, byte for byte as before statistics existed.
-The command first checks the ray statistics against the size and settings (one record per pixel,
+Expect a render with `--stats` to take about a tenth longer (+10 to 11 % measured on the reference
+scene at 1280 by 720; [ADR 0008](../adr/0008-statistics.md), "Traversal statistics"); a render
+without it pays nothing. The command first checks the ray statistics against the size and settings (one record per pixel,
 `--samples` samples per pixel, exactly one camera ray per sample, at most four rays per sample)
 and fails with exit code 1 if they disagree, which no render the library produced does.
 
@@ -323,11 +356,11 @@ scene.material.3.triangles 27648
 scene.material.4.triangles 3851
 scene.bounds-min -16.000000 -1.125000 -16.000000
 scene.bounds-max 16.000000 2.000000 16.000000
-tree.nodes 33095
-tree.leaves 16548
+tree.nodes 33197
+tree.leaves 16599
 tree.leaf-depth-max 20
-tree.leaf-depth-mean 16.36
-tree.leaf-sizes 2778 12708 931 131 0
-memory.total-bytes 11432728 (information only: this build's type sizes)
+tree.leaf-depth-mean 16.30
+tree.leaf-sizes 2830 12759 877 133 0
+memory.total-bytes 11438440 (information only: this build's type sizes)
 ```
 

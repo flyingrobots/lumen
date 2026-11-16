@@ -21,27 +21,30 @@ fn bunny_raw_bounds(triangles: &[[FixedVec3; 3]]) -> ([i64; 3], [i64; 3]) {
 }
 
 /// The placed bunny's bounds in grid steps, derived by hand from the converted file bounds
-/// (`mesh::loaded::tests`): coordinate `c` is placed at `floor(s * c * 8 / 2^16) + offset`, with
-/// `s = -1` on X and Z (the half turn).
+/// (`mesh::loaded::tests`): the quarter turn takes `(x, y, z)` to `(z, y, -x)`, and a turned
+/// coordinate `c` is placed at `floor(c * 8 / 2^16) + offset`.
 ///
-/// - min X from the file's max X, raw `261 712 114`: `-2 093 696 912 / 65 536 = -31 947.28`,
-///   floor `-31 948`, plus `-155 648`: `-187 596`;
-/// - max X from the file's min X, raw `-405 291 582`: `3 242 332 656 / 65 536 = 49 474.07`,
-///   floor `49 474`, plus `-155 648`: `-106 174`;
+/// - min X from the file's min Z, raw `-264 879 653`: `-2 119 037 224 / 65 536 = -32 333.94`,
+///   floor `-32 334`, plus `-146 044`: `-178 378`;
+/// - max X from the file's max Z, raw `251 105 692`: `2 008 845 536 / 65 536 = 30 652.55`,
+///   floor `30 652`, plus `-146 044`: `-115 392`;
 /// - min Y, raw `143 513 326`: `1 148 106 608 / 65 536 = 17 518.72`, floor `17 518`, plus
 ///   `-91 246`: `-73 728`, which is `GROUND_Y`: the lowest vertex is on the ground;
 /// - max Y, raw `793 765 791`: `6 350 126 328 / 65 536 = 96 895.24`, floor `96 895`, plus
 ///   `-91 246`: `5 649`;
-/// - min Z from the file's max Z, raw `251 105 692`: `-2 008 845 536 / 65 536 = -30 652.55`,
-///   floor `-30 653`, plus `32 768`: `2 115`;
-/// - max Z from the file's min Z, raw `-264 879 653`: `2 119 037 224 / 65 536 = 32 333.94`,
-///   floor `32 333`, plus `32 768`: `65 101`.
+/// - min Z from the file's max X, raw `261 712 114`: `-2 093 696 912 / 65 536 = -31 947.28`,
+///   floor `-31 948`, plus `24 845`: `-7 103`;
+/// - max Z from the file's min X, raw `-405 291 582`: `3 242 332 656 / 65 536 = 49 474.07`,
+///   floor `49 474`, plus `24 845`: `74 319`.
+///
+/// An independent placement of the PLY file (a script outside the crate, which also reproduces
+/// version 3's bounds and volume) gives the same bounds.
 #[test]
 fn the_bunny_is_placed_where_stated() {
     let bunny = bunny_triangles().expect("the bunny reads and places");
     let (lo, hi) = bunny_raw_bounds(&bunny.triangles);
-    assert_eq!(lo, [-187_596, -73_728, 2_115]);
-    assert_eq!(hi, [-106_174, 5_649, 65_101]);
+    assert_eq!(lo, [-178_378, -73_728, -7_103]);
+    assert_eq!(hi, [-115_392, 5_649, 74_319]);
     assert_eq!(lo[1], GROUND_Y);
     // Exactly one vertex rests on the ground: the file's vertex 1748.
     let mesh = read_ascii_ply(STANFORD_BUNNY_PLY.as_bytes()).expect("reads");
@@ -50,8 +53,8 @@ fn the_bunny_is_placed_where_stated() {
         .collect();
     assert_eq!(on_ground, vec![1748]);
     // Clear of the sphere (|x| <= 1.04) and of the octahedron (x >= 1.25), inside the
-    // ground and in front of the wall.
-    assert!(hi[0] < -U * 3 / 2 && lo[0] > -3 * U && lo[2] > 0 && hi[2] < U);
+    // wall's span (x >= -3), in front of the wall (z > -4) and behind the camera (z < 5).
+    assert!(hi[0] < -U * 3 / 2 && lo[0] > -3 * U && lo[2] > -4 * U && hi[2] < 5 * U);
 }
 
 #[test]
@@ -85,7 +88,8 @@ fn the_bunny_keeps_every_face_and_none_is_degenerate() {
 /// The bunny's winding is consistent: an edge shared by exactly two faces is traversed in
 /// opposite directions by them. Its holes and its non-manifold edges are counted as stated
 /// in [`bunny_triangles`], and its faces wind counter-clockwise seen from outside: the signed
-/// volume they enclose is positive (about 0.347 cubic units after placement).
+/// volume they enclose is positive (about 0.345 cubic units after placement; the mesh is not
+/// closed, so the value depends slightly on the placement: 0.347 under version 3's).
 #[test]
 #[expect(
     clippy::disallowed_types,
@@ -137,8 +141,8 @@ fn the_bunny_winding_is_consistent_and_its_holes_are_counted() {
                 + a[2] * (b[0] * c[1] - b[1] * c[0])
         })
         .sum();
-    // In grid steps cubed: 6 * 0.347 * 2^48 is about 5.86e14.
-    assert_eq!(six_volume, 585_898_999_030_544);
+    // In grid steps cubed: 6 * 0.345 * 2^48 is about 5.83e14; the independent placement agrees.
+    assert_eq!(six_volume, 583_273_879_463_041);
 }
 
 #[test]

@@ -118,7 +118,7 @@ impl RayStatistics {
     };
 
     /// One pixel of `samples` paths whose rays found `outcomes`.
-    pub(super) fn pixel(outcomes: RayOutcomes, samples: u32) -> Self {
+    pub(crate) fn pixel(outcomes: RayOutcomes, samples: u32) -> Self {
         let rays = outcomes.count().total();
         Self {
             outcomes,

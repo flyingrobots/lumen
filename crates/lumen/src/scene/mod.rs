@@ -265,6 +265,12 @@ impl Scene {
         self.materials.get(widen(material))
     }
 
+    /// The material index of the triangle at `primitive`, or `None` for an index out of range.
+    #[must_use]
+    pub fn material_index(&self, primitive: PrimitiveIndex) -> Option<u32> {
+        self.material_of.get(primitive.to_usize()).copied()
+    }
+
     /// The materials, in table order: the albedos [`SceneSpec::materials`] gave, including any no
     /// triangle names.
     #[must_use]
