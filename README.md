@@ -52,3 +52,9 @@ Apache-2.0. See [LICENSE](LICENSE).
 The Stanford Bunny mesh in `assets/stanford-bunny/` is not covered by that license: it is from the
 Stanford 3D Scanning Repository, Stanford Computer Graphics Laboratory, and is used with
 attribution. See `assets/stanford-bunny/README.md`.
+
+The PBR Stanford bunny in `assets/stanford-bunny-pbr/` is not covered by it either: it is "Stanford
+Bunny PBR" by hackmans on Sketchfab, licensed
+[CC BY 4.0](http://creativecommons.org/licenses/by/4.0/), and derived from the Stanford Bunny in
+Morgan McGuire's Computer Graphics Archive. Credit the author where it is used. See
+`assets/stanford-bunny-pbr/README.md`.

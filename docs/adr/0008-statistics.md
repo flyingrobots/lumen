@@ -221,7 +221,13 @@ itself and tells camera from bounce rays by their origin; by hand on a scene whe
 ray makes one box test; and `tests/traversal_counts.rs` checks the per-query counts by hand on
 constructed trees and against Bunny's counted searches called directly).
 
-**What it costs.** Measured on the machine and settings of the ray statistics above
+**What it costs.** `render --stats` now takes about a tenth longer than the plain render: +10
+to 11 % at 18 threads and at one thread alike, in the session below. That is up from the +2.5 %
+recorded for the run statistics before traversal counting, in another session. The plain render,
+which does not ask, is within noise of the commit before. Only a caller who asks for statistics
+pays the extra.
+
+Measured on the machine and settings of the ray statistics above
 (`lumen-reference-scene/3`, 1280 by 720, 16 samples, seed 0, 39 479 111 rays, render seconds).
 Base is the commit before the counting render (7c4daa8), head is 6ae578e. Both binaries were built
 in one exclusive session and alternated over 14 rounds at 18 threads and 3 rounds at 1 thread.
