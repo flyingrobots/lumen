@@ -358,3 +358,75 @@ Clippy caught the forms it compiled; the scan resolved aliases only within one f
   compiles the same core code the Linux run lints; the scan covers the rest. The cost would be
   a Clippy step on four more legs, and the fixture's seeded forms would need a per-target
   variant. Not done.
+
+## Amendment, 2026-11-14: values that depend on the host, the schedule or addresses
+
+flyingrobots/lumen#155 found std items outside the banned modules that hand the core a value
+depending on the host, the schedule or the address-space layout, passing both layers with no
+waiver. The scheduler's guarantee (ADR 0003) holds only if the pixel function is a pure function
+of `(x, y)`; each of these breaks that. Decided, each a Lumen rule of the scan (in
+`xtask/src/nondeterminism/rules.rs` and `host.rs`); `core::` and `alloc::` paths are read as
+`std::`, since std re-exports them:
+
+| Rule | Refused in the core | Why |
+|---|---|---|
+| `thread-identity` | `std::thread::current`, `Thread`, `ThreadId` | which worker ran the pixel (`lumen-worker-N`) |
+| `shared-state` | `thread_local!`, `LocalKey`, every `static` item (`static mut` included, in a function body too) | state outside the pixel's inputs, shared across workers or calls; `const` holds data. The scheduler's shared state is a struct field (`Shared::end`), not a `static`, so it needs no waiver |
+| `address` | the methods `addr`, `expose_provenance`, `expose_addr`, `align_offset`, `is_aligned`, `is_aligned_to`; `as *const T as usize` and `x.as_ptr() as u64` (after `as_ptr`, `as_mut_ptr`, `from_ref`, `from_mut`, `addr_of`, `cast`); a `{:p}` format in a string inside a macro's arguments (`format!`, `write!`, `format_args!`); `fmt::Pointer`, `ptr::hash`; `std::backtrace` | the address-space layout (ASLR); a backtrace also reads `RUST_BACKTRACE` |
+| `host-io` | `io::stdin`, `stdout`, `stderr` and their types and locks, `IsTerminal` and `.is_terminal()`, `io::pipe`; `print!`, `println!`, `eprint!`, `eprintln!`, `dbg!` | the process's streams; the library prints nothing. The rest of `std::io` (`Write`, `Result`) stays allowed: the encoder writes to a caller's writer |
+| `std-os` | all of `std::os` | every platform module: processes, sockets, files and descriptors outside `std::process`, `net` and `fs` |
+| `host-cpu` | `is_*_feature_detected!`, `std::arch` / `core::arch` | the CPU's features and its intrinsics |
+| `platform-branch` | `cfg!(...)`, `#[cfg(...)]`, `#![cfg(...)]` and a `cfg_attr` predicate naming anything but `all`, `any`, `not`, `test`, `feature`, `doc` or `doctest` | a branch on the target, the host or the profile (`target_os`, `unix`, `target_pointer_width`, `debug_assertions`) or a custom `cfg` set from outside; `cfg(feature)` is the caller's manifest |
+| `source-path` | `file!`, `panic::Location` | `file!()` is the path the compiler was given, absolute when lumen is a git or registry dependency, so it differs by machine; `line!`, `column!` and `module_path!` are functions of the source text alone and stay allowed |
+| `std-hasher` | `DefaultHasher`, `SipHasher`, `std::collections::hash_map` | `DefaultHasher`'s keys are fixed but its algorithm is unspecified and may change between releases, so a hash written into output could change with the toolchain; `RandomState` is already `unordered-container`. Bunny allows `DefaultHasher` (it pins its toolchain too); lumen refuses it, the stricter |
+| `type-identity` | `any::TypeId`, `type_name`, `type_name_of_val` | values std leaves unspecified, which may differ by build |
+
+`thread::panicking`, `park`, `yield_now`, `Scope` and `ScopedJoinHandle` stay allowed: the
+scheduler needs them and none produces a value from the host. Nothing on main is refused by
+these rules.
+
+**The compiler layer** bans what Clippy can resolve and the fixture can use on the CI host:
+`std::thread::current`, `Thread`, `ThreadId` (`thread-identity`); `thread_local!`, `LocalKey`,
+`panic::set_hook` and `take_hook` (`shared-state`); `io::stdin`, `stdout`, `stderr`, `pipe`,
+their types and locks and `IsTerminal` (`host-io`); `hash::DefaultHasher` and `SipHasher`
+(`std-hasher`); `any::TypeId`, `type_name`, `type_name_of_val` (`type-identity`); and
+`panic::Location` (`source-path`). `std::os` and `std::arch` (whose items differ by target),
+`file!` (Clippy 0.1.96 resolves `std::file` but never fires on it), `cfg!` (Clippy's `core::cfg`
+ban would also refuse `cfg!(test)`), the print macros and `dbg!` (which the tests and tools use)
+and the pointer methods (no `clippy.toml` path names a method of `*const T`) are the scan's
+alone. The binary's waiver names `host-io`, since it writes the PNG to standard output.
+
+**The std item list covers every module.** `xtask/bans/std-items.txt` now also holds every
+top-level module of std (from `std/index.html`) and every macro at its root, and the items of
+`std::io`, `hash`, `any` and `panic` as well as the six modules before; regenerated from the
+same tarball (sha256 `75a89ce0...7211317b`, 341 rows). Each module is decided
+(`xtask/src/clippy_bans/std_items/decisions.rs`): listed item by item (those ten), banned whole
+by the scan (`os`, `arch`, `backtrace`), or kept whole with a reason (the integer and float
+modules, the containers, the language's traits, `fmt`, `ptr`, `mem`, `cell`, `sync`, `alloc`,
+`collections`, `ffi`, `path` and the rest, each with what refuses its dangerous items by rule
+or by name). Each root macro is decided the same way. A decision is a Clippy ban (the
+`clippy.toml` entry must exist under its rule), a scan ban (the scan must refuse the path or
+the macro under that rule, checked against its tables), or a keep with a reason. **The rule
+for a future toolchain: a module, a root macro or an item of a listed module with no decision
+fails `clippy-bans`**, so a new std module (as `std::range` and the macro `cfg_select!`, a
+platform branch, were for 1.96.0) is decided before the pin can move. Unstable items cannot be
+used on the pinned toolchain and are kept. The items of modules kept whole are not enumerated,
+so a new dangerous item inside one (a new `std::sync` global, say) is found only if a rule or a
+name of the scan covers it; that is the list's limit.
+
+**Every rule keeps a form.** A test (`every_rule_the_scan_reports_has_a_seeded_form_that_reports_it`)
+runs every seeded form of the scan's tests and fails if a rule ID in `RULES` is reported by none
+of them, so removing a rule's last form, or a rule that stops firing, fails. The IDs the scan
+never reports are listed with their reason in `VOCABULARY_ONLY` (`random`, `host-callback`,
+`json-serialization`, `wasm-serde`, `float-sentinel`, `float-op`, enforced by `cargo-deny` or as
+other float rules, and `thread-spawn`, Clippy's alone); the test also fails if one of those is
+reported. The scan's tables and fixture lists are slices, not arrays of a stated length.
+
+What the lexical rules cannot see: a pointer compared or ordered (`a.as_ptr() < b.as_ptr()`),
+hashed through a hasher of the core's own, or cast to an integer through a binding
+(`let p = x.as_ptr(); p as usize`), since the scan knows no types; `addr` and the other
+method names are refused whatever the receiver, so a method of the core's own with one of those
+names is a finding (waive it by its rule); a `{:p}` in a `const` passed to a macro by name, or
+built at run time; and a single-segment call
+through an import (`use std::any::type_name; type_name::<T>()`) is a finding at the `use`,
+not at the call.

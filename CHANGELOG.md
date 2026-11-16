@@ -119,13 +119,31 @@ part was built.
   by following the module tree, resolving aliases across files (`extern crate std as host`, a
   `pub use std as x` reached from another file) and refusing a glob import of a std module or a
   std path built from a macro metavariable (`hidden-path`); it fails every lint attribute that
-  would silence a ban. The
+  would silence a ban. The scan refuses std values that depend on the host, the schedule or
+  addresses, as ten rules: `thread::current` and `ThreadId` (`thread-identity`), `thread_local!`
+  and every `static` item (`shared-state`), pointer addresses (`addr`, `expose_provenance`,
+  `align_offset`, `is_aligned`, pointer-to-integer casts, `{:p}`, `std::backtrace`; `address`),
+  `io::stdin`/`stdout`/`stderr`, `IsTerminal` and the print macros (`host-io`), all of `std::os`
+  (`std-os`), `is_*_feature_detected!` and `std::arch` (`host-cpu`), `cfg!`, `#[cfg]` and
+  `cfg_attr` on anything but `test`, `feature`, `doc` and `doctest` (`platform-branch`), `file!`
+  and `panic::Location` (`source-path`), `DefaultHasher`, `SipHasher` and
+  `collections::hash_map` (`std-hasher`), and `TypeId` and `type_name` (`type-identity`); its
+  rule tables are in `xtask/src/nondeterminism/rules.rs`. `clippy.toml` also bans
+  `thread::current`, `Thread`, `ThreadId`, `thread_local!`, `LocalKey`, `panic::set_hook` and
+  `take_hook`, `io::stdin`/`stdout`/`stderr`/`pipe` with their types and `IsTerminal`,
+  `DefaultHasher`, `SipHasher`, `TypeId`, `type_name`, `type_name_of_val` and `panic::Location`,
+  each used by the fixture; the std item list holds every top-level module and root macro of std
+  and the items of `std::io`, `hash`, `any` and `panic`, each module and macro is decided, an
+  undecided one fails `xtask clippy-bans`, and a decision left to the scan is checked against
+  the scan's own tables. A test fails when a rule ID of the scan is reported by no seeded form
+  (rules only Clippy or `cargo-deny` enforce are listed in `VOCABULARY_ONLY`), and the scan's
+  tables and fixture lists in `xtask` are slices, so adding a form edits no length. The
   scan also checks the workspace boundary from `cargo metadata`: every deterministic crate's
   library is core and must deny float arithmetic; a member neither reached by `lumen` nor
   classified as tooling, a path dependency outside the workspace, a dependency from anywhere but
   Bunny's repository at a full commit, a build script or procedural macro in a deterministic
   crate, a member's own lint levels, a `[patch]` or `[replace]`, and any `.cargo/config` fail.
-  (flyingrobots/lumen#17, #115, #119, #120, #156, #157, #158.)
+  (flyingrobots/lumen#17, #115, #119, #120, #155, #156, #157, #158.)
 - **Repository tooling**: `xtask` (`file-length`, `nondeterminism`, `clippy-bans`, `std-items`,
   `doc-links`) and a `Makefile` (`make demo`, `reference`, `fixed-point`, `4k`,
   `4k-fixed-point`, `canyon`, `4k-canyon`, `test`, `nondeterminism`, `clippy-bans`,

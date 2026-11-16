@@ -9,7 +9,7 @@ use super::{Layout, Role};
 use crate::workspace::Library;
 
 const LIB: &str = "crates/lumen/src/lib.rs";
-const CRATES: [&str; 3] = ["crates/lumen", "crates/dep", "xtask"];
+const CRATES: &[&str] = &["crates/lumen", "crates/dep", "xtask"];
 
 /// A deterministic crate in `dir` with its library at `src/lib.rs`.
 fn library(name: &str, dir: &str) -> Library {
@@ -25,7 +25,8 @@ fn layout(files: &[(&str, &str)]) -> Layout {
 fn layout_of(files: &[(&str, &str)], libraries: &[Library]) -> Layout {
     let files: Vec<(String, String)> =
         files.iter().map(|(p, t)| ((*p).to_owned(), (*t).to_owned())).collect();
-    Layout::new(&files, &CRATES.map(str::to_owned), libraries)
+    let crates: Vec<String> = CRATES.iter().map(|c| (*c).to_owned()).collect();
+    Layout::new(&files, &crates, libraries)
 }
 
 /// The failures of `files`, as (path, line).
