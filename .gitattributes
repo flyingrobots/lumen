@@ -1,3 +1,8 @@
-# The assets are hashed byte for byte (see assets/stanford-bunny/README.md): never convert their
-# line endings on checkout or commit.
+# The assets are hashed byte for byte (see assets/stanford-bunny/README.md and
+# assets/stanford-bunny-pbr/README.md): never convert their line endings on checkout or commit.
 assets/** -text
+# The PBR bunny's maps are binary; its model is never converted either. Its README is plain text.
+assets/stanford-bunny-pbr/*.jpg binary
+assets/stanford-bunny-pbr/*.png binary
+assets/stanford-bunny-pbr/model.dae -text -filter
+assets/stanford-bunny-pbr/README.md text

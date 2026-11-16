@@ -53,6 +53,10 @@ part was built.
   `Pose::place` with `PoseError`). Both Stanford meshes are in `assets/stanford-bunny/` with their
   provenance, read by Bunny's ASCII PLY reader and placed exactly (`mesh`). (flyingrobots/lumen#2,
   #14, #15, #27, #39, #40, #160, #179.)
+- **The PBR Stanford bunny asset** (`assets/stanford-bunny-pbr/`): a 5 696-triangle COLLADA
+  model and its albedo, normal, roughness and metallic maps (17 333 859 bytes), byte for byte from
+  the author's archive, with their source, CC BY 4.0 attribution and SHA-256 hashes. Nothing reads
+  them yet. (flyingrobots/lumen#207.)
 - **Rendering on all cores** (ADR 0003, which supersedes ADR 0001): row bands from `chunks_mut`
   handed out under one small lock, results returned through `join`, one shared atomic. The image
   and the ray count are the same at every thread count and band height; a failed render reports
