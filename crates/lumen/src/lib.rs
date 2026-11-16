@@ -50,6 +50,7 @@ mod builtin_scene;
 #[path = "../tests/generator/mod.rs"]
 mod generator;
 mod image;
+mod json;
 pub mod mesh;
 mod png;
 #[cfg(test)]
@@ -73,6 +74,10 @@ pub const BUNNY_REV: &str = "2cd551e248d55407a8f27e84dcb26d1b1d8768bd";
 
 pub use builtin_scene::{BuiltinScene, BuiltinSceneError, ParseSceneError};
 pub use image::{ImageSize, LengthError, Rgba8Image, SizeError, MAX_DIMENSION, MAX_PIXELS};
+pub use json::{
+    parse_json, JsonError, JsonErrorKind, JsonLimitError, JsonLimits, JsonValue,
+    JSON_DEFAULT_MAX_BYTES, JSON_DEFAULT_MAX_DEPTH, JSON_MAX_DEPTH_CEILING, JSON_READER_ID,
+};
 pub use png::{png_len, write_png, PngError};
 pub use provenance::{ProvenanceValue, RenderProvenance, PROVENANCE_FIELDS};
 pub use reference::{reference_scene, REFERENCE_SCENE_ID};
