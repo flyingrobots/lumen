@@ -17,7 +17,7 @@ Every item `crates/lumen/src/lib.rs` re-exports, by what it is for; a test
 
 | Family | Items |
 | --- | --- |
-| Scenes | `Scene`, `SceneSpec`, `CameraPlacement`, `Lighting`, `SceneError`, `SceneBuffer`, `SceneContentId`, `SCENE_CONTENT_ENCODING`, `PrimitiveIndex` |
+| Scenes | `Scene` (with `Scene::bounds`, the tree's root box, and `Scene::material_index`), `SceneSpec`, `CameraPlacement`, `Lighting`, `SceneError`, `SceneBuffer`, `SceneContentId`, `SCENE_CONTENT_ENCODING`, `PrimitiveIndex` |
 | Ray queries | `Tracer`, `CountingTracer` (the same queries, also returning Bunny's `TraversalCounts`), `Hit`, `TraceError`, `FAR` |
 | Built-in scenes | `BuiltinScene`, `BuiltinSceneError`, `ParseSceneError`, `reference_scene`, `REFERENCE_SCENE_ID`, `fixed_point_scene`, `FIXED_POINT_SCENE_ID`, `canyon_scene`, `CANYON_SCENE_ID`, and the modules `reference`, `scenes` and `mesh` |
 | Image size and pixels | `ImageSize`, `SizeError`, `MAX_DIMENSION`, `MAX_PIXELS`, `Rgba8Image`, `LengthError` |
@@ -27,6 +27,7 @@ Every item `crates/lumen/src/lib.rs` re-exports, by what it is for; a test
 | Provenance | `RenderProvenance`, `ProvenanceValue`, `PROVENANCE_FIELDS`, `BUNNY_REV` |
 | Statistics | `SceneStatistics`, `TreeStatistics`, `SceneMemory`, `StatisticsError`, `LEAF_SIZE_BUCKETS`, `TREE_BUILDER`, `TREE_LAYOUT`, `RayOutcomes`, `RayStatistics`, `RayCheckError`, `RunStatistics`, `WorkerStatistics`, `TraversalStatistics`, `TraversalWork` |
 | PNG | `write_png`, `png_len`, `PngError` |
+| Debug views | `View`, `ParseViewError`, `render_view` (and `RenderProvenance::with_view`), `NORMALS_VIEW_ID`, `SHADING_NORMALS_VIEW_ID`, `DEPTH_VIEW_ID`, `PRIMITIVE_ID_VIEW_ID`, `MATERIAL_ID_VIEW_ID`, `WIREFRAME_VIEW_ID`, `BVH_COST_VIEW_ID`; see [the command's debug views](cli.md#debug-views) and [ADR 0010](../adr/0010-debug-views.md) |
 
 ## The library's API is the crate root
 
