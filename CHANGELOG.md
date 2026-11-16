@@ -100,6 +100,13 @@ part was built.
 - **The image hash and the PNG**: `sha256:` and the lowercase hex SHA-256 of the raw RGBA8 bytes
   (ADR 0009), with Lumen's own SHA-256; a PNG encoder with stored deflate blocks, whose bytes are
   a fixed function of the pixels (`write_png`, `png_len`). (flyingrobots/lumen#2.)
+- **A JSON reader that keeps numbers as text** (`parse_json`, `JsonValue`, `JsonLimits`,
+  `JsonError`, `JSON_READER_ID`; [reference](docs/reference/library.md#the-json-reader)): bytes
+  in, a value tree out, with no float anywhere. A number is its source text, checked against the
+  JSON grammar and returned as written, so a later layer converts a decimal exactly. Duplicate
+  keys, invalid UTF-8, lone surrogates, trailing content, nesting past a depth limit and input
+  past a size limit are refused, each with a line and a character column. Nothing uses it yet.
+  (flyingrobots/lumen#211.)
 - **Tests**: hand-derived radiance, shadows against exact geometry, every ray and every sample
   against brute force and an independent composition, order independence, counts against
   oracles other than the counting code, golden image hashes and content digests (one value for
