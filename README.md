@@ -23,7 +23,8 @@ cd lumen
 cargo run --release -p lumen -- render --out first.png
 ```
 
-The report ends with the image hash, which is the same on every platform CI checks:
+The report ends with the image hash of the reference scene, `lumen-reference-scene/4`, which is
+the same on every platform CI checks:
 
 ```text
 image sha256:d6e4ff7d768e266a30e54a04d62f6a13aeeebd2f6f68f8783faaaff9c7f505a8
