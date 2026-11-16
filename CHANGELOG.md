@@ -157,11 +157,15 @@ part was built.
   `4k-fixed-point`, `canyon`, `4k-canyon`, `test`, `nondeterminism`, `clippy-bans`,
   `doc-links`, `help`) over the container runner. (flyingrobots/lumen#17, #23, #25, #40, #104,
   #115.)
-- **Documentation**: the README as a short router, a [tutorial](docs/tutorial.md), the command,
-  library and scene references, an [explanation](docs/explanation.md) ending in a
-  requirement-to-evidence map, a how-to for measuring render time, a
-  [contributor guide](CONTRIBUTING.md), an [index](docs/README.md), ADRs 0001 to 0009 and dated
-  measurement records in `docs/measurements/`. (flyingrobots/lumen#5, #25, #39, #40, #57.)
+- **Documentation**: the README as a short router, opening with a rendered picture of the reference
+  scene and showing Fixed Point and the canyon beside the command and image hash of each (three
+  1280 by 720, 64 samples per pixel renders in `docs/images/`, lossless re-encodings of the PNGs
+  `lumen` writes, 2.98 MB in all, kept out of every Git filter by `.gitattributes`), a
+  [tutorial](docs/tutorial.md), the command, library and scene references, an
+  [explanation](docs/explanation.md) ending in a requirement-to-evidence map, a how-to for
+  measuring render time, a [contributor guide](CONTRIBUTING.md), an [index](docs/README.md), ADRs
+  0001 to 0009 and dated measurement records in `docs/measurements/`. (flyingrobots/lumen#5, #25,
+  #39, #40, #57, #180.)
 - **ADR 0012** ([image decoding](docs/adr/0012-image-decoding.md)): PNG and JPEG are decoded by
   Lumen's own float-free code in a dependency-free `lumen-image` crate, with the supported and
   refused features of each format stated. The crate is built by #195 to #199.

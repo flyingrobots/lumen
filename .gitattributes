@@ -8,3 +8,7 @@ assets/stanford-bunny-pbr/*.jpg binary -filter
 assets/stanford-bunny-pbr/*.png binary -filter
 assets/stanford-bunny-pbr/model.dae -text -filter
 assets/stanford-bunny-pbr/README.md text
+# The README's images are lossless re-encodings whose decoded pixels are checked against the image
+# hash printed beside each: never filter, convert or diff them as text (a contributor's global LFS
+# rule must not turn one into a pointer).
+docs/images/*.png binary -filter
