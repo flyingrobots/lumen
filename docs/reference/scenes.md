@@ -277,7 +277,8 @@ off the face and chest.
 picture: a fractal canyon of integer terrain, three small craft of lumen's own design flying
 along it in a chase, the full-resolution Stanford bunny on a ledge, a low sun, a near-black sky
 and a banded planet. Composition after a 1990s canyon-chase render; the
-[README](../../README.md#the-three-built-in-scenes) shows its render. The library builds it with `lumen::canyon_scene()`; `canyon_content()` returns its
+[README](../../README.md#the-three-built-in-scenes) shows its render. The library builds it with
+`lumen::canyon_scene()`; `canyon_content()` returns its
 566 005 triangles in primitive order (the terrain, each craft's hull and engines, the bunny, the
 planet's bands) with the part each belongs to, its material and its vertex normals. Every
 coordinate is a whole number of `2^-16` grid steps.

@@ -20,7 +20,9 @@ as a PNG.
 Each image below is a render by Lumen at 1280 by 720, 64 samples per pixel and seed 0, re-encoded
 losslessly into a smaller PNG file. Its pixels are exactly the render's: the image hash is
 SHA-256 over the decoded RGBA8 bytes and identifies an image only together with its size
-([ADR 0009](docs/adr/0009-image-hash.md)).
+([ADR 0009](docs/adr/0009-image-hash.md)). Each output excerpt below is abridged: the two lines
+shown are exact, in the order the command prints them, and the other lines of the report are
+omitted.
 
 The reference scene (above) is a bumpy sphere, an octahedron and the Stanford bunny before a wall.
 
@@ -29,8 +31,8 @@ cargo run --release -p lumen -- render --scene reference --width 1280 --height 7
 ```
 
 ```text
-image sha256:7d68fa3ab47c19ba6cee947836b49ad52e4e0891f2a4b41562192576d1700a6e
 size 1280x720
+image sha256:7d68fa3ab47c19ba6cee947836b49ad52e4e0891f2a4b41562192576d1700a6e
 ```
 
 Fixed Point is the full-resolution bunny in sunglasses at a craps table.
@@ -42,8 +44,8 @@ cargo run --release -p lumen -- render --scene fixed-point --width 1280 --height
 ```
 
 ```text
-image sha256:86cdfd58d7745297b52f63f443cedd789a773996c66ad57d45b5d8a6f67fb153
 size 1280x720
+image sha256:86cdfd58d7745297b52f63f443cedd789a773996c66ad57d45b5d8a6f67fb153
 ```
 
 The canyon is three craft flying along a fractal canyon under a banded planet (566 005 triangles).
@@ -55,8 +57,8 @@ cargo run --release -p lumen -- render --scene canyon --width 1280 --height 720 
 ```
 
 ```text
-image sha256:1bd910dcea9c3daaa3ea57e3972a639202aa341ba59e0e075a2e55184dc56446
 size 1280x720
+image sha256:1bd910dcea9c3daaa3ea57e3972a639202aa341ba59e0e075a2e55184dc56446
 ```
 
 ## Render an image
@@ -69,8 +71,9 @@ cd lumen
 cargo run --release -p lumen -- render --out first.png
 ```
 
-The report ends with the image hash of the reference scene at the default 320 by 180, 4 samples per
-pixel, the same on every platform CI checks:
+The report holds the image hash of the reference scene at the default 320 by 180, 4 samples per
+pixel, the same on every platform CI checks (abridged: the two lines shown are exact, and the
+other lines of the report are omitted):
 
 ```text
 image sha256:d6e4ff7d768e266a30e54a04d62f6a13aeeebd2f6f68f8783faaaff9c7f505a8
