@@ -65,7 +65,7 @@ built against (`BUNNY_REV`), and exits 0.
 
 | Option | Value | Default | Refused |
 | --- | --- | --- | --- |
-| `--scene NAME` | `reference` (`lumen-reference-scene/3`), `fixed-point` (`lumen-fixed-point-scene/2`) or `canyon` (`lumen-canyon-scene/1`); see [the scenes](scenes.md) | `reference` | any other name: exit 2, the message lists the scenes |
+| `--scene NAME` | `reference` (`lumen-reference-scene/4`), `fixed-point` (`lumen-fixed-point-scene/2`) or `canyon` (`lumen-canyon-scene/1`); see [the scenes](scenes.md) | `reference` | any other name: exit 2, the message lists the scenes |
 | `--out FILE` | the PNG file to write; any path, kept byte for byte if it is not Unicode | none: nothing is written | a destination that cannot be written: exit 1, before the render ([below](#the-output-file)) |
 | `--width W` | the width in pixels, `1..=32768` (the limit of Bunny's camera), with at most `2^27` pixels in all (a 512 MiB RGBA8 buffer, enough for 16K at 15360 by 8640) | 320 | 0, more than 32768, or too many pixels with the height: exit 2 |
 | `--height H` | the height in pixels, on the same terms | 180 | as for the width |
@@ -103,7 +103,7 @@ and `--out first.png`; the lines in angle brackets vary from machine to machine 
 every other line is exact:
 
 ```text
-scene lumen-reference-scene/3
+scene lumen-reference-scene/4
 integrator lumen-diffuse-path/1
 shading bunny-diffuse-shading/1
 sampler bunny-sobol-owen/1
@@ -115,12 +115,12 @@ pixels 57600
 samples 4
 seed 0
 bounces 1
-scene-content sha256:c1e109477c09328421d76efefd923bd625d842fe3afb93dfadb21ae905bd0f66
+scene-content sha256:f2405288d483691cd3ec16ac2c96de641ea24d26ced3febc1f44c3a13feb3594
 threads <workers used>
 threads-asked <--threads, or what the system reports available>
 band-rows 1
-rays 616892 (closest 406903, shadow 209989)
-image sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23
+rays 616658 (closest 406903, shadow 209755)
+image sha256:d6e4ff7d768e266a30e54a04d62f6a13aeeebd2f6f68f8783faaaff9c7f505a8
 png first.png (230699 bytes)
 scene-seconds <time> (information only)
 render-seconds <time> (information only)
@@ -323,11 +323,11 @@ scene.material.3.triangles 27648
 scene.material.4.triangles 3851
 scene.bounds-min -16.000000 -1.125000 -16.000000
 scene.bounds-max 16.000000 2.000000 16.000000
-tree.nodes 33095
-tree.leaves 16548
+tree.nodes 33197
+tree.leaves 16599
 tree.leaf-depth-max 20
-tree.leaf-depth-mean 16.36
-tree.leaf-sizes 2778 12708 931 131 0
-memory.total-bytes 11432728 (information only: this build's type sizes)
+tree.leaf-depth-mean 16.30
+tree.leaf-sizes 2830 12759 877 133 0
+memory.total-bytes 11438440 (information only: this build's type sizes)
 ```
 

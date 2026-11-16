@@ -41,18 +41,18 @@ part was built.
   `PixelAccumulator`, toned by `bunny-tone-srgb/1` and written by `write_rgba8`. Queries use a
   binned-SAH tree in Bunny's compact layout, chosen by measurement.
   (flyingrobots/lumen#2, #3, #39.)
-- **Three built-in scenes** ([reference](docs/reference/scenes.md)), entirely in Q32.32
-  integers: `lumen-reference-scene/3` (ground, wall, octahedron, a bumpy sphere and the Stanford
-  bunny, 31 511 triangles), `lumen-fixed-point-scene/2` (the full-resolution Stanford bunny,
-  smooth shaded, in sunglasses at a craps table with two dice and the ON puck, 71 575 triangles)
-  and `lumen-canyon-scene/1` (566 005 triangles: a terrain of 480 256 from the integer generator
-  `lumen-canyon-heightfield/1`, specified exactly in `scenes::canyon::heightfield`, three craft
-  of Lumen's own design, the full-resolution bunny on a ledge and a banded planet).
-  `BuiltinScene` is their registry. The canyon's public helpers refuse what they cannot compute
-  rather than wrap or panic (`HeightfieldSpec::bounds` and `centre_256` with `HeightfieldError`,
-  `Rational::new` and `Pose::place` with `PoseError`). Both Stanford meshes are in
-  `assets/stanford-bunny/` with their provenance, read by Bunny's ASCII PLY reader and placed
-  exactly (`mesh`). (flyingrobots/lumen#2, #14, #15, #27, #39, #40, #160.)
+- **Three built-in scenes** ([reference](docs/reference/scenes.md)), entirely in Q32.32 integers:
+  `lumen-reference-scene/4` (ground, wall, octahedron, a bumpy sphere and the Stanford bunny facing
+  the camera, 31 511 triangles), `lumen-fixed-point-scene/2` (the full-resolution Stanford bunny,
+  smooth shaded, in sunglasses at a craps table with two dice and the ON puck, 71 575 triangles) and
+  `lumen-canyon-scene/1` (566 005 triangles: a terrain of 480 256 from the integer generator
+  `lumen-canyon-heightfield/1`, specified exactly in `scenes::canyon::heightfield`, three craft of
+  Lumen's own design, the full-resolution bunny on a ledge and a banded planet). `BuiltinScene` is
+  their registry. The canyon's public helpers refuse what they cannot compute rather than wrap or
+  panic (`HeightfieldSpec::bounds` and `centre_256` with `HeightfieldError`, `Rational::new` and
+  `Pose::place` with `PoseError`). Both Stanford meshes are in `assets/stanford-bunny/` with their
+  provenance, read by Bunny's ASCII PLY reader and placed exactly (`mesh`). (flyingrobots/lumen#2,
+  #14, #15, #27, #39, #40, #160, #179.)
 - **Rendering on all cores** (ADR 0003, which supersedes ADR 0001): row bands from `chunks_mut`
   handed out under one small lock, results returned through `join`, one shared atomic. The image
   and the ray count are the same at every thread count and band height; a failed render reports
