@@ -89,7 +89,7 @@ fn lit_is_the_lit_render_and_provenance() {
         lit,
         render_scheduled(&scene, size(96, 54), settings, schedule(1, 1)).expect("renders")
     );
-    let plain = RenderProvenance::named("lumen-reference-scene/3", &scene, size(96, 54), settings);
+    let plain = RenderProvenance::named("lumen-reference-scene/4", &scene, size(96, 54), settings);
     let lit = plain.with_view(View::Lit).fields();
     assert_eq!(lit, plain.fields());
     // The lit values themselves, not only lit against itself: the integrator, its settings.
