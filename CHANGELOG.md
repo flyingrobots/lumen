@@ -170,6 +170,8 @@ part was built.
   Lumen's own float-free code in a dependency-free `lumen-image` crate, with the supported and
   refused features of each format stated. The crate is built by #195 to #199.
   (flyingrobots/lumen#184.)
+- **ADR 0011** records that arithmetic for analytic shapes, point lights and the thin lens is
+  versioned Bunny contracts, and that Lumen owns the scene model. (flyingrobots/lumen#183.)
 - **Dependencies**: Bunny's `bunny-num`, `bunny-linalg`, `bunny-geom`, `bunny-query`,
   `bunny-broadphase`, `bunny-optics` and `bunny-codec` (default features off), version 0.7.1,
   as git dependencies pinned to `2cd551e248d55407a8f27e84dcb26d1b1d8768bd` (`BUNNY_REV`, checked

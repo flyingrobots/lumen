@@ -49,6 +49,7 @@ sections, never rewrites.
 | [0008](adr/0008-statistics.md) | Statistics: what is counted, where, and why it cannot change the image | accepted |
 | [0009](adr/0009-image-hash.md) | The image hash | accepted (recorded 2026-11-14) |
 | [0010](adr/0010-debug-views.md) | Debug views: selection, identity, provenance and stability | accepted |
+| [0011](adr/0011-analytic-surfaces-lights-and-lens.md) | Analytic surfaces, point lights and the thin lens: arithmetic in Bunny, scene model in Lumen | accepted (2026-11-15) |
 | [0012](adr/0012-image-decoding.md) | Image decoding lives in a dependency-free `lumen-image` crate | accepted |
 | [0015](adr/0015-command-interface.md) | The command's interface: job files in, JSON Lines out, published schemas | accepted (recorded 2026-11-15) |
 
