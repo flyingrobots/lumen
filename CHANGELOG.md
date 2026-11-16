@@ -157,6 +157,10 @@ part was built.
   `4k-fixed-point`, `canyon`, `4k-canyon`, `test`, `nondeterminism`, `clippy-bans`,
   `doc-links`, `help`) over the container runner. (flyingrobots/lumen#17, #23, #25, #40, #104,
   #115.)
+- **The command's interface, decided** ([ADR 0015](docs/adr/0015-command-interface.md)): a job
+  file in, an output directory, versioned JSON Lines on standard output and on standard error, and
+  published JSON Schemas; the key-value report is to be retired. Nothing is built yet.
+  (flyingrobots/lumen#218; built by #219 to #222.)
 - **Documentation**: the README as a short router, a [tutorial](docs/tutorial.md), the command,
   library and scene references, an [explanation](docs/explanation.md) ending in a
   requirement-to-evidence map, a how-to for measuring render time, a
