@@ -2,7 +2,7 @@
 
 Status: accepted (flyingrobots/lumen#218); built by flyingrobots/lumen#219 to #222. Four details
 the maintainer's decision left open were settled on 2026-11-16 by the coordinator, to whom the
-maintainer delegated decisions: the rule for a new message `type`, the rule for a render's `name`,
+maintainer delegated decisions: the rule for a new message `type`, the rule for a render's `name` and its file,
 the output directory and when messages are written. Nothing in this record is built yet: the
 command still prints the key-value report described in the [command reference](../reference/cli.md).
 
@@ -26,8 +26,8 @@ cost to a user. Each schema becomes a versioned contract once flyingrobots/lumen
 
 ### Input: a job file and an output directory
 
-`lumen render --config JOB.json --out DIR` reads a job and writes each of its renders to
-`DIR/NAME.png`.
+`lumen render --config JOB.json --out DIR` reads a job and writes the image of each of its
+renders into `DIR`, as a file named by the image's hash.
 
 - The job's format is `lumen-render-job/1`. It lists renders in order. Each render has a unique
   `name`, a built-in `scene`, a `width`, a `height`, `samples` and a `seed`, under the limits the
@@ -35,18 +35,30 @@ cost to a user. Each schema becomes a versioned contract once flyingrobots/lumen
   keys. The job holds no thread count: `--threads` and `--band-rows` stay options, since they
   describe the machine and not the image.
 - `--out` is a directory when `--config` is given, because one path cannot hold several images.
-  A render's `name` is its file name, and it also tells the result message which file is which.
-  Every destination is checked before the first render starts, as `--out FILE` is checked today.
-- A `name` matches `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`: ASCII letters, digits, dot, underscore and
-  hyphen, starting with a letter or digit, at most 64 characters. A name equal to a Windows
-  reserved device name is refused, compared without case and ignoring anything after the first
-  dot: `CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1` to `LPT9`. The file is `DIR/NAME.png`.
-  A name that breaks the rule is a `job_invalid` before anything renders. Any character the file
-  system accepts was rejected: path separators and `..` would have to be policed case by case, and
-  names would behave differently on each platform.
+  Lumen names each file; the job does not.
+  `DIR` is checked before the first render starts, as `--out FILE` is checked today; a file's name
+  is known only once its image is, so a failure to write one is `output_failed`.
+- A render's `name` is a label, not a file name: any non-empty Unicode string of at most 256 bytes
+  of UTF-8, unique within the job and compared byte for byte. Lumen never uses it to build a
+  path. It is echoed in every message about that render, so a caller can key its own records on
+  the label. A name that is empty, too long or a duplicate is a `job_invalid` before anything
+  renders.
+- Lumen names each output file by the render's image hash: `DIR/<64 lowercase hex digits of the
+  image's SHA-256>.png`. The `result` message carries the `name`, the `file` (that file name,
+  relative to `DIR`) and the image hash. Two renders whose pixels are identical produce the same
+  file, which is written once, and both results name it. A file already present under that name is
+  the same image by construction and is replaced by identical bytes.
+  - Consequences: no name can escape `DIR`, because no name reaches the file system; file names
+    are safe on every file system; a caller cannot choose a file name (it renames the file or
+    records the mapping itself).
+  - Rejected: (a) the name as the file name with a restricted character set, which refuses natural
+    labels and ties a caller's key to file-system rules; (b) the name as the file name with any
+    character, where path separators, `..`, reserved names and per-platform differences would
+    have to be policed; (c) numbering files by position in the job, since a file's name would
+    change when the job is reordered and would say nothing about its content.
 - `DIR` is created, with its parents, before the first render starts, if it is missing. If it
   exists and is not a directory, the command refuses with `output_not_directory` (status 2)
-  before anything renders. An existing `DIR/NAME.png` is replaced by the same atomic publish as
+  before anything renders. A file in `DIR` is published by the same atomic publish as
   a single `--out` file. Requiring the directory to exist was rejected: it adds a step for every
   caller and gains no safety, since the caller chose the path.
 - The existing options stay. `lumen render --scene NAME --out FILE.png` and its siblings keep
@@ -152,7 +164,8 @@ identity and the counts are those the [command reference](../reference/cli.md) s
 defaults (`lumen render --out first.png`); times, thread counts and the statistics other than
 the triangle, node and byte counts are made up, and the made-up ray counts are consistent with the
 report's totals. A render in a job also carries its
-`name` in `provenance`, `result` and `timings`; the examples show a single render.
+`name` in `provenance`, `result` and `timings`, and its `result` also carries `file`; the first
+examples show a single render, and one `result` of a job follows.
 
 `provenance` is the render's `RenderProvenance`, thirteen fields, replacing the first thirteen
 report lines (built by #219):
@@ -166,6 +179,12 @@ report lines (built by #219):
 
 ```json
 {"schema":"lumen-message/1","type":"result","threads":8,"threads_asked":8,"band_rows":1,"rays":{"total":616892,"closest":406903,"shadow":209989},"image":"sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23","png":{"path":"first.png","bytes":230699}}
+```
+
+In a job, `png.path` is `DIR` joined to `file`, and `file` is the hash's 64 digits and `.png`:
+
+```json
+{"schema":"lumen-message/1","type":"result","name":"first view","file":"77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23.png","threads":8,"threads_asked":8,"band_rows":1,"rays":{"total":616892,"closest":406903,"shadow":209989},"image":"sha256:77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23","png":{"path":"out/77ab18fafd84f6598fa638281e205f2298df6ba6da3471546a3724718d3cef23.png","bytes":230699}}
 ```
 
 `timings` is every wall-clock time, in microseconds, information only (rates are not printed: a
@@ -282,7 +301,7 @@ Status 1, the arguments were accepted and the work failed:
 | Code | Raised when | Example |
 | --- | --- | --- |
 | `job_unreadable` | the job file cannot be read, or is not JSON | `{"schema":"lumen-error/1","code":"job_unreadable","message":"job.json: No such file or directory (os error 2)","status":1}` |
-| `job_invalid` | the job is JSON but breaks a rule of `lumen-render-job/1`: a missing, unknown or mistyped key, a value out of range, a duplicate or escaping `name` | `{"schema":"lumen-error/1","code":"job_invalid","message":"samples must be a power of two from 1 to 1024","status":1,"path":"/renders/1/samples","rule":"samples"}` |
+| `job_invalid` | the job is JSON but breaks a rule of `lumen-render-job/1`: a missing, unknown or mistyped key, a value out of range, an empty, over-long or duplicate `name` | `{"schema":"lumen-error/1","code":"job_invalid","message":"samples must be a power of two from 1 to 1024","status":1,"path":"/renders/1/samples","rule":"samples"}` |
 | `scene_failed` | the scene could not be built | `{"schema":"lumen-error/1","code":"scene_failed","message":"the reference scene could not be built: ...","status":1}` |
 | `statistics_failed` | the scene's statistics could not be read | `{"schema":"lumen-error/1","code":"statistics_failed","message":"statistics: the scene's tree is malformed at compact node 3","status":1}` |
 | `render_failed` | the render failed | `{"schema":"lumen-error/1","code":"render_failed","message":"...","status":1}` |
@@ -313,7 +332,7 @@ render reports the failure and exits 1.
 
 | Alternative | Why not |
 | --- | --- |
-| `--out` as a file, with a pattern such as `cover-{name}.png` | A small template language to specify, escape and test, for no gain over a directory. |
+| `--out` as a file, with a pattern such as `{name}-{width}.png` | A small template language to specify, escape and test, for no gain over a directory. |
 | A `--format json` switch beside the text report | Not what the maintainer asked for, and it doubles the output contract. |
 | Human-readable help on standard output | Breaks "100 %". A person can still read the usage text inside the message. |
 | Seconds as decimals, as today | Float formatting in a machine contract; integers are exact. |
