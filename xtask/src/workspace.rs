@@ -24,7 +24,7 @@ use json::Json;
 pub(crate) const LIBRARY: &str = "lumen";
 
 /// The workspace members outside the deterministic core, and why.
-pub(crate) const TOOLING: [(&str, &str); 2] = [
+pub(crate) const TOOLING: &[(&str, &str)] = &[
     ("xtask", "repository tooling: the gates themselves"),
     ("lumen-clippy-fixture", "the compiler layer's seeded fixture, compiled only by clippy-bans"),
 ];

@@ -6,9 +6,13 @@
 //! the decisions as ADR 0006 states them, written out by hand.
 
 use super::super::Entry;
-use super::{check, decide, extract, parse_list, render, toolchain_matches, Decision, Item};
+use super::{
+    check, check_with, decide, extract, parse_list, render, toolchain_matches, Decision, Item,
+};
 
-const ALL: &str = r#"<li><a href="fs/fn.copy.html">fs::copy</a></li><li><a href="fs/struct.Dir.html">fs::Dir</a></li><li><a href="env/consts/constant.OS.html">env::consts::OS</a></li><li><a href="io/fn.stdin.html">io::stdin</a></li><li><a href="fs/fn.copy.html">fs::copy</a></li>"#;
+const INDEX: &str = r#"<a class="mod" href="env/index.html">env</a><a class="mod" href="os/index.html">os</a><a href="../core/index.html">core</a><a href="all.html">All</a>"#;
+
+const ALL: &str = r#"<li><a href="macro.file.html">file</a></li><li><a href="fs/fn.copy.html">fs::copy</a></li><li><a href="fs/struct.Dir.html">fs::Dir</a></li><li><a href="env/consts/constant.OS.html">env::consts::OS</a></li><li><a href="io/fn.stdin.html">io::stdin</a></li><li><a href="fs/fn.copy.html">fs::copy</a></li>"#;
 
 const STABLE: &str = r#"<div class="main-heading"><h1>Function <span class="fn">copy</span></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><span class="since" title="Stable since Rust version 1.0.0">1.0.0</span></span></div><pre class="rust item-decl"><code>pub fn copy"#;
 
@@ -27,17 +31,26 @@ fn entry(path: &str, rule: &str) -> Entry {
 #[test]
 fn items_are_read_from_all_html_with_the_stability_of_their_pages() {
     let page = |href: &str| match href {
-        "fs/fn.copy.html" | "env/consts/constant.OS.html" => Some(STABLE.to_owned()),
-        "fs/struct.Dir.html" => Some(UNSTABLE.to_owned()),
+        "index.html" => Some(INDEX.to_owned()),
+        "fs/fn.copy.html"
+        | "env/consts/constant.OS.html"
+        | "io/fn.stdin.html"
+        | "env/index.html"
+        | "macro.file.html" => Some(STABLE.to_owned()),
+        "os/index.html" | "fs/struct.Dir.html" => Some(UNSTABLE.to_owned()),
         "time/struct.Duration.html" => Some(DURATION.to_owned()),
         _ => None,
     };
     assert_eq!(
         extract(ALL, &page).expect("every page is there"),
         [
+            item("module", "std::env", true),
+            item("module", "std::os", false),
+            item("macro", "std::file", true),
             item("constant", "std::env::consts::OS", true),
             item("fn", "std::fs::copy", true),
             item("struct", "std::fs::Dir", false),
+            item("fn", "std::io::stdin", true),
             item("method", "std::time::Duration::mul_f64", true),
             item("method", "std::time::Duration::as_millis_f64", false),
         ]
@@ -57,6 +70,20 @@ fn every_module_rule_decides_as_adr_0006_says() {
         (item("struct", "std::time::SystemTimeError", true), Decision::Ban("time-system")),
         (item("struct", "std::time::Instant", true), Decision::Ban("time-instant")),
         (item("method", "std::time::Duration::mul_f64", true), Decision::Ban("float-type")),
+        (item("fn", "std::thread::current", true), Decision::Ban("thread-identity")),
+        (item("struct", "std::thread::LocalKey", true), Decision::Ban("shared-state")),
+        (item("fn", "std::io::stdin", true), Decision::Ban("host-io")),
+        (item("trait", "std::io::IsTerminal", true), Decision::Ban("host-io")),
+        (item("struct", "std::hash::DefaultHasher", true), Decision::Ban("std-hasher")),
+        (item("struct", "std::any::TypeId", true), Decision::Ban("type-identity")),
+        (item("struct", "std::panic::Location", true), Decision::Ban("source-path")),
+        (item("fn", "std::panic::set_hook", true), Decision::Ban("shared-state")),
+        (item("module", "std::os", true), Decision::Scan("std-os")),
+        (item("module", "std::arch", true), Decision::Scan("host-cpu")),
+        (item("macro", "std::file", true), Decision::Scan("source-path")),
+        (item("macro", "std::cfg_select", true), Decision::Scan("platform-branch")),
+        (item("macro", "std::println", true), Decision::Scan("host-io")),
+        (item("macro", "std::thread_local", true), Decision::Ban("shared-state")),
     ];
     for (item, decision) in cases {
         assert_eq!(decide(&item), Some(decision), "{item:?}");
@@ -67,9 +94,19 @@ fn every_module_rule_decides_as_adr_0006_says() {
         item("struct", "std::time::Duration", true),
         item("constant", "std::env::consts::OS", true),
         item("struct", "std::fs::Dir", false),
+        item("trait", "std::io::Write", true),
+        item("trait", "std::hash::Hasher", true),
+        item("fn", "std::panic::catch_unwind", true),
+        item("module", "std::vec", true),
+        item("module", "std::io", true),
+        item("module", "std::random", false),
+        item("macro", "std::line", true),
+        item("macro", "std::module_path", true),
     ] {
         assert!(matches!(decide(&kept), Some(Decision::Keep(_))), "{kept:?}");
     }
+    assert_eq!(decide(&item("module", "std::quantum", true)), None, "a new module has no decision");
+    assert_eq!(decide(&item("macro", "std::new_macro", true)), None, "a new root macro has none");
     assert_eq!(decide(&item("fn", "std::thread::sleep_for_a_while", true)), None);
     assert_eq!(decide(&item("struct", "std::time::Stopwatch", true)), None);
 }
@@ -117,4 +154,22 @@ fn a_malformed_row_a_missing_page_and_a_missing_toolchain_line_fail() {
     assert!(toolchain_matches("fn std::fs::copy stable\n", toolchain)
         .is_some_and(|m| m.contains("no toolchain line")));
     assert!(toolchain_matches("", toolchain).is_some());
+}
+
+#[test]
+fn an_item_left_to_the_scan_must_be_one_the_scan_refuses() {
+    let items = [
+        item("module", "std::os", true),
+        item("module", "std::backtrace", true),
+        item("macro", "std::file", true),
+        item("macro", "std::cfg_select", true),
+        item("macro", "std::is_x86_feature_detected", true),
+        item("macro", "std::eprintln", true),
+    ];
+    assert_eq!(check(&items, &[]), Vec::<String>::new());
+    let failures = check_with(&items[..1], &[], &|_, _| None);
+    assert_eq!(failures.len(), 1, "a scan that refuses nothing: {failures:?}");
+    assert!(failures[0].starts_with(
+        "module std::os is banned by the scan (std-os) but the scan does not refuse it"
+    ));
 }

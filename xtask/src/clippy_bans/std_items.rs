@@ -2,20 +2,24 @@
 //! the modules the bans cover, a decision for each, and the check that `clippy.toml` holds
 //! every item decided banned.
 //!
-//! The source of truth is `xtask/bans/std-items.txt`, checked in: every public item of
-//! `std::env`, `std::fs`, `std::process`, `std::net`, `std::thread` and `std::time` and every
-//! method of `Duration` that takes or returns a float, each with its stability, as
-//! [`extract`] reads them from rust-docs (`std/all.html` and each item's page). When the
-//! toolchain moves, regenerate it (ADR 0006 gives the commands); [`check`] then fails on any
-//! new item without a decision and on any banned item missing from `clippy.toml`.
+//! The source of truth is `xtask/bans/std-items.txt`, checked in: every top-level module of std
+//! and every macro at its root; every public item of the modules decided item by item
+//! (`std::env`, `fs`, `process`, `net`, `thread`, `time`, `io`, `hash`, `any` and `panic`); and
+//! every method of `Duration` that takes or returns a float; each with its stability, as
+//! [`extract`] reads them from rust-docs (`std/index.html`, `std/all.html` and each page). When
+//! the toolchain moves, regenerate it (ADR 0006 gives the commands); [`check`] then fails on any
+//! new module, root macro or item without a decision, on any item decided banned that
+//! `clippy.toml` lacks, and on any decided banned by the scan that the scan does not refuse.
 
+mod decisions;
 #[cfg(test)]
 mod tests;
 
 use super::Entry;
+pub(crate) use decisions::{decide, Decision};
 
 /// The modules whose items the list holds, as directories of the std docs.
-const MODULES: [&str; 6] = ["env", "fs", "process", "net", "thread", "time"];
+const MODULES: &[&str] = decisions::ENUMERATED;
 
 /// One documented item.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,89 +32,19 @@ pub(crate) struct Item {
     pub(crate) stable: bool,
 }
 
-/// What the bans do with an item.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Decision {
-    /// Banned in `clippy.toml` under this rule.
-    Ban(&'static str),
-    /// Not in `clippy.toml`, for this reason.
-    Keep(&'static str),
-}
-
-/// The items of `std::thread` the bans cover, and their rules.
-const THREAD_BANS: [(&str, &str); 8] = [
-    ("sleep", "thread-sleep"),
-    ("sleep_ms", "thread-sleep"),
-    ("park_timeout", "thread-sleep"),
-    ("park_timeout_ms", "thread-sleep"),
-    ("spawn", "thread-spawn"),
-    ("scope", "thread-spawn"),
-    ("Builder", "thread-spawn"),
-    ("available_parallelism", "host-parallelism"),
-];
-
-/// The items of `std::thread` kept: scheduling and identity, no time and no host value.
-const THREAD_KEPT: [&str; 12] = [
-    "current",
-    "panicking",
-    "park",
-    "yield_now",
-    "AccessError",
-    "JoinHandle",
-    "LocalKey",
-    "Scope",
-    "ScopedJoinHandle",
-    "Thread",
-    "ThreadId",
-    "Result",
-];
-
-/// The items of `std::net` kept: core's address data, with no socket and no lookup.
-const NET_KEPT: [&str; 8] = [
-    "AddrParseError",
-    "IpAddr",
-    "Ipv4Addr",
-    "Ipv6Addr",
-    "Shutdown",
-    "SocketAddr",
-    "SocketAddrV4",
-    "SocketAddrV6",
-];
-
-/// The decision for `item`, or `None` for an item no rule decides (a new `std::thread` or
-/// `std::time` item, which needs one).
-pub(crate) fn decide(item: &Item) -> Option<Decision> {
-    let rest = item.path.strip_prefix("std::")?;
-    let (module, name) = (rest.split("::").next()?, rest.rsplit("::").next()?);
-    if !item.stable {
-        return Some(Decision::Keep("unstable on the pinned toolchain, so it cannot be used"));
-    }
-    if item.kind == "constant" || item.kind == "static" {
-        return Some(Decision::Keep("a constant: Clippy cannot ban one; the token scan does"));
-    }
-    let thread = |n: &str| THREAD_BANS.iter().find(|(t, _)| *t == n).map(|(_, r)| Decision::Ban(r));
-    match module {
-        "env" => Some(Decision::Ban("std-env")),
-        "fs" => Some(Decision::Ban("std-fs")),
-        "process" => Some(Decision::Ban("std-process")),
-        "net" if NET_KEPT.contains(&name) => Some(Decision::Keep("core's address data")),
-        "net" => Some(Decision::Ban("network")),
-        "thread" if THREAD_KEPT.contains(&name) => Some(Decision::Keep("scheduling, no time")),
-        "thread" => thread(name),
-        "time" => match (item.kind.as_str(), name) {
-            ("method", _) => Some(Decision::Ban("float-type")),
-            (_, "SystemTime" | "SystemTimeError") => Some(Decision::Ban("time-system")),
-            (_, "Instant") => Some(Decision::Ban("time-instant")),
-            (_, "Duration" | "TryFromFloatSecsError") => Some(Decision::Keep("integer durations")),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 /// Every reason the list and `clippy.toml` disagree: an item with no decision, or an item
 /// decided banned with no `clippy.toml` entry under its rule.
 pub(crate) fn check(items: &[Item], entries: &[Entry]) -> Vec<String> {
+    check_with(items, entries, &crate::nondeterminism::scan_rule)
+}
+
+/// [`check`], with `scan` giving the rule under which the scan refuses a path (and whether it
+/// is a macro's), if it does.
+pub(crate) fn check_with(
+    items: &[Item],
+    entries: &[Entry],
+    scan: &dyn Fn(&str, bool) -> Option<&'static str>,
+) -> Vec<String> {
     let mut failures = Vec::new();
     for item in items {
         match decide(item) {
@@ -126,6 +60,15 @@ pub(crate) fn check(items: &[Item], entries: &[Entry]) -> Vec<String> {
                     ));
                 }
             }
+            Some(Decision::Scan(rule)) => {
+                let is_macro = item.kind == "macro";
+                if scan(&item.path, is_macro) != Some(rule) {
+                    failures.push(format!(
+                        "{} {} is banned by the scan ({rule}) but the scan does not refuse it",
+                        item.kind, item.path
+                    ));
+                }
+            }
             Some(Decision::Keep(_)) => {}
         }
     }
@@ -133,8 +76,10 @@ pub(crate) fn check(items: &[Item], entries: &[Entry]) -> Vec<String> {
 }
 
 /// The kinds of item a list row may name.
-const KINDS: [&str; 9] =
-    ["fn", "struct", "enum", "trait", "type", "constant", "static", "macro", "method"];
+const KINDS: &[&str] = &[
+    "fn", "struct", "enum", "trait", "type", "constant", "static", "macro", "method", "module",
+    "derive",
+];
 
 /// The list's items, and a failure for each row that is not `<kind> std::<path>
 /// stable|unstable`: a misspelt stability would otherwise make a banned item look unstable and
@@ -163,30 +108,48 @@ pub(crate) fn parse_list(list: &str) -> (Vec<Item>, Vec<String>) {
     (items, failures)
 }
 
-/// The items of the banned modules in std's `all.html`, with the stability `page` gives each
-/// (`page` reads a file relative to the std docs), then the float methods of `Duration`; an
-/// error naming the first page that cannot be read, since guessing its stability would write a
-/// wrong list.
+/// The top-level modules in std's `index.html` and the macros at its root in `all.html`, then
+/// the items of the [`MODULES`] in `all.html`, with the stability `page` gives each (`page`
+/// reads a file relative to the std docs), then the float methods of `Duration`; an error
+/// naming the first page that cannot be read, since guessing its stability would write a wrong
+/// list.
 pub(crate) fn extract(
     all_html: &str,
     page: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Vec<Item>, String> {
-    let mut hrefs: Vec<&str> = all_html
-        .split("href=\"")
-        .skip(1)
-        .filter_map(|rest| rest.split('"').next())
-        .filter(|href| MODULES.iter().any(|m| href.starts_with(&format!("{m}/"))))
-        .collect();
-    hrefs.sort_unstable();
-    hrefs.dedup();
+    let links = |html: &str| -> Vec<String> {
+        let found = html.split("href=\"").skip(1).filter_map(|rest| rest.split('"').next());
+        let mut found: Vec<String> = found.map(str::to_owned).collect();
+        found.sort_unstable();
+        found.dedup();
+        found
+    };
     let mut items = Vec::new();
-    for href in hrefs {
-        let Some((dirs, file)) = href.rsplit_once('/') else { continue };
+    let index = page("index.html").ok_or("cannot read the page index.html")?;
+    for href in links(&index) {
+        let Some(module) = href.strip_suffix("/index.html").filter(|m| !m.contains(['/', '.']))
+        else {
+            continue;
+        };
+        let text = page(&href).ok_or(format!("cannot read the page {href}"))?;
+        let path = format!("std::{module}");
+        items.push(Item { kind: "module".to_owned(), path, stable: heading_is_stable(&text) });
+    }
+    let all = links(all_html);
+    let root_macros = all.iter().filter(|h| h.starts_with("macro.") && !h.contains('/'));
+    let in_modules = all.iter().filter(|h| MODULES.iter().any(|m| h.starts_with(&format!("{m}/"))));
+    for href in root_macros.chain(in_modules) {
+        let href = href.as_str();
+        let (dirs, file) = href.rsplit_once('/').unwrap_or(("", href));
         let Some((kind, name)) = file.strip_suffix(".html").and_then(|f| f.split_once('.')) else {
             continue;
         };
         let text = page(href).ok_or(format!("cannot read the page {href}"))?;
-        let path = format!("std::{}::{name}", dirs.replace('/', "::"));
+        let path = if dirs.is_empty() {
+            format!("std::{name}")
+        } else {
+            format!("std::{}::{name}", dirs.replace('/', "::"))
+        };
         items.push(Item { kind: kind.to_owned(), path, stable: heading_is_stable(&text) });
     }
     let duration = "time/struct.Duration.html";
@@ -223,8 +186,9 @@ fn float_methods(page: &str) -> Vec<Item> {
 /// line per item.
 pub(crate) fn render(items: &[Item], toolchain: &str) -> String {
     let header = format!(
-        "# The public items of the std modules the nondeterminism bans cover, and the float\n\
-         # methods of Duration (docs/adr/0006-nondeterminism-gate.md), from rust-docs {toolchain}:\n\
+        "# Every top-level module and root macro of std, the public items of the modules decided\n\
+         # item by item, and the float methods of Duration (docs/adr/0006-nondeterminism-gate.md),\n\
+         # from rust-docs {toolchain}:\n\
          # cargo run -p xtask -- std-items <rust-docs>/share/doc/rust/html/std {toolchain}\n\
          toolchain {toolchain}\n"
     );
