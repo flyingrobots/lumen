@@ -17,7 +17,7 @@ by `Integrator::for_scene`; ADR 0007 states the naming rule). Each is a document
 Bunny contracts, and Bunny's `bunny-diffuse-shading/1` already fixes the order of operations within
 a hit. What Lumen implements is the composition: which sampler pair feeds which decision, when a
 path continues, when it ends. The planned `lumen-path/1` (flyingrobots/lumen#203) would add a third
-loop in Lumen, with mirror, metal and glass branches.
+loop in Lumen: mirror first, with later metal and glass extensions.
 
 Those decisions change results as surely as any multiplication does. The maintainer decided on
 2026-11-17 that the complete light-transport algorithm, continuation and termination included, is
@@ -54,9 +54,10 @@ tiled parallel loop is part of its integrator, and here threading stays in Lumen
   an ID or a work count to a colour encodes evidence for a person to read. It interprets no light,
   and it uses only Bunny's results for the values it maps. If another caller needs the same views,
   moving them to Bunny is a new record.
-- **Image decoding stays in `lumen-image` (ADR 0012, unchanged).** A PNG or JPEG decoder rebuilds
-  the pixels its format's standard defines; it does not evaluate a scene. `lumen-jpeg-decode/1`
-  keeps its identity and its place. The decoder is kept whole, in one crate; it is not split
+- **Image decoding stays in `lumen-image` (ADR 0012, unchanged).** It reconstructs raster data
+  from files without evaluating a scene. The JPEG standard leaves the IDCT's precision and chroma
+  upsampling open, so `lumen-jpeg-decode/1` fixes the arithmetic choices needed for reproducible
+  decoded pixels; it keeps that identity and its place. The decoder is kept whole, in one crate; it is not split
   between repositories by step. Mesh decoding is already Bunny's (`bunny-ascii-ply-triangle-mesh/1`)
   and stays there.
 
@@ -89,8 +90,9 @@ tiled parallel loop is part of its integrator, and here threading stays in Lumen
   independent composition in `crates/lumen/tests/render.rs`, written with brute-force queries, stays
   independent: it is never rewritten to call the implementation it checks. A move is not combined
   with a numerical change; a change of result is a new identity, separately reviewed.
-- **The tone curve** (`TONE_CURVE` in `render.rs`) moves with the diffuse integrators, under the
-  same conditions.
+- **The tone curve is already Bunny's.** `ToneCurve::apply` and `write_rgba8` are Bunny's;
+  Lumen's `TONE_CURVE` only selects `bunny-tone-srgb/1` and records it. Extracting the diffuse
+  integrators preserves the selected curve, the output bytes and the provenance.
 
 ## Alternatives rejected
 
