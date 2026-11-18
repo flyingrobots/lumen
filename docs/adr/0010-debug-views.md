@@ -158,3 +158,8 @@ golden hashes and hand-derived tests.
 - The default output, the lit provenance and every existing golden hash are unchanged: `lit` is
   the old render by construction, and the tests check the provenance field for field and the
   golden hash through `render_view`.
+
+## Clarification, 2026-11-17: ADR 0016
+
+ADR 0016 moves graphics evaluation, integrators included, to Bunny. It keeps this decision as an
+explicit exception, unchanged; see its section "Exceptions, with their reasons".

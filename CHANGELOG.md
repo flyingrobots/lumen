@@ -157,6 +157,10 @@ part was built.
   `4k-fixed-point`, `canyon`, `4k-canyon`, `test`, `nondeterminism`, `clippy-bans`,
   `doc-links`, `help`) over the container runner. (flyingrobots/lumen#17, #23, #25, #40, #104,
   #115.)
+- **All graphics in Bunny, decided** ([ADR 0016](docs/adr/0016-graphics-in-bunny.md)): Bunny
+  defines reusable graphics evaluation, integrators included; Lumen supplies inputs, selects
+  contracts, schedules work and records results. Debug views and image decoding stay in Lumen.
+  Nothing is built yet: the diffuse integrators are still Lumen's. (flyingrobots/lumen#275.)
 - **The command's interface, decided** ([ADR 0015](docs/adr/0015-command-interface.md)): a job
   file in, an output directory, versioned JSON Lines on standard output and on standard error, and
   published JSON Schemas; the key-value report is to be retired. Nothing is built yet.

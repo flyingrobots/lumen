@@ -90,3 +90,8 @@ reproducible if Lumen states the arithmetic that produced the pixels.
 | Decoders in Bunny's codec crate | Bunny holds math and mesh formats, and every decoder fix would need a pin move here. The crate boundary lets the code move there later unchanged. |
 | Decode once offline and commit raw pixels | A raw 4096 by 4096 RGB map is 48 MiB, and agents composing covers bring images that must be decoded at render time. |
 | A module inside the `lumen` crate | The decoders need nothing from the renderer; a separate crate keeps that true and gives the fuzzers one target. |
+
+## Clarification, 2026-11-17: ADR 0016
+
+ADR 0016 moves graphics evaluation, integrators included, to Bunny. It keeps this decision as an
+explicit exception, unchanged; see its section "Exceptions, with their reasons".
